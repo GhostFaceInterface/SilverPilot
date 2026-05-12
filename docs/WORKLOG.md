@@ -23,3 +23,23 @@ Phase 0 documentation audit.
 Efficiency baseline.
 
 - Added context loading protocol, task definition of done, markdown creation rule, runtime-memory separation, LLM outage requirement, buy-and-hold benchmark rule, and initial agent budget targets.
+
+## 2026-05-13
+
+VPS SSH bootstrap verified.
+
+- VPS has been purchased and prepared for SilverPilot deployment work.
+- Docker is installed on the VPS.
+- Local SSH alias `silverpilot-vps` is configured on the developer Mac.
+- `ssh silverpilot-vps` successfully connects to the server.
+- No secrets were added to the repository.
+- Next: verify `/opt/silverpilot`, clone/create project skeleton, prepare `.env.production`, and validate Docker Compose.
+
+Phase 1 backend core implemented locally.
+
+- Added FastAPI application factory and initial endpoints.
+- Added PostgreSQL config, SQLAlchemy models, and Alembic initial migration.
+- Added API Dockerfile, Compose API service, and private PostgreSQL networking.
+- Added basic `/health` test and development seed command.
+- Validated: pytest passed, Compose config passed, migration ran, API container healthy, `/health` returned database ok.
+- Next: commit/push, pull on VPS, create VPS-local `.env.production` from `.env.example`, and validate VPS Compose config.

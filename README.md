@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 0 is complete at skeleton and documentation-discipline level. Phase 1 has not started.
+Phase 1 backend core is implemented locally. VPS pull and production env validation are pending.
 
 ## Canonical Sources
 
@@ -35,10 +35,20 @@ Phase 0 is complete at skeleton and documentation-discipline level. Phase 1 has 
 
 ## Next Work
 
-After VPS details are known, start Phase 1:
+Next deployment task:
 
-- FastAPI application setup.
-- PostgreSQL connection.
-- Alembic migrations.
-- `/health` endpoint.
-- basic tests.
+- Commit and push Phase 1.
+- Pull the latest repo state on the VPS.
+- Create VPS-local `.env.production` from `.env.example` if missing.
+- Fill production secret values manually on the VPS.
+- Run `docker compose --env-file .env.production config`.
+
+## Local Validation
+
+```bash
+docker compose up -d postgres
+docker compose build api
+docker compose run --rm api alembic upgrade head
+docker compose up -d api
+curl -fsS http://127.0.0.1:8000/health
+```

@@ -118,4 +118,11 @@ Initial VPS deployment should use Docker Compose:
 - Backup job.
 - Health checks.
 
+Deployment target:
+
+- Ubuntu VPS accessed via SSH alias `silverpilot-vps`.
+- Container runtime is Docker / Docker Compose.
+- Only reverse proxy ports should be public later.
+- Database, Redis, and internal services must stay private.
+
 Production hardening is Phase 13, not Phase 1.

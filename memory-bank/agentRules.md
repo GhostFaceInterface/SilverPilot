@@ -69,6 +69,16 @@ A task is not complete until:
 - canonical docs are updated when behavior changes.
 - `docs/WORKLOG.md` records the verified outcome.
 
+## VPS Rules
+
+- For VPS tasks, use SSH alias `silverpilot-vps` when the user explicitly asks for server-side work.
+- Do not ask for the private key if `ssh silverpilot-vps` works.
+- Do not print private SSH config contents unless the user explicitly asks.
+- Do not read `.env.production` unless the task specifically requires validating environment variable names.
+- Never print secret values.
+- Before changing VPS files, run a safe status check first.
+- Do not install random tools or services on the VPS without a clear reason.
+
 ## Hard Rules
 
 1. Check current status before editing.

@@ -59,3 +59,9 @@ The backend must continue collecting data, calculating portfolio state, running 
 Status: accepted.
 
 Production agent calls must enforce token and cost limits. Strong model usage should be rare, justified, and traceable.
+
+## D-011: VPS Access Uses SSH Alias
+
+Status: accepted.
+
+VPS access for deployment work uses local SSH alias `silverpilot-vps`. This avoids exposing IP addresses or private connection details in prompts and keeps agent instructions stable.
