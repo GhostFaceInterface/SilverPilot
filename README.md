@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 3 data collector foundations are in progress.
+Phase 3 data collector foundations are deployed; scheduled collectors are next.
 
 ## Canonical Sources
 
@@ -37,9 +37,9 @@ Phase 3 data collector foundations are in progress.
 
 Next implementation task:
 
-- Deploy Phase 3 collector migration to the VPS.
-- Rebuild the API container.
-- Run manual price ingestion smoke test.
+- Add scheduled collector execution.
+- Add collector health visibility.
+- Keep external data providers configurable and non-secret in code.
 
 ## Local Validation
 

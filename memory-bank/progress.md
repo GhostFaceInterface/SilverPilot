@@ -88,7 +88,13 @@ Completed:
 - Added tests for raw/normalized price writes, duplicate detection, and inverted spread rejection.
 - Local pytest passed.
 - Local Alembic migration, API rebuild, `/health`, collector run, and latest price validations passed.
+- Phase 3 foundation commit pushed to GitHub.
+- VPS repo pulled the Phase 3 foundation commit.
+- VPS API container rebuilt successfully.
+- VPS Alembic migration reached `0002_collector_foundation`.
+- VPS manual price ingestion smoke test passed.
+- VPS duplicate guard returned no new price snapshot for repeated observation.
 
 Next milestone:
 
-- Commit/push Phase 3 and validate migration plus manual ingestion on the VPS.
+- Add scheduled collector execution and collector health visibility.

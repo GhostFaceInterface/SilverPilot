@@ -89,3 +89,12 @@ Phase 3 collector foundation implemented locally.
 - Tests passed for ingestion, duplicate handling, and spread validation.
 - Local migration, API rebuild, `/health`, collector run, and latest price checks passed.
 - Next: deploy Phase 3 migration and smoke test manual ingestion on VPS.
+
+Phase 3 collector foundation deployed on VPS.
+
+- Pushed Phase 3 foundation commit to GitHub and pulled it on the VPS.
+- Rebuilt the VPS API container.
+- Ran Alembic migration to `0002_collector_foundation`.
+- VPS manual price ingestion created raw and normalized price records.
+- VPS duplicate guard returned `records_inserted: 0` and `duplicates: 1`.
+- Next: add scheduled collector execution and collector health visibility.

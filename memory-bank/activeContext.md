@@ -25,6 +25,9 @@ Phase 3: data collector foundations in progress.
 - Manual price ingestion endpoint exists at `POST /collectors/manual-price`.
 - Latest collector run endpoint exists at `GET /collectors/runs/latest`.
 - Manual price ingestion writes append-only raw price data and normalized `price_snapshots`.
+- VPS Alembic migration is at `0002_collector_foundation`.
+- VPS manual price ingestion smoke test passed.
+- VPS duplicate guard returned `records_inserted: 0` and `duplicates: 1` for repeated observation.
 - Local Docker Compose API/PostgreSQL validation passed.
 - VPS repo was updated to the latest `main` commit.
 - VPS-local `.env.production` was created from `.env.example` without printing secrets.
@@ -49,10 +52,10 @@ Phase 3: data collector foundations in progress.
 
 Pending:
 
-- Deploy Phase 3 migration/code to VPS and validate manual price ingestion there.
+- Build real scheduled collector jobs after the manual ingestion foundation.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
 - Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Commit/push Phase 3, run Alembic migration on the VPS, rebuild API, and run manual price ingestion smoke test.
+Continue Phase 3 with scheduled collector execution and collector health visibility.
