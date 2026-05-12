@@ -4,10 +4,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
-from app.collectors.service import CollectorError, ingest_manual_price, latest_collector_run
+from app.collectors.service import CollectorError, collector_health, ingest_manual_price, latest_collector_run
 from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
-from app.schemas.collectors import CollectorRunPayload, ManualPriceIngestRequest, ManualPriceIngestResponse
+from app.schemas.collectors import (
+    CollectorHealthResponse,
+    CollectorRunPayload,
+    ManualPriceIngestRequest,
+    ManualPriceIngestResponse,
+)
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 
@@ -148,6 +153,13 @@ def create_manual_price(
 def get_latest_collector_run(db: Session = Depends(get_db)) -> CollectorRunPayload | None:
     run = latest_collector_run(db)
     return _collector_run_payload(run) if run is not None else None
+
+
+@router.get("/collectors/health", response_model=CollectorHealthResponse)
+def get_collector_health(stale_after_minutes: int = 60, db: Session = Depends(get_db)) -> dict:
+    if stale_after_minutes <= 0:
+        raise HTTPException(status_code=400, detail="stale_after_minutes must be greater than zero")
+    return collector_health(db, stale_after_minutes=stale_after_minutes)
 
 
 def _collector_run_payload(run: CollectorRun) -> dict:

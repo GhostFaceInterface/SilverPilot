@@ -28,6 +28,10 @@ Phase 3: data collector foundations in progress.
 - VPS Alembic migration is at `0002_collector_foundation`.
 - VPS manual price ingestion smoke test passed.
 - VPS duplicate guard returned `records_inserted: 0` and `duplicates: 1` for repeated observation.
+- Collector runner exists at `python -m app.collectors.runner`.
+- Docker Compose has an opt-in `collector` profile; it is not started by default.
+- Collector health endpoint exists at `GET /collectors/health`.
+- Local runner one-shot and collector health validation passed.
 - Local Docker Compose API/PostgreSQL validation passed.
 - VPS repo was updated to the latest `main` commit.
 - VPS-local `.env.production` was created from `.env.example` without printing secrets.
@@ -52,10 +56,10 @@ Phase 3: data collector foundations in progress.
 
 Pending:
 
-- Build real scheduled collector jobs after the manual ingestion foundation.
+- Deploy scheduled collector runner and health visibility to VPS.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
 - Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Continue Phase 3 with scheduled collector execution and collector health visibility.
+Commit/push scheduled collector runner, pull on VPS, rebuild API, and validate collector health.

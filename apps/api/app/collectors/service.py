@@ -90,7 +90,60 @@ def latest_collector_run(db: Session) -> CollectorRun | None:
     return db.execute(select(CollectorRun).order_by(CollectorRun.started_at.desc()).limit(1)).scalar_one_or_none()
 
 
+def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
+    runs = db.execute(select(CollectorRun).order_by(CollectorRun.started_at.desc())).scalars()
+    latest_by_collector: dict[tuple[str, str], CollectorRun] = {}
+    for run in runs:
+        key = (run.collector_name, run.source)
+        if key not in latest_by_collector:
+            latest_by_collector[key] = run
+
+    stale_after_seconds = stale_after_minutes * 60
+    now = datetime.now(UTC)
+    collectors = []
+    for run in latest_by_collector.values():
+        reference_time = _aware(run.finished_at or run.started_at)
+        age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
+        stale = age_seconds is None or age_seconds > stale_after_seconds
+        collectors.append(
+            {
+                "collector_name": run.collector_name,
+                "source": run.source,
+                "status": run.status,
+                "records_seen": run.records_seen,
+                "records_inserted": run.records_inserted,
+                "duplicates": run.duplicates,
+                "age_seconds": age_seconds,
+                "stale": stale,
+                "error_message": run.error_message,
+                "started_at": run.started_at,
+                "finished_at": run.finished_at,
+            }
+        )
+
+    if not collectors:
+        status = "empty"
+    elif any(item["stale"] or item["status"] == "failed" for item in collectors):
+        status = "degraded"
+    else:
+        status = "ok"
+
+    return {
+        "status": status,
+        "stale_after_minutes": stale_after_minutes,
+        "collectors": collectors,
+    }
+
+
 def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)

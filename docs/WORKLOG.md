@@ -98,3 +98,12 @@ Phase 3 collector foundation deployed on VPS.
 - VPS manual price ingestion created raw and normalized price records.
 - VPS duplicate guard returned `records_inserted: 0` and `duplicates: 1`.
 - Next: add scheduled collector execution and collector health visibility.
+
+Phase 3 scheduled collector support implemented locally.
+
+- Added `python -m app.collectors.runner` for one-shot or looped collector execution.
+- Added opt-in Docker Compose `collector` profile.
+- Added `/collectors/health` with stale-run detection.
+- Added tests for empty, healthy, and invalid collector health checks.
+- Local runner one-shot wrote a collector run and price snapshot.
+- Next: deploy runner and collector health visibility to VPS.

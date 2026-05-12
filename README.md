@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 3 data collector foundations are deployed; scheduled collectors are next.
+Phase 3 scheduled collector execution is being deployed.
 
 ## Canonical Sources
 
@@ -37,9 +37,9 @@ Phase 3 data collector foundations are deployed; scheduled collectors are next.
 
 Next implementation task:
 
-- Add scheduled collector execution.
-- Add collector health visibility.
-- Keep external data providers configurable and non-secret in code.
+- Deploy collector runner and health visibility to the VPS.
+- Validate `GET /collectors/health`.
+- Keep collector profile opt-in until real provider config is selected.
 
 ## Local Validation
 
@@ -51,7 +51,14 @@ docker compose up -d api
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/paper-trades/position
 curl -fsS http://127.0.0.1:8000/collectors/runs/latest
+curl -fsS http://127.0.0.1:8000/collectors/health
 curl -fsS http://127.0.0.1:8000/prices/latest
+```
+
+Optional collector runner:
+
+```bash
+docker compose --profile collector up -d collector
 ```
 
 ## VPS Validation

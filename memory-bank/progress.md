@@ -94,7 +94,12 @@ Completed:
 - VPS Alembic migration reached `0002_collector_foundation`.
 - VPS manual price ingestion smoke test passed.
 - VPS duplicate guard returned no new price snapshot for repeated observation.
+- Added collector runner module.
+- Added opt-in Docker Compose `collector` profile.
+- Added `GET /collectors/health`.
+- Added collector health tests.
+- Local runner one-shot and collector health validation passed.
 
 Next milestone:
 
-- Add scheduled collector execution and collector health visibility.
+- Deploy scheduled collector runner and health visibility to the VPS.

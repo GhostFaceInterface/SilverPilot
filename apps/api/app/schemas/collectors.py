@@ -55,3 +55,23 @@ class ManualPriceIngestResponse(BaseModel):
     collector_run: CollectorRunPayload
     raw_inserted: bool
     price_snapshot: PriceSnapshotPayload | None
+
+
+class CollectorHealthItem(BaseModel):
+    collector_name: str
+    source: str
+    status: str
+    records_seen: int
+    records_inserted: int
+    duplicates: int
+    age_seconds: int | None
+    stale: bool
+    error_message: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class CollectorHealthResponse(BaseModel):
+    status: Literal["empty", "ok", "degraded"]
+    stale_after_minutes: int
+    collectors: list[CollectorHealthItem]

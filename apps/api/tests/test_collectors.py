@@ -117,3 +117,49 @@ def test_manual_price_rejects_inverted_spread():
     )
 
     assert response.status_code == 422
+
+
+def test_collector_health_reports_empty_without_runs():
+    client, _ = make_client()
+
+    response = client.get("/collectors/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "empty",
+        "stale_after_minutes": 60,
+        "collectors": [],
+    }
+
+
+def test_collector_health_reports_latest_run_status():
+    client, _ = make_client()
+    client.post(
+        "/collectors/manual-price",
+        json={
+            "source_type": "bank",
+            "source": "manual-test-bank",
+            "asset_symbol": "XAG",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "currency": "USD",
+            "observed_at": "2026-05-13T12:00:00Z",
+        },
+    )
+
+    response = client.get("/collectors/health?stale_after_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["collectors"][0]["collector_name"] == "manual_bank_price"
+    assert body["collectors"][0]["source"] == "manual-test-bank"
+    assert body["collectors"][0]["stale"] is False
+
+
+def test_collector_health_rejects_invalid_stale_threshold():
+    client, _ = make_client()
+
+    response = client.get("/collectors/health?stale_after_minutes=0")
+
+    assert response.status_code == 400

@@ -21,6 +21,26 @@ services:
       timeout: 5s
       retries: 5
 
+  collector:
+    profiles: ["collector"]
+    build:
+      context: ./apps/api
+    container_name: silverpilot-collector
+    command: ["python", "-m", "app.collectors.runner", "--loop"]
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://silverpilot:change_me@postgres:5432/silverpilot}
+      COLLECTOR_INTERVAL_SECONDS: ${COLLECTOR_INTERVAL_SECONDS:-900}
+      MANUAL_PRICE_SOURCE_TYPE: ${MANUAL_PRICE_SOURCE_TYPE:-bank}
+      MANUAL_PRICE_SOURCE: ${MANUAL_PRICE_SOURCE:-manual-scheduled}
+      MANUAL_PRICE_ASSET_SYMBOL: ${MANUAL_PRICE_ASSET_SYMBOL:-XAG}
+      MANUAL_PRICE_BUY_PRICE: ${MANUAL_PRICE_BUY_PRICE:-10.00}
+      MANUAL_PRICE_SELL_PRICE: ${MANUAL_PRICE_SELL_PRICE:-9.80}
+      MANUAL_PRICE_CURRENCY: ${MANUAL_PRICE_CURRENCY:-USD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: silverpilot-postgres
