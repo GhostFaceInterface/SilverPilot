@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 0: project skeleton, memory discipline, and documentation boundaries.
+Phase 0 is complete at skeleton and documentation-discipline level. Phase 1 has not started.
 
 ## Canonical Sources
 
@@ -33,3 +33,12 @@ Phase 0: project skeleton, memory discipline, and documentation boundaries.
 - Do not add real banking integration.
 - Do not add real-money execution.
 
+## Next Work
+
+After VPS details are known, start Phase 1:
+
+- FastAPI application setup.
+- PostgreSQL connection.
+- Alembic migrations.
+- `/health` endpoint.
+- basic tests.

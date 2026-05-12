@@ -14,6 +14,7 @@ Completed:
 - Git repository initialized.
 - Initial commit pushed to GitHub.
 - Full canonical roadmap written to `docs/ROADMAP.md`.
+- Phase 0 architecture, data contract, risk policy, decision, tech context, and agent rule docs completed.
 
 Pending:
 

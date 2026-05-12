@@ -1,26 +1,39 @@
 # Tech Context
 
-## Planned Stack
+## Planned Backend Stack
 
 - Python
 - FastAPI
 - PostgreSQL
 - SQLAlchemy
 - Alembic
-- Docker Compose
-- Streamlit for the first dashboard
-
-## Later Stack
-
-- OpenRouter
-- LiteLLM if routing and budget controls need a proxy
-- Langfuse
-- Instructor
 - Pydantic
-- LightGBM
-- MLflow
+- httpx
+- tenacity
+- Docker Compose
+
+## Planned Data Stack
+
+- Pandas
+- Polars
+- DuckDB
+- NumPy
+
+## Planned LLM Stack
+
+- OpenRouter first.
+- LiteLLM later if routing, fallback, or budget proxying is needed.
+- Langfuse before production agent usage.
+- Instructor/Pydantic for structured output validation.
+
+## Planned ML Stack
+
+- LightGBM first.
+- MLflow for model registry.
+- AutoGluon/Chronos-Bolt only after baseline ML exists.
+- Feast is optional and deferred.
 
 ## Phase 0 Constraint
 
-No package installation is required yet.
+No package installation is required yet. Dependency locking starts in Phase 1.
 

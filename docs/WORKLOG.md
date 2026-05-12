@@ -14,3 +14,8 @@ Roadmap correction.
 
 - Expanded `docs/ROADMAP.md` from phase index into the canonical detailed roadmap.
 - Updated memory context to show Phase 0 skeleton is complete and Phase 1 has not started.
+
+Phase 0 documentation audit.
+
+- Expanded architecture, data contracts, risk policy, decisions, tech context, agent rules, and agent specs.
+- Updated README, AGENTS, and `.env.example` with missing operational guardrails.

@@ -11,6 +11,7 @@ Phase 0: root skeleton and documentation discipline.
 - Agent-specific short spec files exist.
 - FastAPI module skeleton exists without business logic.
 - Full canonical roadmap exists in `docs/ROADMAP.md`.
+- Architecture, data contracts, risk policy, decisions, tech context, and agent rules have Phase 0 detail.
 - No real-money integration exists.
 - No bank automation exists.
 

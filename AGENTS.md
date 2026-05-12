@@ -18,4 +18,7 @@ Hard rules:
 6. Update `docs/WORKLOG.md` after meaningful verified changes.
 7. Keep `memory-bank/activeContext.md` current and short.
 8. Use structured outputs for LLM features when they are added.
-
+9. Keep roadmap details in `docs/ROADMAP.md`.
+10. Keep data shapes in `docs/DATA_CONTRACTS.md`.
+11. Keep risk behavior in `docs/RISK_POLICY.md`.
+12. Keep durable architecture decisions in `docs/DECISIONS.md`.
