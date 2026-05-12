@@ -26,6 +26,8 @@ notebooks/*
 .DS_Store
 .idea/
 .vscode/
+*.swp
+.*.swp
 
 # Logs
 *.log

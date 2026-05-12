@@ -20,7 +20,7 @@ Completed:
 
 ## Phase 1
 
-Status: backend core implemented and committed; VPS repo/config bootstrap verified.
+Status: complete.
 
 Completed:
 
@@ -37,9 +37,20 @@ Completed:
 - VPS repo updated to the latest `main`.
 - VPS-local `.env.production` created from `.env.example`.
 - VPS Docker Compose config validated with `.env.production`.
+- VPS services started with Docker Compose.
+- VPS Alembic migration and seed command completed.
+- VPS `/health` validated production API/database connectivity.
 
-Pending:
+Validation:
 
-- Fill production secret values manually before starting persistent VPS services.
-- Start VPS services.
-- Run VPS Alembic migration and seed validation.
+- API and PostgreSQL containers are healthy on the VPS.
+- `/health` returns `database: ok`.
+- `REAL_MONEY_ENABLED=false` is active.
+
+## Phase 2
+
+Status: next.
+
+Next milestone:
+
+- Implement paper-trading service, portfolio accounting, trade validation, and tests.

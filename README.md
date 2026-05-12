@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 1 backend core is implemented and pushed. VPS repo and Compose config bootstrap are verified.
+Phase 1 backend core is implemented, pushed, and validated on the VPS.
 
 ## Canonical Sources
 
@@ -35,12 +35,11 @@ Phase 1 backend core is implemented and pushed. VPS repo and Compose config boot
 
 ## Next Work
 
-Next deployment task:
+Next implementation task:
 
-- Fill production secret values manually on the VPS.
-- Start VPS services.
-- Run Alembic migration and seed validation on the VPS.
-- Verify `/health`.
+- Start Phase 2 paper-trading engine.
+- Implement deterministic virtual buy/sell accounting for the 600 USD paper portfolio.
+- Keep real-money execution and bank automation out of scope.
 
 ## Local Validation
 
@@ -49,5 +48,14 @@ docker compose up -d postgres
 docker compose build api
 docker compose run --rm api alembic upgrade head
 docker compose up -d api
+curl -fsS http://127.0.0.1:8000/health
+```
+
+## VPS Validation
+
+```bash
+ssh silverpilot-vps
+cd /opt/silverpilot/SilverPilot
+docker compose --env-file .env.production ps
 curl -fsS http://127.0.0.1:8000/health
 ```

@@ -52,3 +52,12 @@ Phase 1 pushed and VPS config bootstrap verified.
 - Validated VPS Compose config with `docker compose --env-file .env.production config`.
 - Did not start VPS services because production values still need manual editing.
 - Next: user fills `.env.production`, then run VPS services, migration, seed, and `/health` validation.
+
+Phase 1 VPS runtime verified.
+
+- User filled VPS-local `.env.production` without adding secrets to git.
+- VPS services started with `docker compose --env-file .env.production up -d --build`.
+- VPS Alembic migration and seed command completed successfully.
+- VPS `/health` returned production `database: ok` and `real_money_enabled: false`.
+- Observed an editor swap file from env editing; added gitignore coverage for swap files.
+- Next: begin Phase 2 paper-trading engine.

@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 1: backend core.
+Phase 1: backend core complete on local and VPS.
 
 ## Current State
 
@@ -17,6 +17,9 @@ Phase 1: backend core.
 - VPS repo was updated to the latest `main` commit.
 - VPS-local `.env.production` was created from `.env.example` without printing secrets.
 - VPS Docker Compose config validation passed with `.env.production`.
+- VPS services started successfully with Docker Compose.
+- VPS Alembic migration and seed command completed successfully.
+- VPS `/health` returns production `database: ok` and `real_money_enabled: false`.
 - Full canonical roadmap exists in `docs/ROADMAP.md`.
 - Architecture, data contracts, risk policy, decisions, tech context, and agent rules have Phase 0 detail.
 - Efficiency rules now distinguish development memory from runtime database memory.
@@ -34,10 +37,9 @@ Phase 1: backend core.
 
 Pending:
 
-- User must fill real production values in VPS-local `.env.production`.
-- Start initial VPS services after production env values are filled.
-- Run Alembic migration and seed command on the VPS after services start.
+- Keep VPS-local `.env.production` secrets out of git and markdown.
+- Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Fill `.env.production` on the VPS, then start VPS services and run migration/seed validation.
+Start Phase 2: implement the deterministic paper-trading engine for the 600 USD virtual portfolio.
