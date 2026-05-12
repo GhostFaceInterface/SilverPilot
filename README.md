@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 3 scheduled collector execution is being deployed.
+Phase 3 scheduled collector execution is deployed; first real source collector is next.
 
 ## Canonical Sources
 
@@ -37,9 +37,9 @@ Phase 3 scheduled collector execution is being deployed.
 
 Next implementation task:
 
-- Deploy collector runner and health visibility to the VPS.
-- Validate `GET /collectors/health`.
-- Keep collector profile opt-in until real provider config is selected.
+- Select the first real configurable price data source.
+- Implement the source collector behind the existing runner.
+- Keep collector profile opt-in until source reliability is validated.
 
 ## Local Validation
 

@@ -107,3 +107,12 @@ Phase 3 scheduled collector support implemented locally.
 - Added tests for empty, healthy, and invalid collector health checks.
 - Local runner one-shot wrote a collector run and price snapshot.
 - Next: deploy runner and collector health visibility to VPS.
+
+Phase 3 scheduled collector support deployed on VPS.
+
+- Pushed scheduled collector support commit to GitHub and pulled it on VPS.
+- Rebuilt VPS API container.
+- VPS `/collectors/health` returned `ok`.
+- VPS one-shot collector runner wrote a successful collector run and price snapshot.
+- Collector profile remains opt-in, not continuously running by default.
+- Next: select and implement the first real configurable price source collector.

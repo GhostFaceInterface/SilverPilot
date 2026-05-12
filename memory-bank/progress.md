@@ -99,7 +99,12 @@ Completed:
 - Added `GET /collectors/health`.
 - Added collector health tests.
 - Local runner one-shot and collector health validation passed.
+- Scheduled collector support commit pushed to GitHub.
+- VPS repo pulled the scheduled collector support commit.
+- VPS API container rebuilt successfully.
+- VPS runner one-shot validation passed.
+- VPS collector health endpoint returned `ok`.
 
 Next milestone:
 
-- Deploy scheduled collector runner and health visibility to the VPS.
+- Select and implement the first real configurable price source collector.
