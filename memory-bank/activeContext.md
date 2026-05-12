@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 2: paper-trading engine started.
+Phase 2: paper-trading engine complete.
 
 ## Current State
 
@@ -18,6 +18,8 @@ Phase 2: paper-trading engine started.
 - Paper position endpoint exists at `GET /paper-trades/position`.
 - Paper trades update virtual cash balance and create portfolio snapshots.
 - Local tests validate spread/fee loss, negative-balance protection, and real-money portfolio rejection.
+- VPS API was rebuilt with Phase 2 code.
+- VPS paper-trade smoke test passed with a `hold` audit record and unchanged 600 USD paper balance.
 - Local Docker Compose API/PostgreSQL validation passed.
 - VPS repo was updated to the latest `main` commit.
 - VPS-local `.env.production` was created from `.env.example` without printing secrets.
@@ -42,10 +44,9 @@ Phase 2: paper-trading engine started.
 
 Pending:
 
-- Deploy Phase 2 code to VPS and validate `/paper-trades` against production containers.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
 - Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Commit/push Phase 2, pull it on the VPS, rebuild the API container, and run a paper-trade smoke test.
+Start Phase 3: implement price/news collector foundations without adding LLM or ML behavior.

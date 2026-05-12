@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 2 paper-trading engine is in progress.
+Phase 2 paper-trading engine is implemented and validated on the VPS.
 
 ## Canonical Sources
 
@@ -37,9 +37,9 @@ Phase 2 paper-trading engine is in progress.
 
 Next implementation task:
 
-- Deploy Phase 2 code to the VPS.
-- Rebuild the API container.
-- Run a paper-trade smoke test against the VPS.
+- Start Phase 3 data collector foundations.
+- Add collector run tracking and first price ingestion structure.
+- Keep LLM and ML deferred.
 
 ## Local Validation
 

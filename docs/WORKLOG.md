@@ -70,3 +70,12 @@ Phase 2 paper-trading core implemented locally.
 - Tests passed for spread/fee loss, negative-balance protection, and real-money portfolio rejection.
 - Local API image rebuilt and `/health` validation passed.
 - Next: deploy Phase 2 to the VPS and run a paper-trade smoke test.
+
+Phase 2 deployed and verified on VPS.
+
+- Pushed Phase 2 paper-trading commit to GitHub.
+- Pulled latest `main` on the VPS and rebuilt the API container.
+- VPS `/health` returned production `database: ok`.
+- VPS `POST /paper-trades` smoke test created a `hold` audit record.
+- VPS `/paper-trades/position` showed 600 USD cash and 0 XAG.
+- Next: begin Phase 3 data collector foundations.

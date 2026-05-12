@@ -49,7 +49,7 @@ Validation:
 
 ## Phase 2
 
-Status: in progress.
+Status: complete.
 
 Completed:
 
@@ -60,7 +60,23 @@ Completed:
 - Added tests for spread/fee loss, negative-balance protection, and real-money portfolio rejection.
 - Local pytest passed.
 - Local Docker API rebuild and `/health` validation passed.
+- Phase 2 commit pushed to GitHub.
+- VPS repo pulled the Phase 2 commit.
+- VPS API container rebuilt successfully.
+- VPS `/health` validated production API/database connectivity after rebuild.
+- VPS `hold` paper-trade smoke test passed.
+
+Validation:
+
+- Same-market buy/sell loses after spread and fees in tests.
+- Paper cash balance cannot go negative.
+- Real-money portfolios are rejected.
+- Paper trades are audit logged in `paper_trades`.
+
+## Phase 3
+
+Status: next.
 
 Next milestone:
 
-- Commit/push Phase 2 and validate it on the VPS.
+- Add collector run tracking and the first manual/placeholder price collector foundation.
