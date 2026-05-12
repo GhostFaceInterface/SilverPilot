@@ -43,3 +43,12 @@ Phase 1 backend core implemented locally.
 - Added basic `/health` test and development seed command.
 - Validated: pytest passed, Compose config passed, migration ran, API container healthy, `/health` returned database ok.
 - Next: commit/push, pull on VPS, create VPS-local `.env.production` from `.env.example`, and validate VPS Compose config.
+
+Phase 1 pushed and VPS config bootstrap verified.
+
+- Committed and pushed Phase 1 backend core.
+- Updated the VPS repo under `/opt/silverpilot/SilverPilot`.
+- Created VPS-local `.env.production` from `.env.example` without printing file contents.
+- Validated VPS Compose config with `docker compose --env-file .env.production config`.
+- Did not start VPS services because production values still need manual editing.
+- Next: user fills `.env.production`, then run VPS services, migration, seed, and `/health` validation.

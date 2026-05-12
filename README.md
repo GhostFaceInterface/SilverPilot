@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 1 backend core is implemented locally. VPS pull and production env validation are pending.
+Phase 1 backend core is implemented and pushed. VPS repo and Compose config bootstrap are verified.
 
 ## Canonical Sources
 
@@ -37,11 +37,10 @@ Phase 1 backend core is implemented locally. VPS pull and production env validat
 
 Next deployment task:
 
-- Commit and push Phase 1.
-- Pull the latest repo state on the VPS.
-- Create VPS-local `.env.production` from `.env.example` if missing.
 - Fill production secret values manually on the VPS.
-- Run `docker compose --env-file .env.production config`.
+- Start VPS services.
+- Run Alembic migration and seed validation on the VPS.
+- Verify `/health`.
 
 ## Local Validation
 

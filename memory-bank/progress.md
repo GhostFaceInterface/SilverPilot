@@ -20,7 +20,7 @@ Completed:
 
 ## Phase 1
 
-Status: backend core implemented locally; VPS pull/config validation pending.
+Status: backend core implemented and committed; VPS repo/config bootstrap verified.
 
 Completed:
 
@@ -33,11 +33,13 @@ Completed:
 - Basic health endpoint test added and passed.
 - Local Docker Compose API/PostgreSQL validation passed.
 - Development seed command added.
+- Phase 1 commit pushed to GitHub.
+- VPS repo updated to the latest `main`.
+- VPS-local `.env.production` created from `.env.example`.
+- VPS Docker Compose config validated with `.env.production`.
 
 Pending:
 
-- Commit and push Phase 1.
-- Pull latest repo state on VPS.
-- Create VPS-local `.env.production` from `.env.example` if missing.
-- Validate VPS Compose config with `docker compose --env-file .env.production config`.
 - Fill production secret values manually before starting persistent VPS services.
+- Start VPS services.
+- Run VPS Alembic migration and seed validation.

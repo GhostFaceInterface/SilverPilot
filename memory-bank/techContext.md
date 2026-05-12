@@ -37,6 +37,7 @@
 
 - VPS access method: SSH alias `silverpilot-vps`.
 - Usage: `ssh silverpilot-vps`.
+- Current project path on VPS: `/opt/silverpilot/SilverPilot`.
 - Runtime target: Ubuntu VPS with Docker installed.
 - Agents must not read or expose SSH private keys or production secrets.
 - Runtime secrets belong in VPS-local `.env.production`, not in markdown or git.
