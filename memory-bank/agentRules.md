@@ -1,6 +1,6 @@
 # Agent Rules
 
-## Read First
+## Context Loading Protocol
 
 Agents should read only the minimum required context:
 
@@ -8,7 +8,11 @@ Agents should read only the minimum required context:
 - `memory-bank/activeContext.md`
 - `memory-bank/progress.md`
 - `memory-bank/agentRules.md`
-- relevant files under `docs/` or `agents/`
+- `docs/ARCHITECTURE.md`
+- last relevant section of `docs/WORKLOG.md`
+- relevant files under `docs/` or `agents/` only when needed
+
+Do not read the whole repository by default. Search first, then open the smallest relevant file range.
 
 ## Work Limits
 
@@ -19,6 +23,51 @@ Agents should read only the minimum required context:
 - Keep `progress.md` under 200 lines.
 - Keep each `agents/*.md` file under 100 lines.
 - Keep `WORKLOG.md` entries compact.
+- Keep one task scoped to a small deliverable.
+- Do not combine backend, LLM, dashboard, and ML work in one task.
+
+## Task Protocol
+
+Every implementation task should state:
+
+- scope.
+- files likely to change.
+- explicit exclusions.
+- definition of done.
+- validation command or manual validation.
+
+Example scope:
+
+```text
+Phase 1: add FastAPI app, PostgreSQL config, and /health.
+Exclude paper trading, LLM, dashboard, and ML.
+Done when tests pass and /health returns 200.
+```
+
+## Markdown Creation Rule
+
+Creating new markdown files is forbidden unless the user explicitly asks or the existing canonical files cannot hold the information.
+
+Use the canonical homes:
+
+- roadmap: `docs/ROADMAP.md`
+- architecture: `docs/ARCHITECTURE.md`
+- decisions: `docs/DECISIONS.md`
+- data shapes: `docs/DATA_CONTRACTS.md`
+- risk behavior: `docs/RISK_POLICY.md`
+- work log: `docs/WORKLOG.md`
+- active state: `memory-bank/activeContext.md`
+- agent roles: `agents/*.md`
+
+## Definition of Done
+
+A task is not complete until:
+
+- relevant tests or validation are run.
+- secret scan is considered for touched files.
+- no real-money or bank automation path is introduced.
+- canonical docs are updated when behavior changes.
+- `docs/WORKLOG.md` records the verified outcome.
 
 ## Hard Rules
 
@@ -37,4 +86,6 @@ Agents should read only the minimum required context:
 13. Do not use LLM output without schema validation once agents exist.
 14. Do not add real bank automation.
 15. Do not add real-money execution.
-
+16. Keep runtime data out of markdown.
+17. Keep price history, paper trades, agent outputs, reports, and LLM logs in the database once implemented.
+18. Ensure core backend behavior works without LLM availability.

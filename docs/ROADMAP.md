@@ -273,12 +273,21 @@ Rules:
 - Every agent has a max token limit.
 - Every agent has a daily budget limit.
 - Agent output must validate against a schema.
+- Core backend behavior must work if LLM providers are unavailable.
+
+Initial budget targets:
+
+- News Agent: daily max 0.20 USD.
+- Report Agent: daily max 0.10 USD.
+- Risk Agent: daily max 0.30 USD.
+- Audit Agent: weekly max 1.00 USD.
 
 Validation gate:
 
 - LLM calls cannot happen without tracing.
 - Invalid structured output is rejected or retried.
 - Budget limits can block calls.
+- LLM outage test passes for core backend workflows.
 
 ## Phase 7: First Agents
 
@@ -351,10 +360,15 @@ Validation gate:
 - Backtests include spread, tax, and fees.
 - Random train/test split is not used for time series.
 - A strategy that cannot beat buy-and-hold is not treated as successful.
+- Buy-and-hold comparison is mandatory in every strategy report.
 
 ## Phase 9: ML Dataset Automation
 
 Goal: create versioned datasets before training models.
+
+Rule:
+
+- Do not train ML models during the first 30 days of data collection unless explicitly approved.
 
 Pipeline:
 

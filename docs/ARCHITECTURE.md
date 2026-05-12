@@ -24,6 +24,28 @@ docs/ = durable roadmap, architecture, decisions, contracts, policies, and workl
 
 Separate large memory banks per agent are rejected because they create synchronization and duplication risk.
 
+## Development Memory vs Runtime Memory
+
+Development memory is for code-writing agents:
+
+- `memory-bank/`
+- `docs/`
+- `agents/`
+
+Runtime memory belongs in PostgreSQL:
+
+- price history.
+- paper trades.
+- portfolio snapshots.
+- risk decisions.
+- agent outputs.
+- daily reports.
+- LLM traces and usage logs.
+- backtest results.
+- ML dataset versions.
+
+Markdown must not become a storage layer for market data, logs, reports, or agent outputs.
+
 ## Runtime Layers
 
 ```text
@@ -76,6 +98,15 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - Langfuse is required before production agent usage.
 - Instructor/Pydantic structured outputs are required for agent responses.
 - Free-form LLM output must not drive system decisions.
+- Budget guards must block calls after configured limits.
+- Core backend behavior must work when LLM providers are down.
+
+Initial budget guard targets:
+
+- News Agent: daily max 0.20 USD.
+- Report Agent: daily max 0.10 USD.
+- Risk Agent: daily max 0.30 USD.
+- Audit Agent: weekly max 1.00 USD.
 
 ## Deployment Shape
 
@@ -88,4 +119,3 @@ Initial VPS deployment should use Docker Compose:
 - Health checks.
 
 Production hardening is Phase 13, not Phase 1.
-

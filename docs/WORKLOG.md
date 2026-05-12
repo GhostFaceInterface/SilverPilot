@@ -19,3 +19,7 @@ Phase 0 documentation audit.
 
 - Expanded architecture, data contracts, risk policy, decisions, tech context, agent rules, and agent specs.
 - Updated README, AGENTS, and `.env.example` with missing operational guardrails.
+
+Efficiency baseline.
+
+- Added context loading protocol, task definition of done, markdown creation rule, runtime-memory separation, LLM outage requirement, buy-and-hold benchmark rule, and initial agent budget targets.

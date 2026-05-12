@@ -36,3 +36,26 @@ Status: accepted.
 
 Use Streamlit first for speed and observability. Move to Next.js only after backend records and workflows stabilize.
 
+## D-007: Runtime Memory Belongs In PostgreSQL
+
+Status: accepted.
+
+Markdown is development memory for agents and maintainers. Runtime data such as prices, trades, reports, agent outputs, LLM usage, backtests, and dataset versions must be stored in PostgreSQL once implemented.
+
+## D-008: Definition Of Done Is Required
+
+Status: accepted.
+
+Implementation tasks must define scope, exclusions, validation, and completion criteria before work starts. A task is not complete until validation runs and `docs/WORKLOG.md` is updated.
+
+## D-009: LLM Outage Must Not Break Core System
+
+Status: accepted.
+
+The backend must continue collecting data, calculating portfolio state, running risk rules, and serving dashboard data without LLM provider availability.
+
+## D-010: Agent Budget Guards Are Mandatory
+
+Status: accepted.
+
+Production agent calls must enforce token and cost limits. Strong model usage should be rare, justified, and traceable.

@@ -9,6 +9,8 @@ This file is the canonical place for durable entity and payload contracts. Exact
 - Keep raw data separate from normalized data.
 - Never store secrets in database rows.
 - Track source name and collection run for imported data.
+- Store runtime records in PostgreSQL, not markdown.
+- Keep markdown limited to development memory and durable documentation.
 
 ## Initial Entities
 
@@ -141,9 +143,19 @@ Planned raw tables:
 - `raw_events`
 - `collector_runs`
 
+Planned runtime tables:
+
+- paper trades.
+- portfolio snapshots.
+- risk decisions.
+- agent outputs.
+- daily reports.
+- LLM usage logs.
+- backtest results.
+- ML dataset versions.
+
 Validation rules:
 
 - Duplicate source rows must be rejected or marked.
 - Collector failure must be visible in `collector_runs`.
 - Raw rows are not deleted during normal operation.
-
