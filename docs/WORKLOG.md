@@ -61,3 +61,12 @@ Phase 1 VPS runtime verified.
 - VPS `/health` returned production `database: ok` and `real_money_enabled: false`.
 - Observed an editor swap file from env editing; added gitignore coverage for swap files.
 - Next: begin Phase 2 paper-trading engine.
+
+Phase 2 paper-trading core implemented locally.
+
+- Added deterministic paper-trading service for `paper_buy`, `paper_sell`, `hold`, and `blocked`.
+- Added `/paper-trades` and `/paper-trades/position` API endpoints.
+- Paper trades update virtual cash and create portfolio snapshots.
+- Tests passed for spread/fee loss, negative-balance protection, and real-money portfolio rejection.
+- Local API image rebuilt and `/health` validation passed.
+- Next: deploy Phase 2 to the VPS and run a paper-trade smoke test.

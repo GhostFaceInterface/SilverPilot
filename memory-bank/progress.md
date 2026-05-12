@@ -49,8 +49,18 @@ Validation:
 
 ## Phase 2
 
-Status: next.
+Status: in progress.
+
+Completed:
+
+- Added paper-trading service for virtual buy/sell/hold/blocked records.
+- Added `POST /paper-trades`.
+- Added `GET /paper-trades/position`.
+- Added portfolio snapshot creation after paper-trade actions.
+- Added tests for spread/fee loss, negative-balance protection, and real-money portfolio rejection.
+- Local pytest passed.
+- Local Docker API rebuild and `/health` validation passed.
 
 Next milestone:
 
-- Implement paper-trading service, portfolio accounting, trade validation, and tests.
+- Commit/push Phase 2 and validate it on the VPS.

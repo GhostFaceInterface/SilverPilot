@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 1: backend core complete on local and VPS.
+Phase 2: paper-trading engine started.
 
 ## Current State
 
@@ -13,6 +13,11 @@ Phase 1: backend core complete on local and VPS.
 - PostgreSQL connection and Alembic migration setup exist.
 - Initial SQLAlchemy models exist for Phase 1 entities.
 - Initial API endpoints exist: `/health`, `/portfolio`, `/prices/latest`, `/signals/latest`, `/reports/daily/latest`.
+- Paper-trading service exists for `paper_buy`, `paper_sell`, `hold`, and `blocked` records.
+- Paper-trading API endpoint exists at `POST /paper-trades`.
+- Paper position endpoint exists at `GET /paper-trades/position`.
+- Paper trades update virtual cash balance and create portfolio snapshots.
+- Local tests validate spread/fee loss, negative-balance protection, and real-money portfolio rejection.
 - Local Docker Compose API/PostgreSQL validation passed.
 - VPS repo was updated to the latest `main` commit.
 - VPS-local `.env.production` was created from `.env.example` without printing secrets.
@@ -37,9 +42,10 @@ Phase 1: backend core complete on local and VPS.
 
 Pending:
 
+- Deploy Phase 2 code to VPS and validate `/paper-trades` against production containers.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
 - Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Start Phase 2: implement the deterministic paper-trading engine for the 600 USD virtual portfolio.
+Commit/push Phase 2, pull it on the VPS, rebuild the API container, and run a paper-trade smoke test.
