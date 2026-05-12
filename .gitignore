@@ -9,6 +9,8 @@ htmlcov/
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 
@@ -28,4 +30,3 @@ notebooks/*
 # Logs
 *.log
 logs/
-
