@@ -79,3 +79,13 @@ Phase 2 deployed and verified on VPS.
 - VPS `POST /paper-trades` smoke test created a `hold` audit record.
 - VPS `/paper-trades/position` showed 600 USD cash and 0 XAG.
 - Next: begin Phase 3 data collector foundations.
+
+Phase 3 collector foundation implemented locally.
+
+- Added collector run tracking and raw collector tables.
+- Added manual bank/global price ingestion into raw tables plus normalized `price_snapshots`.
+- Added latest collector run endpoint.
+- Added duplicate detection for price observations.
+- Tests passed for ingestion, duplicate handling, and spread validation.
+- Local migration, API rebuild, `/health`, collector run, and latest price checks passed.
+- Next: deploy Phase 3 migration and smoke test manual ingestion on VPS.

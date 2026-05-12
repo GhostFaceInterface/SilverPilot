@@ -134,14 +134,59 @@ Allowed actions:
 
 ## Collector Tables
 
-Planned raw tables:
+### CollectorRun
+
+- `id`
+- `collector_name`
+- `source`
+- `status`
+- `records_seen`
+- `records_inserted`
+- `duplicates`
+- `error_message`
+- `started_at`
+- `finished_at`
+- `details_json`
+
+### Raw Collector Tables
+
+Implemented raw tables:
 
 - `raw_bank_prices`
 - `raw_global_prices`
 - `raw_fx_rates`
 - `raw_news`
 - `raw_events`
-- `collector_runs`
+
+### Raw Price Tables
+
+Price tables:
+
+- `raw_bank_prices`
+- `raw_global_prices`
+
+Shared fields:
+
+- `id`
+- `collector_run_id`
+- `asset_id`
+- `source`
+- `buy_price`
+- `sell_price`
+- `currency`
+- `observed_at`
+- `payload_json`
+- `created_at`
+
+Duplicate guard:
+
+- one row per `asset_id`, `source`, and `observed_at`.
+
+### Other Raw Table Minimum Fields
+
+- FX rows keep source, currency pair, rate, observed timestamp, and raw payload.
+- News rows keep source, title, URL, publish timestamp, and raw payload.
+- Event rows keep source, event type, observed timestamp, and raw payload.
 
 Planned runtime tables:
 

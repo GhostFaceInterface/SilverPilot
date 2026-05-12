@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -35,6 +35,113 @@ class PriceSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     asset: Mapped[Asset] = relationship(back_populates="price_snapshots")
+
+
+class CollectorRun(Base):
+    __tablename__ = "collector_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collector_name: Mapped[str] = mapped_column(String(128), index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    records_seen: Mapped[int] = mapped_column(default=0)
+    records_inserted: Mapped[int] = mapped_column(default=0)
+    duplicates: Mapped[int] = mapped_column(default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class RawBankPrice(Base):
+    __tablename__ = "raw_bank_prices"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "source", "observed_at", name="uq_raw_bank_prices_asset_source_observed"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    buy_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    sell_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    currency: Mapped[str] = mapped_column(String(8))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    asset: Mapped[Asset] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
+
+
+class RawGlobalPrice(Base):
+    __tablename__ = "raw_global_prices"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "source", "observed_at", name="uq_raw_global_prices_asset_source_observed"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    buy_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    sell_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    currency: Mapped[str] = mapped_column(String(8))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    asset: Mapped[Asset] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
+
+
+class RawFxRate(Base):
+    __tablename__ = "raw_fx_rates"
+    __table_args__ = (
+        UniqueConstraint("source", "base_currency", "quote_currency", "observed_at", name="uq_raw_fx_source_pair_observed"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    base_currency: Mapped[str] = mapped_column(String(8))
+    quote_currency: Mapped[str] = mapped_column(String(8))
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    collector_run: Mapped[CollectorRun] = relationship()
+
+
+class RawNews(Base):
+    __tablename__ = "raw_news"
+    __table_args__ = (UniqueConstraint("source", "url", name="uq_raw_news_source_url"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    collector_run: Mapped[CollectorRun] = relationship()
+
+
+class RawEvent(Base):
+    __tablename__ = "raw_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collector_run_id: Mapped[int | None] = mapped_column(ForeignKey("collector_runs.id"), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    collector_run: Mapped[CollectorRun | None] = relationship()
 
 
 class Portfolio(Base):

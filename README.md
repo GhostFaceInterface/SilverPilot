@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 2 paper-trading engine is implemented and validated on the VPS.
+Phase 3 data collector foundations are in progress.
 
 ## Canonical Sources
 
@@ -37,9 +37,9 @@ Phase 2 paper-trading engine is implemented and validated on the VPS.
 
 Next implementation task:
 
-- Start Phase 3 data collector foundations.
-- Add collector run tracking and first price ingestion structure.
-- Keep LLM and ML deferred.
+- Deploy Phase 3 collector migration to the VPS.
+- Rebuild the API container.
+- Run manual price ingestion smoke test.
 
 ## Local Validation
 
@@ -50,6 +50,8 @@ docker compose run --rm api alembic upgrade head
 docker compose up -d api
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/paper-trades/position
+curl -fsS http://127.0.0.1:8000/collectors/runs/latest
+curl -fsS http://127.0.0.1:8000/prices/latest
 ```
 
 ## VPS Validation

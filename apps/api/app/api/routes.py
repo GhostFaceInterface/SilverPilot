@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
-from app.models import Asset, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
+from app.collectors.service import CollectorError, ingest_manual_price, latest_collector_run
+from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
+from app.schemas.collectors import CollectorRunPayload, ManualPriceIngestRequest, ManualPriceIngestResponse
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 
@@ -112,13 +114,69 @@ def get_latest_price(db: Session = Depends(get_db)):
         return {"price": None}
     return {
         "price": {
+            "id": snapshot.id,
             "asset_id": snapshot.asset_id,
             "source": snapshot.source,
             "buy_price": str(snapshot.buy_price),
             "sell_price": str(snapshot.sell_price),
+            "mid_price": str(snapshot.mid_price),
             "currency": snapshot.currency,
+            "spread_absolute": str(snapshot.spread_absolute),
+            "spread_percent": str(snapshot.spread_percent),
             "observed_at": snapshot.observed_at,
         }
+    }
+
+
+@router.post("/collectors/manual-price", response_model=ManualPriceIngestResponse)
+def create_manual_price(
+    request: ManualPriceIngestRequest,
+    db: Session = Depends(get_db),
+) -> ManualPriceIngestResponse:
+    try:
+        run, raw_inserted, snapshot = ingest_manual_price(db, request)
+    except CollectorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ManualPriceIngestResponse(
+        collector_run=_collector_run_payload(run),
+        raw_inserted=raw_inserted,
+        price_snapshot=_price_snapshot_payload(snapshot) if snapshot is not None else None,
+    )
+
+
+@router.get("/collectors/runs/latest", response_model=CollectorRunPayload | None)
+def get_latest_collector_run(db: Session = Depends(get_db)) -> CollectorRunPayload | None:
+    run = latest_collector_run(db)
+    return _collector_run_payload(run) if run is not None else None
+
+
+def _collector_run_payload(run: CollectorRun) -> dict:
+    return {
+        "id": run.id,
+        "collector_name": run.collector_name,
+        "source": run.source,
+        "status": run.status,
+        "records_seen": run.records_seen,
+        "records_inserted": run.records_inserted,
+        "duplicates": run.duplicates,
+        "error_message": run.error_message,
+        "started_at": run.started_at,
+        "finished_at": run.finished_at,
+    }
+
+
+def _price_snapshot_payload(snapshot: PriceSnapshot) -> dict:
+    return {
+        "id": snapshot.id,
+        "asset_id": snapshot.asset_id,
+        "source": snapshot.source,
+        "buy_price": snapshot.buy_price,
+        "sell_price": snapshot.sell_price,
+        "mid_price": snapshot.mid_price,
+        "currency": snapshot.currency,
+        "spread_absolute": snapshot.spread_absolute,
+        "spread_percent": snapshot.spread_percent,
+        "observed_at": snapshot.observed_at,
     }
 
 

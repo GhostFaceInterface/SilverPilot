@@ -75,8 +75,20 @@ Validation:
 
 ## Phase 3
 
-Status: next.
+Status: in progress.
+
+Completed:
+
+- Added `collector_runs`.
+- Added raw collector tables for bank prices, global prices, FX rates, news, and events.
+- Added `0002_collector_foundation` Alembic migration.
+- Added manual bank/global price ingestion service.
+- Added `POST /collectors/manual-price`.
+- Added `GET /collectors/runs/latest`.
+- Added tests for raw/normalized price writes, duplicate detection, and inverted spread rejection.
+- Local pytest passed.
+- Local Alembic migration, API rebuild, `/health`, collector run, and latest price validations passed.
 
 Next milestone:
 
-- Add collector run tracking and the first manual/placeholder price collector foundation.
+- Commit/push Phase 3 and validate migration plus manual ingestion on the VPS.
