@@ -11,10 +11,12 @@ Completed:
 - Controlled docs structure.
 - Agent spec placeholders.
 - API and dashboard folder skeletons.
+- Git repository initialized.
+- Initial commit pushed to GitHub.
+- Full canonical roadmap written to `docs/ROADMAP.md`.
 
 Pending:
 
-- Git initialization, if desired.
 - Backend dependency selection lock.
 - FastAPI health endpoint implementation.
 - Database migration setup.

@@ -10,10 +10,10 @@ Phase 0: root skeleton and documentation discipline.
 - Canonical memory bank structure exists.
 - Agent-specific short spec files exist.
 - FastAPI module skeleton exists without business logic.
+- Full canonical roadmap exists in `docs/ROADMAP.md`.
 - No real-money integration exists.
 - No bank automation exists.
 
 ## Next Step
 
-After VPS purchase, continue with deployment-ready environment planning and Phase 1 backend setup.
-
+After VPS purchase, decide deployment baseline and continue with Phase 1 backend setup.
