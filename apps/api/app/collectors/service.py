@@ -1,10 +1,12 @@
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawGlobalPrice
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice
 from app.schemas.collectors import ManualPriceIngestRequest
 
 PRICE_QUANT = Decimal("0.000001")
@@ -12,6 +14,16 @@ PRICE_QUANT = Decimal("0.000001")
 
 class CollectorError(ValueError):
     pass
+
+
+def payload_hash(payload: bytes | str | dict) -> str:
+    if isinstance(payload, bytes):
+        raw = payload
+    elif isinstance(payload, str):
+        raw = payload.encode("utf-8")
+    else:
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def ingest_manual_price(db: Session, request: ManualPriceIngestRequest) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
@@ -57,6 +69,9 @@ def ingest_manual_price(db: Session, request: ManualPriceIngestRequest) -> tuple
         sell_price=_price(request.sell_price),
         currency=request.currency.upper(),
         observed_at=observed_at,
+        fetched_at=datetime.now(UTC),
+        raw_payload_hash=payload_hash(request.payload),
+        parser_version="manual-v1",
         payload_json=request.payload,
     )
     db.add(raw)
@@ -84,6 +99,281 @@ def ingest_manual_price(db: Session, request: ManualPriceIngestRequest) -> tuple
     db.refresh(run)
     db.refresh(snapshot)
     return run, True, snapshot
+
+
+def ingest_global_price(
+    db: Session,
+    *,
+    source: str,
+    asset_symbol: str,
+    buy_price: Decimal,
+    sell_price: Decimal,
+    currency: str,
+    observed_at: datetime,
+    fetched_at: datetime,
+    payload: dict,
+    raw_payload: str,
+    parser_version: str,
+    collector_name: str,
+) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
+    asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
+    if asset is None:
+        raise CollectorError(f"Asset not found: {asset_symbol}")
+
+    observed_at = _utc(observed_at)
+    fetched_at = _utc(fetched_at)
+    run = start_collector_run(
+        db,
+        collector_name=collector_name,
+        source=source,
+        records_seen=1,
+        details_json={"asset_symbol": asset_symbol, "currency": currency.upper()},
+    )
+    duplicate = db.execute(
+        select(RawGlobalPrice).where(
+            RawGlobalPrice.asset_id == asset.id,
+            RawGlobalPrice.source == source,
+            RawGlobalPrice.observed_at == observed_at,
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        finish_collector_run(db, run, status="success", duplicates=1)
+        db.commit()
+        db.refresh(run)
+        return run, False, None
+
+    raw_hash = payload_hash(raw_payload)
+    raw = RawGlobalPrice(
+        collector_run_id=run.id,
+        asset_id=asset.id,
+        source=source,
+        buy_price=_price(buy_price),
+        sell_price=_price(sell_price),
+        currency=currency.upper(),
+        observed_at=observed_at,
+        fetched_at=fetched_at,
+        raw_payload_hash=raw_hash,
+        parser_version=parser_version,
+        payload_json=payload,
+    )
+    db.add(raw)
+
+    spread_absolute = _price(buy_price - sell_price)
+    mid_price = _price((buy_price + sell_price) / Decimal("2"))
+    spread_percent = _price((spread_absolute / mid_price) * Decimal("100")) if mid_price > 0 else Decimal("0.000000")
+    snapshot = PriceSnapshot(
+        asset_id=asset.id,
+        source=source,
+        buy_price=_price(buy_price),
+        sell_price=_price(sell_price),
+        mid_price=mid_price,
+        currency=currency.upper(),
+        spread_absolute=spread_absolute,
+        spread_percent=spread_percent,
+        observed_at=observed_at,
+    )
+    db.add(snapshot)
+
+    finish_collector_run(db, run, status="success", records_inserted=1)
+    db.commit()
+    db.refresh(run)
+    db.refresh(snapshot)
+    return run, True, snapshot
+
+
+def ingest_bank_price(
+    db: Session,
+    *,
+    source: str,
+    asset_symbol: str,
+    buy_price: Decimal,
+    sell_price: Decimal,
+    currency: str,
+    observed_at: datetime,
+    fetched_at: datetime,
+    payload: dict,
+    raw_payload: str,
+    parser_version: str,
+    collector_name: str,
+) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
+    asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
+    if asset is None:
+        raise CollectorError(f"Asset not found: {asset_symbol}")
+
+    observed_at = _utc(observed_at)
+    fetched_at = _utc(fetched_at)
+    run = start_collector_run(
+        db,
+        collector_name=collector_name,
+        source=source,
+        records_seen=1,
+        details_json={"asset_symbol": asset_symbol, "currency": currency.upper()},
+    )
+    duplicate = db.execute(
+        select(RawBankPrice).where(
+            RawBankPrice.asset_id == asset.id,
+            RawBankPrice.source == source,
+            RawBankPrice.observed_at == observed_at,
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        finish_collector_run(db, run, status="success", duplicates=1)
+        db.commit()
+        db.refresh(run)
+        return run, False, None
+
+    db.add(
+        RawBankPrice(
+            collector_run_id=run.id,
+            asset_id=asset.id,
+            source=source,
+            buy_price=_price(buy_price),
+            sell_price=_price(sell_price),
+            currency=currency.upper(),
+            observed_at=observed_at,
+            fetched_at=fetched_at,
+            raw_payload_hash=payload_hash(raw_payload),
+            parser_version=parser_version,
+            payload_json=payload,
+        )
+    )
+
+    spread_absolute = _price(buy_price - sell_price)
+    mid_price = _price((buy_price + sell_price) / Decimal("2"))
+    spread_percent = _price((spread_absolute / mid_price) * Decimal("100")) if mid_price > 0 else Decimal("0.000000")
+    snapshot = PriceSnapshot(
+        asset_id=asset.id,
+        source=source,
+        buy_price=_price(buy_price),
+        sell_price=_price(sell_price),
+        mid_price=mid_price,
+        currency=currency.upper(),
+        spread_absolute=spread_absolute,
+        spread_percent=spread_percent,
+        observed_at=observed_at,
+    )
+    db.add(snapshot)
+
+    finish_collector_run(db, run, status="success", records_inserted=1)
+    db.commit()
+    db.refresh(run)
+    db.refresh(snapshot)
+    return run, True, snapshot
+
+
+def ingest_fx_rate(
+    db: Session,
+    *,
+    source: str,
+    base_currency: str,
+    quote_currency: str,
+    rate: Decimal,
+    observed_at: datetime,
+    fetched_at: datetime,
+    payload: dict,
+    raw_payload: str,
+    parser_version: str,
+    collector_name: str,
+) -> tuple[CollectorRun, bool]:
+    observed_at = _utc(observed_at)
+    fetched_at = _utc(fetched_at)
+    source = source.lower()
+    base_currency = base_currency.upper()
+    quote_currency = quote_currency.upper()
+    run = start_collector_run(
+        db,
+        collector_name=collector_name,
+        source=source,
+        records_seen=1,
+        details_json={"base_currency": base_currency, "quote_currency": quote_currency},
+    )
+    duplicate = db.execute(
+        select(RawFxRate).where(
+            RawFxRate.source == source,
+            RawFxRate.base_currency == base_currency,
+            RawFxRate.quote_currency == quote_currency,
+            RawFxRate.observed_at == observed_at,
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        finish_collector_run(db, run, status="success", duplicates=1)
+        db.commit()
+        db.refresh(run)
+        return run, False
+
+    db.add(
+        RawFxRate(
+            collector_run_id=run.id,
+            source=source,
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+            rate=_price(rate),
+            observed_at=observed_at,
+            fetched_at=fetched_at,
+            raw_payload_hash=payload_hash(raw_payload),
+            parser_version=parser_version,
+            payload_json=payload,
+        )
+    )
+    finish_collector_run(db, run, status="success", records_inserted=1)
+    db.commit()
+    db.refresh(run)
+    return run, True
+
+
+def start_collector_run(
+    db: Session,
+    *,
+    collector_name: str,
+    source: str,
+    records_seen: int = 0,
+    details_json: dict | None = None,
+) -> CollectorRun:
+    run = CollectorRun(
+        collector_name=collector_name,
+        source=source,
+        status="running",
+        records_seen=records_seen,
+        records_inserted=0,
+        duplicates=0,
+        details_json=details_json or {},
+    )
+    db.add(run)
+    db.flush()
+    return run
+
+
+def finish_collector_run(
+    db: Session,
+    run: CollectorRun,
+    *,
+    status: str,
+    records_inserted: int = 0,
+    duplicates: int = 0,
+    error_message: str | None = None,
+) -> CollectorRun:
+    run.status = status
+    run.records_inserted = records_inserted
+    run.duplicates = duplicates
+    run.error_message = error_message
+    run.finished_at = datetime.now(UTC)
+    db.flush()
+    return run
+
+
+def record_failed_run(
+    db: Session,
+    *,
+    collector_name: str,
+    source: str,
+    error_message: str,
+    details_json: dict | None = None,
+) -> CollectorRun:
+    run = start_collector_run(db, collector_name=collector_name, source=source, details_json=details_json)
+    finish_collector_run(db, run, status="failed", error_message=error_message)
+    db.commit()
+    db.refresh(run)
+    return run
 
 
 def latest_collector_run(db: Session) -> CollectorRun | None:

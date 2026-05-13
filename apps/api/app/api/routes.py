@@ -4,11 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
+from app.collectors.public_sources import collect_kuveyt_public_silver, collect_stooq_xag_usd, collect_tcmb_usd_try
 from app.collectors.service import CollectorError, collector_health, ingest_manual_price, latest_collector_run
 from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.schemas.collectors import (
     CollectorHealthResponse,
+    CollectorRunResultResponse,
     CollectorRunPayload,
     ManualPriceIngestRequest,
     ManualPriceIngestResponse,
@@ -146,6 +148,36 @@ def create_manual_price(
         collector_run=_collector_run_payload(run),
         raw_inserted=raw_inserted,
         price_snapshot=_price_snapshot_payload(snapshot) if snapshot is not None else None,
+    )
+
+
+@router.post("/collectors/kuveyt-silver/run", response_model=CollectorRunResultResponse)
+def run_kuveyt_silver_collector(db: Session = Depends(get_db)) -> CollectorRunResultResponse:
+    run, raw_inserted, snapshot = collect_kuveyt_public_silver(db)
+    return CollectorRunResultResponse(
+        collector_run=_collector_run_payload(run),
+        raw_inserted=raw_inserted,
+        price_snapshot=_price_snapshot_payload(snapshot) if snapshot is not None else None,
+    )
+
+
+@router.post("/collectors/stooq-xag-usd/run", response_model=CollectorRunResultResponse)
+def run_stooq_xag_usd_collector(db: Session = Depends(get_db)) -> CollectorRunResultResponse:
+    run, raw_inserted, snapshot = collect_stooq_xag_usd(db)
+    return CollectorRunResultResponse(
+        collector_run=_collector_run_payload(run),
+        raw_inserted=raw_inserted,
+        price_snapshot=_price_snapshot_payload(snapshot) if snapshot is not None else None,
+    )
+
+
+@router.post("/collectors/tcmb-usd-try/run", response_model=CollectorRunResultResponse)
+def run_tcmb_usd_try_collector(db: Session = Depends(get_db)) -> CollectorRunResultResponse:
+    run, raw_inserted = collect_tcmb_usd_try(db)
+    return CollectorRunResultResponse(
+        collector_run=_collector_run_payload(run),
+        raw_inserted=raw_inserted,
+        price_snapshot=None,
     )
 
 

@@ -99,3 +99,6 @@ A task is not complete until:
 16. Keep runtime data out of markdown.
 17. Keep price history, paper trades, agent outputs, reports, and LLM logs in the database once implemented.
 18. Ensure core backend behavior works without LLM availability.
+19. Do not enable paid market-data APIs during MVP.
+20. Public-source collectors must use polite polling and must fail visibly when parsing fails.
+21. Do not bypass login, captcha, paywall, anti-bot controls, robots restrictions, or private endpoints.

@@ -57,6 +57,12 @@ class ManualPriceIngestResponse(BaseModel):
     price_snapshot: PriceSnapshotPayload | None
 
 
+class CollectorRunResultResponse(BaseModel):
+    collector_run: CollectorRunPayload
+    raw_inserted: bool
+    price_snapshot: PriceSnapshotPayload | None = None
+
+
 class CollectorHealthItem(BaseModel):
     collector_name: str
     source: str

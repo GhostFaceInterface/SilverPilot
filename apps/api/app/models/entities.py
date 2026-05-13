@@ -67,6 +67,9 @@ class RawBankPrice(Base):
     sell_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     currency: Mapped[str] = mapped_column(String(8))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    parser_version: Mapped[str] = mapped_column(String(64))
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -88,6 +91,9 @@ class RawGlobalPrice(Base):
     sell_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     currency: Mapped[str] = mapped_column(String(8))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    parser_version: Mapped[str] = mapped_column(String(64))
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -108,6 +114,9 @@ class RawFxRate(Base):
     quote_currency: Mapped[str] = mapped_column(String(8))
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    parser_version: Mapped[str] = mapped_column(String(64))
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -124,6 +133,9 @@ class RawNews(Base):
     title: Mapped[str] = mapped_column(Text)
     url: Mapped[str] = mapped_column(Text)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    parser_version: Mapped[str] = mapped_column(String(64))
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -139,6 +151,9 @@ class RawEvent(Base):
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    parser_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     collector_run: Mapped[CollectorRun | None] = relationship()

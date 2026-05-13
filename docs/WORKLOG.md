@@ -116,3 +116,20 @@ Phase 3 scheduled collector support deployed on VPS.
 - VPS one-shot collector runner wrote a successful collector run and price snapshot.
 - Collector profile remains opt-in, not continuously running by default.
 - Next: select and implement the first real configurable price source collector.
+
+Phase 3 free-source data policy updated.
+
+- Set MVP source policy to free/public-source first; paid market-data APIs remain disabled.
+- Added public collector rules for no login/bypass, polite polling, raw payload hashes, parser versioning, and visible failures.
+- Classified primary MVP candidates as Kuveyt Türk public page POC, TCMB daily XML, Stooq XAG/USD quote, Fed RSS, BLS, and FRED.
+- Kept Yahoo Finance and Investing as diagnostic/fallback only.
+- Added no-cost API-key setup to the Phase 3.1 todo list for BLS and FRED; key values must remain outside markdown and git.
+
+Phase 3.1 public-source collectors implemented locally.
+
+- Added collector audit fields for `fetched_at`, `raw_payload_hash`, and `parser_version`.
+- Added Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML collectors.
+- Added runner job selection and API run endpoints for the new collectors.
+- Added optional no-cost `BLS_API_KEY` and `FRED_API_KEY` placeholders without enabling paid APIs.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config`, and `compileall`.
+- Next: commit/push, pull on VPS, run migration `0003`, then smoke test TCMB/Stooq/Kuveyt collector runs.

@@ -91,6 +91,16 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - All event timestamps are stored in UTC.
 - Dataset versions are created before ML training.
 
+## MVP Data Source Policy
+
+- Paid market-data APIs are disabled for MVP.
+- Official free sources are preferred.
+- Free API keys are allowed when the provider does not charge for the required tier; key values stay in local env files only.
+- Public pages may be collected only when no login, captcha bypass, paywall bypass, anti-bot bypass, or private endpoint reverse engineering is involved.
+- Third-party public pages are fallback or comparison sources unless explicitly approved.
+- Public collectors must use polite polling, honest User-Agent headers, selector-failure detection, raw payload hashes, and visible collector failures.
+- Robots/ToS uncertainty must be recorded as medium or high source risk.
+
 ## LLM Pattern
 
 - OpenRouter is the first provider gateway.

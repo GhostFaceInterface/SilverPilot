@@ -22,6 +22,9 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 - realized daily PnL.
 - realized weekly PnL.
 - data freshness.
+- source reliability.
+- parser status.
+- source legal/ToS risk.
 - expected net return after costs.
 
 ## Initial Block Reasons
@@ -34,8 +37,18 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 - `EXPECTED_GAIN_BELOW_COST`
 - `STALE_DATA`
 - `MISSING_DATA`
+- `SOURCE_RISK_TOO_HIGH`
+- `PARSER_FAILURE`
 - `INSUFFICIENT_CASH`
 - `POSITION_LIMIT_REACHED`
+
+## Data Quality Policy
+
+- Selector/parser failure blocks fresh decisions and marks the source stale.
+- Last successful prices may be displayed as stale context, but must not be treated as a fresh decision input.
+- Official free sources rank above third-party public pages.
+- Paid market-data API sources are disabled during MVP and cannot be required for a risk decision.
+- Tax/BSMV rules stay configurable and are not legal or tax advice.
 
 ## Decision Output
 
@@ -62,4 +75,3 @@ Allowed decisions:
 - Every paper trade references a risk decision.
 - Stale or missing data blocks action.
 - Tests cover spread, loss limit, stale data, and insufficient cash cases.
-

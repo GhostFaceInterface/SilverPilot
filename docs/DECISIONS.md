@@ -65,3 +65,9 @@ Production agent calls must enforce token and cost limits. Strong model usage sh
 Status: accepted.
 
 VPS access for deployment work uses local SSH alias `silverpilot-vps`. This avoids exposing IP addresses or private connection details in prompts and keeps agent instructions stable.
+
+## D-012: Free Public Data Sources First For MVP
+
+Status: accepted.
+
+Paid market-data APIs are disabled for MVP. Collectors may use official free APIs, public pages, RSS feeds, and no-cost API-key tiers only when no login bypass, paid access, private endpoint reverse engineering, or aggressive scraping is required.

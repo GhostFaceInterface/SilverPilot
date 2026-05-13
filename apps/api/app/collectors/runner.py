@@ -4,6 +4,7 @@ import time
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from app.collectors.public_sources import collect_kuveyt_public_silver, collect_stooq_xag_usd, collect_tcmb_usd_try
 from app.collectors.service import ingest_manual_price
 from app.core.db import SessionLocal
 from app.schemas.collectors import ManualPriceIngestRequest
@@ -12,6 +13,29 @@ from app.schemas.collectors import ManualPriceIngestRequest
 def run_once(args: argparse.Namespace) -> None:
     db = SessionLocal()
     try:
+        if args.job == "kuveyt-silver":
+            run, raw_inserted, snapshot = collect_kuveyt_public_silver(db)
+            snapshot_id = snapshot.id if snapshot is not None else None
+            print(
+                f"collector_run_id={run.id} status={run.status} "
+                f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
+                flush=True,
+            )
+            return
+        if args.job == "stooq-xag-usd":
+            run, raw_inserted, snapshot = collect_stooq_xag_usd(db)
+            snapshot_id = snapshot.id if snapshot is not None else None
+            print(
+                f"collector_run_id={run.id} status={run.status} "
+                f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
+                flush=True,
+            )
+            return
+        if args.job == "tcmb-usd-try":
+            run, raw_inserted = collect_tcmb_usd_try(db)
+            print(f"collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}", flush=True)
+            return
+
         request = ManualPriceIngestRequest(
             source_type=args.source_type,
             source=args.source,
@@ -37,6 +61,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run SilverPilot collector jobs.")
     parser.add_argument("--loop", action="store_true", help="Run continuously.")
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "900")))
+    parser.add_argument(
+        "--job",
+        choices=["manual", "kuveyt-silver", "stooq-xag-usd", "tcmb-usd-try"],
+        default=os.getenv("COLLECTOR_JOB", "manual"),
+    )
     parser.add_argument("--source-type", choices=["bank", "global"], default=os.getenv("MANUAL_PRICE_SOURCE_TYPE", "bank"))
     parser.add_argument("--source", default=os.getenv("MANUAL_PRICE_SOURCE", "manual-scheduled"))
     parser.add_argument("--asset-symbol", default=os.getenv("MANUAL_PRICE_ASSET_SYMBOL", "XAG"))

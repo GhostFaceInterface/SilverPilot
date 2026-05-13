@@ -1,11 +1,21 @@
+from datetime import UTC, datetime
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
+import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.collectors.public_sources import (
+    collect_stooq_xag_usd,
+    collect_tcmb_usd_try,
+    parse_kuveyt_public_silver_html,
+)
+from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice
 
 
 def make_client():
@@ -63,7 +73,9 @@ def test_manual_bank_price_ingest_writes_raw_and_normalized_rows():
     db = testing_session()
     try:
         assert db.query(CollectorRun).count() == 1
-        assert db.query(RawBankPrice).count() == 1
+        raw = db.query(RawBankPrice).one()
+        assert raw.raw_payload_hash
+        assert raw.parser_version == "manual-v1"
         assert db.query(PriceSnapshot).count() == 1
     finally:
         db.close()
@@ -163,3 +175,82 @@ def test_collector_health_rejects_invalid_stale_threshold():
     response = client.get("/collectors/health?stale_after_minutes=0")
 
     assert response.status_code == 400
+
+
+def test_stooq_xag_usd_collector_writes_global_price_and_snapshot():
+    _, testing_session = make_client()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["user-agent"].startswith("SilverPilot/")
+        return httpx.Response(
+            200,
+            text=(
+                "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+                "XAGUSD,2026-05-13,11:47:16,86.619,87.799,85.697,86.595,\n"
+            ),
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        run, raw_inserted, snapshot = collect_stooq_xag_usd(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert str(snapshot.mid_price) == "86.595000"
+        raw = db.query(RawGlobalPrice).one()
+        assert raw.source == "stooq-xagusd-csv"
+        assert raw.raw_payload_hash
+        assert raw.parser_version == "stooq-xagusd-csv-v1"
+    finally:
+        client.close()
+        db.close()
+
+
+def test_tcmb_usd_try_collector_writes_fx_rate():
+    _, testing_session = make_client()
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Tarih_Date Tarih="12.05.2026">
+  <Currency CurrencyCode="USD">
+    <ForexBuying>38.7000</ForexBuying>
+    <ForexSelling>38.8000</ForexSelling>
+  </Currency>
+</Tarih_Date>
+"""
+
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=xml)))
+    db = testing_session()
+    try:
+        run, raw_inserted = collect_tcmb_usd_try(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        raw = db.query(RawFxRate).one()
+        assert raw.source == "tcmb-today-xml"
+        assert raw.base_currency == "USD"
+        assert raw.quote_currency == "TRY"
+        assert str(raw.rate) == "38.750000"
+        assert raw.raw_payload_hash
+        assert raw.parser_version == "tcmb-today-xml-v1"
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_public_silver_parser_maps_bank_spread_to_user_prices():
+    parsed = parse_kuveyt_public_silver_html(
+        """
+        <html>
+          <body>
+            <span>Gram Gümüş Alış</span><strong>42,10</strong>
+            <span>Gram Gümüş Satış</span><strong>43,25</strong>
+          </body>
+        </html>
+        """,
+        fetched_at=datetime(2026, 5, 13, 12, 0, tzinfo=UTC),
+    )
+
+    assert parsed.currency == "TRY"
+    assert parsed.buy_price == Decimal("43.25")
+    assert parsed.sell_price == Decimal("42.10")

@@ -104,7 +104,12 @@ Completed:
 - VPS API container rebuilt successfully.
 - VPS runner one-shot validation passed.
 - VPS collector health endpoint returned `ok`.
+- MVP data source policy set to free/public-source first; paid market-data APIs are disabled.
+- Added `0003_add_collector_audit_fields` migration locally for `fetched_at`, `raw_payload_hash`, and `parser_version`.
+- Added local Phase 3.1 collectors for Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML.
+- Added no-cost BLS/FRED key placeholders; collectors remain disabled until their implementation/key configuration.
+- Local Phase 3.1 tests passed.
 
 Next milestone:
 
-- Select and implement the first real configurable price source collector.
+- Deploy Phase 3.1 to the VPS and smoke test TCMB/Stooq/Kuveyt collector runs.
