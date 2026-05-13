@@ -1,4 +1,5 @@
 import csv
+from email.utils import parsedate_to_datetime
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,13 +11,21 @@ from xml.etree import ElementTree
 import httpx
 from sqlalchemy.orm import Session
 
-from app.collectors.service import CollectorError, ingest_bank_price, ingest_fx_rate, ingest_global_price, record_failed_run
+from app.collectors.service import (
+    CollectorError,
+    ingest_bank_price,
+    ingest_fx_rate,
+    ingest_global_price,
+    ingest_news_items,
+    record_failed_run,
+)
 from app.core.config import Settings, get_settings
 from app.models import CollectorRun, PriceSnapshot
 
 KUVEYT_PARSER_VERSION = "kuveyt-public-html-v1"
 STOOQ_PARSER_VERSION = "stooq-xagusd-csv-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
+FED_RSS_PARSER_VERSION = "fed-rss-v1"
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,14 @@ class ParsedFxRate:
     quote_currency: str
     rate: Decimal
     observed_at: datetime
+    payload: dict
+
+
+@dataclass(frozen=True)
+class ParsedNewsItem:
+    title: str
+    url: str
+    published_at: datetime | None
     payload: dict
 
 
@@ -152,6 +169,55 @@ def collect_tcmb_usd_try(
         return run, False
 
 
+def collect_fed_rss(
+    db: Session,
+    *,
+    settings: Settings | None = None,
+    client: httpx.Client | None = None,
+) -> tuple[CollectorRun, int]:
+    settings = settings or get_settings()
+    fetched_at = datetime.now(UTC)
+    if not settings.fed_rss_enabled:
+        run = record_failed_run(
+            db,
+            collector_name="fed_rss",
+            source="federal-reserve-rss",
+            error_message="Fed RSS collector is disabled by configuration",
+            details_json={"parser_version": FED_RSS_PARSER_VERSION},
+        )
+        return run, 0
+    try:
+        raw_payload = _fetch_text(settings.fed_rss_url, settings=settings, client=client)
+        parsed_items = parse_fed_rss(raw_payload)
+        run, inserted = ingest_news_items(
+            db,
+            collector_name="fed_rss",
+            source="federal-reserve-rss",
+            items=[
+                {
+                    "title": item.title,
+                    "url": item.url,
+                    "published_at": item.published_at,
+                    **item.payload,
+                }
+                for item in parsed_items
+            ],
+            fetched_at=fetched_at,
+            raw_payload=raw_payload,
+            parser_version=FED_RSS_PARSER_VERSION,
+        )
+        return run, inserted
+    except Exception as exc:
+        run = record_failed_run(
+            db,
+            collector_name="fed_rss",
+            source="federal-reserve-rss",
+            error_message=str(exc),
+            details_json={"parser_version": FED_RSS_PARSER_VERSION},
+        )
+        return run, 0
+
+
 def parse_stooq_xag_usd_csv(raw_payload: str) -> ParsedGlobalPrice:
     rows = list(csv.DictReader(StringIO(raw_payload.strip())))
     if not rows:
@@ -206,6 +272,38 @@ def parse_tcmb_usd_try_xml(raw_payload: str) -> ParsedFxRate:
             },
         )
     raise CollectorError("USD currency row not found in TCMB XML")
+
+
+def parse_fed_rss(raw_payload: str) -> list[ParsedNewsItem]:
+    root = ElementTree.fromstring(raw_payload)
+    channel = root.find("channel")
+    if channel is None:
+        raise CollectorError("Fed RSS channel is missing")
+
+    items = []
+    for item in channel.findall("item"):
+        title = _element_text(item, "title").strip()
+        link = _element_text(item, "link").strip()
+        published_at = _parse_rss_datetime(_optional_element_text(item, "pubDate"))
+        guid = _optional_element_text(item, "guid")
+        description = _optional_element_text(item, "description")
+        categories = [category.text.strip() for category in item.findall("category") if category.text]
+        items.append(
+            ParsedNewsItem(
+                title=title,
+                url=link,
+                published_at=published_at,
+                payload={
+                    "guid": guid,
+                    "description": description,
+                    "categories": categories,
+                    "source_type": "official_rss",
+                },
+            )
+        )
+    if not items:
+        raise CollectorError("Fed RSS feed returned no items")
+    return items
 
 
 def parse_kuveyt_public_silver_html(raw_payload: str, *, fetched_at: datetime) -> ParsedBankPrice:
@@ -284,6 +382,25 @@ def _element_text(element: ElementTree.Element, child_name: str) -> str:
     if child is None or child.text is None:
         raise CollectorError(f"{child_name} is missing")
     return child.text
+
+
+def _optional_element_text(element: ElementTree.Element, child_name: str) -> str | None:
+    child = element.find(child_name)
+    if child is None or child.text is None:
+        return None
+    return child.text.strip()
+
+
+def _parse_rss_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError) as exc:
+        raise CollectorError(f"Unsupported RSS datetime format: {value}") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _decimal(value: str | None, *, field_name: str) -> Decimal:

@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice, RawNews
 from app.schemas.collectors import ManualPriceIngestRequest
 
 PRICE_QUANT = Decimal("0.000001")
@@ -319,6 +319,63 @@ def ingest_fx_rate(
     db.commit()
     db.refresh(run)
     return run, True
+
+
+def ingest_news_items(
+    db: Session,
+    *,
+    collector_name: str,
+    source: str,
+    items: list[dict],
+    fetched_at: datetime,
+    raw_payload: str,
+    parser_version: str,
+) -> tuple[CollectorRun, int]:
+    fetched_at = _utc(fetched_at)
+    source = source.lower()
+    run = start_collector_run(
+        db,
+        collector_name=collector_name,
+        source=source,
+        records_seen=len(items),
+        details_json={"parser_version": parser_version, "raw_payload_hash": payload_hash(raw_payload)},
+    )
+    inserted = 0
+    duplicates = 0
+    for item in items:
+        title = (item.get("title") or "").strip()
+        url = (item.get("url") or "").strip()
+        if not title or not url:
+            raise CollectorError("News item title and URL are required")
+        duplicate = db.execute(select(RawNews).where(RawNews.source == source, RawNews.url == url)).scalar_one_or_none()
+        if duplicate is not None:
+            duplicates += 1
+            continue
+
+        payload = dict(item)
+        published_at = payload.get("published_at")
+        if published_at is not None:
+            published_at = _utc(published_at)
+            payload["published_at"] = published_at.isoformat()
+        db.add(
+            RawNews(
+                collector_run_id=run.id,
+                source=source,
+                title=title,
+                url=url,
+                published_at=published_at,
+                fetched_at=fetched_at,
+                raw_payload_hash=payload_hash(payload),
+                parser_version=parser_version,
+                payload_json=payload,
+            )
+        )
+        inserted += 1
+
+    finish_collector_run(db, run, status="success", records_inserted=inserted, duplicates=duplicates)
+    db.commit()
+    db.refresh(run)
+    return run, inserted
 
 
 def start_collector_run(

@@ -274,6 +274,16 @@ Initial series:
 - `tcmb_usd_try` writes daily USD/TRY using the midpoint of TCMB `ForexBuying` and `ForexSelling`.
 - All three collectors store raw payload hashes and parser versions.
 
+### Phase 3.2 Fed RSS Output
+
+- `fed_rss` reads the official Federal Reserve monetary policy RSS feed by default.
+- Output table: `raw_news`.
+- Duplicate guard: one row per `source` and `url`.
+- Required fields: title, URL, published timestamp when available, fetched timestamp, raw payload hash, parser version, and compact payload metadata.
+- Parser behavior: missing channel/items or missing title/URL creates collector failure; fake news rows are never generated.
+- Default source: `federal-reserve-rss`.
+- Default parser version: `fed-rss-v1`.
+
 ### Runtime Memory Event Contract
 
 Phase 6.5 runtime memory tables store compact operational facts, not raw collector data.

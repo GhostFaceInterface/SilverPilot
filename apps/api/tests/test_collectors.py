@@ -8,14 +8,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.collectors.public_sources import (
+    collect_fed_rss,
     collect_stooq_xag_usd,
     collect_tcmb_usd_try,
+    parse_fed_rss,
     parse_kuveyt_public_silver_html,
 )
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice, RawNews
 
 
 def make_client():
@@ -233,6 +235,70 @@ def test_tcmb_usd_try_collector_writes_fx_rate():
         assert str(raw.rate) == "38.750000"
         assert raw.raw_payload_hash
         assert raw.parser_version == "tcmb-today-xml-v1"
+    finally:
+        client.close()
+        db.close()
+
+
+def test_fed_rss_parser_reads_items():
+    items = parse_fed_rss(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Federal Reserve</title>
+    <item>
+      <title>Federal Reserve issues FOMC statement</title>
+      <link>https://www.federalreserve.gov/newsevents/pressreleases/monetary20260513a.htm</link>
+      <guid>monetary20260513a</guid>
+      <pubDate>Wed, 13 May 2026 18:00:00 GMT</pubDate>
+      <description>Policy statement.</description>
+      <category>Monetary Policy</category>
+    </item>
+  </channel>
+</rss>
+"""
+    )
+
+    assert len(items) == 1
+    assert items[0].title == "Federal Reserve issues FOMC statement"
+    assert items[0].url.endswith("monetary20260513a.htm")
+    assert items[0].published_at == datetime(2026, 5, 13, 18, 0, tzinfo=UTC)
+    assert items[0].payload["categories"] == ["Monetary Policy"]
+
+
+def test_fed_rss_collector_writes_news_items_and_counts_duplicates():
+    _, testing_session = make_client()
+    rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Federal Reserve</title>
+    <item>
+      <title>Federal Reserve issues FOMC statement</title>
+      <link>https://www.federalreserve.gov/newsevents/pressreleases/monetary20260513a.htm</link>
+      <guid>monetary20260513a</guid>
+      <pubDate>Wed, 13 May 2026 18:00:00 GMT</pubDate>
+      <description>Policy statement.</description>
+    </item>
+  </channel>
+</rss>
+"""
+
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=rss)))
+    db = testing_session()
+    try:
+        first_run, first_inserted = collect_fed_rss(db, settings=Settings(), client=client)
+        second_run, second_inserted = collect_fed_rss(db, settings=Settings(), client=client)
+
+        assert first_run.status == "success"
+        assert first_inserted == 1
+        assert second_run.status == "success"
+        assert second_inserted == 0
+        assert second_run.duplicates == 1
+        raw = db.query(RawNews).one()
+        assert raw.source == "federal-reserve-rss"
+        assert raw.raw_payload_hash
+        assert raw.parser_version == "fed-rss-v1"
+        assert raw.payload_json["source_type"] == "official_rss"
     finally:
         client.close()
         db.close()

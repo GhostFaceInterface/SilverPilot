@@ -157,3 +157,11 @@ Lightweight runtime memory architecture added.
 - Documented memory contracts, exclusions, and risk-policy boundaries.
 - Fed RSS/FRED collector next-step order remains unchanged.
 - No code implementation or new markdown files were created.
+
+Fed RSS collector implemented locally.
+
+- Added `fed_rss` collector using the official Federal Reserve monetary policy RSS feed.
+- Added append-only `raw_news` ingestion with duplicate URL handling.
+- Added runner job `--job fed-rss` and env placeholders for `FED_RSS_ENABLED` and `FED_RSS_URL`.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `compileall`.
+- Next: commit/push, smoke test Fed RSS on VPS, then implement FRED macro collector.

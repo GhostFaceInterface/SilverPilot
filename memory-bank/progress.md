@@ -113,7 +113,9 @@ Completed:
 - Approved Phase 6.5 PostgreSQL-first lightweight runtime memory in the roadmap without changing Phase 3 next steps.
 - Local Phase 3.1 tests passed.
 - Added GitHub Actions CI/CD workflow locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
+- Phase 3.1 VPS smoke validation passed for TCMB and Stooq; Kuveyt public page parser failed safely without fake data.
+- Added local Phase 3.2 Fed RSS collector for official Federal Reserve monetary policy feed.
 
 Next milestone:
 
-- Deploy Phase 3.1 to the VPS, smoke test TCMB/Stooq/Kuveyt collector runs, then implement Fed RSS and FRED macro collectors.
+- Commit/push and smoke test Fed RSS on the VPS, then implement FRED macro collector.

@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.1: free/public-source collectors are implemented locally, CI/CD smoke validation exists, and Fed RSS/FRED macro collectors are next. Phase 6.5 lightweight PostgreSQL runtime memory is approved for later, but it does not change the immediate collector order.
+SilverPilot is in Phase 3.2: Fed RSS collector is implemented locally after Phase 3.1 VPS smoke validation. FRED macro collector is next. Phase 6.5 lightweight PostgreSQL runtime memory is approved for later, but it does not change the immediate collector order.
 
 ## Non-Negotiable Rules
 
@@ -219,6 +219,7 @@ Validation gate:
 - Missing-data ratio is measurable.
 - Collector run status is visible.
 - Failures do not silently pass.
+- Fed RSS writes official macro/news items to `raw_news` without requiring an API key.
 - CI runs backend tests, Docker Compose config validation, and API image build on every push or pull request.
 - VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
 
@@ -632,4 +633,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Deploy and smoke test Phase 3.1 collectors on the VPS, then implement Fed RSS and FRED macro collectors. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Deploy and smoke test the Fed RSS collector on the VPS, then implement the FRED macro collector. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     )
     stooq_xag_usd_url: str = "https://stooq.com/q/l/?s=xagusd&f=sd2t2ohlcv&h&e=csv"
     tcmb_today_xml_url: str = "https://www.tcmb.gov.tr/kurlar/today.xml"
+    fed_rss_enabled: bool = True
+    fed_rss_url: str = "https://www.federalreserve.gov/feeds/press_monetary.xml"
     bls_api_key: str = ""
     fred_api_key: str = ""
 

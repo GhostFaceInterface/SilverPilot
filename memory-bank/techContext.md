@@ -27,6 +27,7 @@
 - TCMB EVDS is optional if a free user key is configured later.
 - TÜİK automation is backlog; use it for low-frequency local macro context, not intraday decisions.
 - Paid market-data APIs remain disabled for MVP.
+- Fed RSS uses the official Federal Reserve monetary policy RSS feed by default and requires no API key.
 
 ## Planned LLM Stack
 
