@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 3 scheduled collector execution is deployed; first real source collector is next.
+Phase 3.1 free/public-source collectors are implemented locally; CI/CD and VPS smoke validation are being added before the next collector work.
 
 ## Canonical Sources
 
@@ -44,6 +44,8 @@ Next implementation task:
 ## Local Validation
 
 ```bash
+.venv/bin/python -m pytest apps/api/tests
+docker compose --profile collector config
 docker compose up -d postgres
 docker compose build api
 docker compose run --rm api alembic upgrade head
@@ -60,6 +62,24 @@ Optional collector runner:
 ```bash
 docker compose --profile collector up -d collector
 ```
+
+## CI/CD
+
+GitHub Actions runs backend tests, Docker Compose config validation, and API image build on push and pull request.
+
+Manual VPS smoke validation is available from GitHub Actions with `workflow_dispatch` after repository secrets are configured.
+
+Required repository secrets:
+
+- `VPS_HOST`
+- `VPS_USER`
+- `VPS_SSH_KEY`
+
+Optional repository secrets:
+
+- `VPS_PORT`
+- `VPS_KNOWN_HOSTS`
+- `VPS_PROJECT_PATH`
 
 ## VPS Validation
 

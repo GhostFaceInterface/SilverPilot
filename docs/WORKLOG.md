@@ -133,3 +133,11 @@ Phase 3.1 public-source collectors implemented locally.
 - Added optional no-cost `BLS_API_KEY` and `FRED_API_KEY` placeholders without enabling paid APIs.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config`, and `compileall`.
 - Next: commit/push, pull on VPS, run migration `0003`, then smoke test TCMB/Stooq/Kuveyt collector runs.
+
+CI/CD baseline added locally.
+
+- Added GitHub Actions workflow for backend tests, Docker Compose validation, and API image build on push and pull request.
+- Added manual VPS smoke/deploy workflow path guarded by repository secrets and `workflow_dispatch`.
+- VPS smoke covers git pull, Compose config, rebuild, Alembic migration, `/health`, TCMB collector, Stooq collector, optional Kuveyt collector, and collector health.
+- Documented required VPS secrets without storing secret values.
+- Next: push workflow, configure GitHub repository secrets, then run the manual VPS smoke workflow.

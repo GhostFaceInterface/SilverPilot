@@ -71,3 +71,9 @@ VPS access for deployment work uses local SSH alias `silverpilot-vps`. This avoi
 Status: accepted.
 
 Paid market-data APIs are disabled for MVP. Collectors may use official free APIs, public pages, RSS feeds, and no-cost API-key tiers only when no login bypass, paid access, private endpoint reverse engineering, or aggressive scraping is required.
+
+## D-013: CI First, VPS Smoke Manual
+
+Status: accepted.
+
+GitHub Actions runs tests, Docker Compose validation, and API image build automatically on push and pull request. VPS deployment and smoke checks are manual because they require server secrets and can mutate the running VPS.

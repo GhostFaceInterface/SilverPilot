@@ -42,6 +42,13 @@
 - Agents must not read or expose SSH private keys or production secrets.
 - Runtime secrets belong in VPS-local `.env.production`, not in markdown or git.
 
+## CI/CD
+
+- GitHub Actions workflow lives at `.github/workflows/ci.yml`.
+- Push and pull request CI runs backend tests, Docker Compose config validation, and API image build.
+- VPS smoke/deploy validation is manual and uses GitHub repository secrets.
+- Workflow changes must stay aligned with project test commands and Docker Compose services.
+
 ## Phase 1 Backend Runtime
 
 - API container uses Python 3.12.

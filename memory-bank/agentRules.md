@@ -79,6 +79,13 @@ A task is not complete until:
 - Before changing VPS files, run a safe status check first.
 - Do not install random tools or services on the VPS without a clear reason.
 
+## CI/CD Rules
+
+- Keep `.github/workflows/ci.yml` aligned with the current pytest, Docker Compose, migration, and VPS smoke commands.
+- Do not put VPS host, user, SSH key, known hosts, API keys, or `.env.production` values in workflow files.
+- VPS smoke/deploy jobs must stay manually triggered unless the user explicitly approves automatic deployment.
+- If tests or collector commands change, update CI in the same task.
+
 ## Hard Rules
 
 1. Check current status before editing.

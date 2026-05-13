@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is at the end of Phase 0 skeleton setup. Phase 1 has not started.
+SilverPilot is in Phase 3.1: free/public-source collectors are implemented locally, and VPS deployment/smoke validation is being automated through GitHub Actions.
 
 ## Non-Negotiable Rules
 
@@ -188,6 +188,8 @@ Validation gate:
 - Missing-data ratio is measurable.
 - Collector run status is visible.
 - Failures do not silently pass.
+- CI runs backend tests, Docker Compose config validation, and API image build on every push or pull request.
+- VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
 
 ## Phase 4: Risk Policy and Rule Engine
 
@@ -502,6 +504,8 @@ Goal: operate reliably on a VPS.
 Requirements:
 
 - Docker Compose production profile.
+- GitHub Actions CI for backend tests, Compose validation, and image build.
+- Manual GitHub Actions VPS smoke/deploy job using repository secrets.
 - database backup job.
 - restore test.
 - log rotation.
@@ -522,6 +526,8 @@ Alerts:
 
 Validation gate:
 
+- Push and pull request CI must pass before deployment work.
+- VPS smoke workflow validates git pull, Compose config, container rebuild, Alembic migration, `/health`, and core collector jobs.
 - Services restart cleanly after reboot.
 - Backups can be restored.
 - Secrets are not committed.

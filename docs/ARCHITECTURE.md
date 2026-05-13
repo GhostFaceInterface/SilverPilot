@@ -135,4 +135,12 @@ Deployment target:
 - Only reverse proxy ports should be public later.
 - Database, Redis, and internal services must stay private.
 
+## CI/CD Shape
+
+- GitHub Actions runs backend tests, Docker Compose config validation, and API image build on push and pull request.
+- VPS deployment/smoke validation is manual through `workflow_dispatch`.
+- The VPS workflow uses repository secrets for host, user, SSH key, and optional known hosts; secrets must not be committed or written to markdown.
+- Required VPS smoke checks are Compose config, container rebuild, Alembic migration, `/health`, TCMB collector, Stooq collector, and collector health.
+- Kuveyt public-page collector remains best-effort during smoke validation because selector failure is an expected safe failure mode.
+
 Production hardening is Phase 13, not Phase 1.

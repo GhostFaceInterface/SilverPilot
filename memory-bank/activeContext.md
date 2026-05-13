@@ -35,6 +35,7 @@ Phase 3: data collector foundations in progress.
 - Phase 3.1 audit fields exist locally for raw collector tables: `fetched_at`, `raw_payload_hash`, and `parser_version`.
 - Phase 3.1 local collectors exist for Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML.
 - Local tests validate Phase 3.1 parser/storage behavior.
+- GitHub Actions CI/CD workflow exists locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
 - VPS runner one-shot validation passed.
 - VPS `GET /collectors/health` returns `ok`.
 - Local Docker Compose API/PostgreSQL validation passed.
@@ -63,10 +64,11 @@ Pending:
 
 - Implement Phase 3.1 free/public-source collectors.
 - Deploy Phase 3.1 collector migration and code to VPS after commit/push.
+- Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run collector long enough to measure freshness and missing data.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
 - Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Deploy and smoke test Phase 3.1 collectors on VPS, then continue with Fed RSS and optional no-cost BLS/FRED support. Paid market-data APIs stay disabled for MVP.
+Push CI/CD workflow, configure GitHub VPS secrets, then deploy and smoke test Phase 3.1 collectors on VPS. After that, continue with Fed RSS and optional no-cost BLS/FRED support.

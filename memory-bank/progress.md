@@ -109,7 +109,8 @@ Completed:
 - Added local Phase 3.1 collectors for Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML.
 - Added no-cost BLS/FRED key placeholders; collectors remain disabled until their implementation/key configuration.
 - Local Phase 3.1 tests passed.
+- Added GitHub Actions CI/CD workflow locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
 
 Next milestone:
 
-- Deploy Phase 3.1 to the VPS and smoke test TCMB/Stooq/Kuveyt collector runs.
+- Push CI/CD workflow, configure GitHub VPS secrets, then deploy Phase 3.1 to the VPS and smoke test TCMB/Stooq/Kuveyt collector runs.

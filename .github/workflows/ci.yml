@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_vps_smoke:
+        description: "Run VPS deploy and smoke validation"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: silverpilot-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests
+
+  compose-validation:
+    name: Docker Compose validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate default Compose config
+        run: docker compose config
+
+      - name: Validate collector profile Compose config
+        run: docker compose --profile collector config
+
+  api-image-build:
+    name: API image build
+    runs-on: ubuntu-latest
+    needs:
+      - backend-tests
+      - compose-validation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker compose build api
+
+  vps-smoke:
+    name: VPS deploy and smoke validation
+    runs-on: ubuntu-latest
+    needs:
+      - api-image-build
+    if: github.event_name == 'workflow_dispatch' && inputs.run_vps_smoke
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      VPS_PROJECT_PATH: ${{ secrets.VPS_PROJECT_PATH || '/opt/silverpilot/SilverPilot' }}
+    steps:
+      - name: Validate required VPS secrets
+        run: |
+          test -n "$VPS_HOST"
+          test -n "$VPS_USER"
+          test -n "$VPS_SSH_KEY"
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "$VPS_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy latest main and run smoke checks
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_PROJECT_PATH' && \
+            git pull --ff-only && \
+            docker compose --env-file .env.production config >/dev/null && \
+            docker compose --env-file .env.production up -d --build && \
+            docker compose --env-file .env.production run --rm api alembic upgrade head && \
+            curl -fsS http://127.0.0.1:8000/health && \
+            docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job tcmb-usd-try && \
+            docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job stooq-xag-usd && \
+            (docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver || true) && \
+            curl -fsS http://127.0.0.1:8000/collectors/health"
