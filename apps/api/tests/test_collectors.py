@@ -10,10 +10,14 @@ from sqlalchemy.pool import StaticPool
 from app.collectors.public_sources import (
     collect_fed_rss,
     collect_fred_macro,
+    collect_kuveyt_public_silver,
     collect_stooq_xag_usd,
     collect_tcmb_usd_try,
+    discover_kuveyt_core_script_url,
     parse_fed_rss,
     parse_fred_observations,
+    parse_kuveyt_finance_portal_endpoint,
+    parse_kuveyt_finance_portal_json,
     parse_kuveyt_public_silver_html,
 )
 from app.core.config import Settings
@@ -143,12 +147,19 @@ def test_collector_health_reports_empty_without_runs():
     assert response.status_code == 200
     assert response.json() == {
         "status": "empty",
+        "execution_critical": {
+            "bank_price": "missing",
+            "source": None,
+            "age_seconds": None,
+            "stale": True,
+            "manual_fallback": False,
+        },
         "stale_after_minutes": 60,
         "collectors": [],
     }
 
 
-def test_collector_health_reports_latest_run_status():
+def test_collector_health_reports_manual_bank_price_as_degraded_fallback():
     client, _ = make_client()
     client.post(
         "/collectors/manual-price",
@@ -167,7 +178,9 @@ def test_collector_health_reports_latest_run_status():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "ok"
+    assert body["status"] == "degraded"
+    assert body["execution_critical"]["bank_price"] == "manual_fallback"
+    assert body["execution_critical"]["manual_fallback"] is True
     assert body["collectors"][0]["collector_name"] == "manual_bank_price"
     assert body["collectors"][0]["source"] == "manual-test-bank"
     assert body["collectors"][0]["stale"] is False
@@ -384,3 +397,78 @@ def test_kuveyt_public_silver_parser_maps_bank_spread_to_user_prices():
     assert parsed.currency == "TRY"
     assert parsed.buy_price == Decimal("43.25")
     assert parsed.sell_price == Decimal("42.10")
+
+
+def test_kuveyt_finance_portal_parser_reads_gms_json():
+    parsed = parse_kuveyt_finance_portal_json(
+        """
+[
+  {"Title":"USD","CurrencyCode":"USD","BuyRate":44.1,"SellRate":45.2},
+  {"Title":"GMS (gr)","CurrencyCode":"GMS (gr)","CurrencyDescription":"Gümüş","BuyRate":125.87879,"SellRate":129.63761,"ChangeRate":3.46,"ChangeRateNegative":false}
+]
+""",
+        fetched_at=datetime(2026, 5, 13, 12, 0, tzinfo=UTC),
+        finance_portal_url="https://www.kuveytturk.com.tr/ck0d84?public",
+    )
+
+    assert parsed.currency == "TRY"
+    assert parsed.buy_price == Decimal("129.63761")
+    assert parsed.sell_price == Decimal("125.87879")
+    assert parsed.observed_at == datetime(2026, 5, 13, 12, 0, tzinfo=UTC)
+    assert parsed.payload["source_type"] == "official_public_browser_loaded_json"
+    assert parsed.payload["timestamp_semantics"] == "no source timestamp in response; observed_at uses fetched_at"
+
+
+def test_kuveyt_discovery_reads_public_script_and_endpoint():
+    page = '<script src="/magiclick.core.min.js?v=abc"></script>'
+    script_url = discover_kuveyt_core_script_url(page, base_url="https://www.kuveytturk.com.tr/path/page")
+    endpoint_url = parse_kuveyt_finance_portal_endpoint(
+        'const ApiEndpoints={financePortal:"ck0d84?B83A"};',
+        base_url="https://www.kuveytturk.com.tr/path/page",
+    )
+
+    assert script_url == "https://www.kuveytturk.com.tr/magiclick.core.min.js?v=abc"
+    assert endpoint_url == "https://www.kuveytturk.com.tr/ck0d84?B83A"
+
+
+def test_kuveyt_public_collector_uses_public_browser_loaded_json():
+    _, testing_session = make_client()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 44.1, "SellRate": 45.2},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 125.87879,
+                        "SellRate": 129.63761,
+                    },
+                ],
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert str(snapshot.buy_price) == "129.637610"
+        assert str(snapshot.sell_price) == "125.878790"
+        raw = db.query(RawBankPrice).one()
+        assert raw.raw_payload_hash
+        assert raw.parser_version == "kuveyt-public-finance-portal-v2"
+        assert raw.payload_json["source_type"] == "official_public_browser_loaded_json"
+    finally:
+        client.close()
+        db.close()

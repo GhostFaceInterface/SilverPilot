@@ -77,7 +77,16 @@ class CollectorHealthItem(BaseModel):
     finished_at: datetime | None
 
 
+class ExecutionCriticalHealth(BaseModel):
+    bank_price: Literal["missing", "fresh", "manual_fallback", "stale"]
+    source: str | None
+    age_seconds: int | None
+    stale: bool
+    manual_fallback: bool
+
+
 class CollectorHealthResponse(BaseModel):
-    status: Literal["empty", "ok", "degraded"]
+    status: Literal["empty", "healthy", "degraded", "blocked", "stale"]
+    execution_critical: ExecutionCriticalHealth
     stale_after_minutes: int
     collectors: list[CollectorHealthItem]

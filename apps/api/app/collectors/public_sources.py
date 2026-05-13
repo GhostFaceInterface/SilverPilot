@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from io import StringIO
+from urllib.parse import urljoin
 from xml.etree import ElementTree
 
 import httpx
@@ -25,7 +26,7 @@ from app.collectors.service import (
 from app.core.config import Settings, get_settings
 from app.models import CollectorRun, PriceSnapshot
 
-KUVEYT_PARSER_VERSION = "kuveyt-public-html-v1"
+KUVEYT_PARSER_VERSION = "kuveyt-public-finance-portal-v2"
 STOOQ_PARSER_VERSION = "stooq-xagusd-csv-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
 FED_RSS_PARSER_VERSION = "fed-rss-v1"
@@ -83,8 +84,16 @@ def collect_kuveyt_public_silver(
     settings = settings or get_settings()
     fetched_at = datetime.now(UTC)
     try:
-        raw_payload = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
-        parsed = parse_kuveyt_public_silver_html(raw_payload, fetched_at=fetched_at)
+        page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
+        core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)
+        core_js = _fetch_text(core_script_url, settings=settings, client=client)
+        finance_portal_url = parse_kuveyt_finance_portal_endpoint(core_js, base_url=settings.kuveyt_silver_url)
+        raw_payload = _fetch_text(finance_portal_url, settings=settings, client=client)
+        parsed = parse_kuveyt_finance_portal_json(
+            raw_payload,
+            fetched_at=fetched_at,
+            finance_portal_url=finance_portal_url,
+        )
         return ingest_bank_price(
             db,
             source="kuveyt-public-silver-page",
@@ -100,6 +109,7 @@ def collect_kuveyt_public_silver(
             collector_name="kuveyt_public_silver",
         )
     except Exception as exc:
+        db.rollback()
         run = record_failed_run(
             db,
             collector_name="kuveyt_public_silver",
@@ -136,6 +146,7 @@ def collect_stooq_xag_usd(
             collector_name="stooq_xag_usd",
         )
     except Exception as exc:
+        db.rollback()
         run = record_failed_run(
             db,
             collector_name="stooq_xag_usd",
@@ -171,6 +182,7 @@ def collect_tcmb_usd_try(
             collector_name="tcmb_usd_try",
         )
     except Exception as exc:
+        db.rollback()
         run = record_failed_run(
             db,
             collector_name="tcmb_usd_try",
@@ -220,6 +232,7 @@ def collect_fed_rss(
         )
         return run, inserted
     except Exception as exc:
+        db.rollback()
         run = record_failed_run(
             db,
             collector_name="fed_rss",
@@ -282,6 +295,7 @@ def collect_fred_macro(
         db.refresh(run)
         return run, inserted
     except Exception as exc:
+        db.rollback()
         run = record_failed_run(
             db,
             collector_name="fred_macro",
@@ -448,6 +462,79 @@ def parse_kuveyt_public_silver_html(raw_payload: str, *, fetched_at: datetime) -
         payload={
             "label_semantics": "bank Alış maps to user sell_price; bank Satış maps to user buy_price",
             "source_type": "public_html",
+        },
+    )
+
+
+def discover_kuveyt_core_script_url(page_html: str, *, base_url: str) -> str:
+    script_urls = re.findall(r'<script[^>]+src=["\']([^"\']*magiclick\.core\.min\.js[^"\']*)["\']', page_html, flags=re.IGNORECASE)
+    if not script_urls:
+        raise CollectorError("Kuveyt public page parser could not find public core script")
+
+    # The caller fetches this public browser-loaded script. Keeping discovery separate makes
+    # selector/endpoint changes fail visibly instead of silently reusing stale data.
+    return urljoin(base_url, script_urls[-1])
+
+
+def parse_kuveyt_finance_portal_endpoint(core_js: str, *, base_url: str) -> str:
+    match = re.search(r'financePortal\s*:\s*"([^"]+)"', core_js)
+    if not match:
+        raise CollectorError("Kuveyt public core script did not expose financePortal endpoint")
+    endpoint = match.group(1)
+    if endpoint.startswith(("http://", "https://", "/")):
+        return urljoin(base_url, endpoint)
+    return urljoin(urljoin(base_url, "/"), endpoint)
+
+
+def parse_kuveyt_finance_portal_json(
+    raw_payload: str,
+    *,
+    fetched_at: datetime,
+    finance_portal_url: str,
+) -> ParsedBankPrice:
+    try:
+        rows = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise CollectorError("Kuveyt financePortal response is not valid JSON") from exc
+    if not isinstance(rows, list) or not rows:
+        raise CollectorError("Kuveyt financePortal response returned no rows")
+
+    gms_row = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("Title") or "").upper()
+        code = str(row.get("CurrencyCode") or "").upper()
+        description = str(row.get("CurrencyDescription") or "").lower()
+        if "GMS" in title or "GMS" in code or "gümüş" in description or "gumus" in description:
+            gms_row = row
+            break
+    if gms_row is None:
+        raise CollectorError("Kuveyt financePortal response did not include GMS silver row")
+
+    bank_buy = _decimal(str(gms_row.get("BuyRate") or ""), field_name="Kuveyt GMS BuyRate")
+    bank_sell = _decimal(str(gms_row.get("SellRate") or ""), field_name="Kuveyt GMS SellRate")
+    if bank_sell < bank_buy:
+        raise CollectorError("Kuveyt financePortal returned inverted silver spread")
+
+    return ParsedBankPrice(
+        buy_price=bank_sell,
+        sell_price=bank_buy,
+        currency="TRY",
+        observed_at=fetched_at,
+        payload={
+            "title": gms_row.get("Title"),
+            "currency_code": gms_row.get("CurrencyCode"),
+            "currency_description": gms_row.get("CurrencyDescription"),
+            "bank_buy_rate": str(bank_buy),
+            "bank_sell_rate": str(bank_sell),
+            "change_rate": gms_row.get("ChangeRate"),
+            "change_rate_negative": gms_row.get("ChangeRateNegative"),
+            "label_semantics": "bank BuyRate maps to user sell_price; bank SellRate maps to user buy_price",
+            "timestamp_semantics": "no source timestamp in response; observed_at uses fetched_at",
+            "source_type": "official_public_browser_loaded_json",
+            "stability_risk": "medium",
+            "finance_portal_url": finance_portal_url,
         },
     )
 

@@ -198,7 +198,7 @@ Duplicate guard:
 
 ### MVP Free Source Candidates
 
-- Bank silver price primary POC: Kuveyt Türk public live silver page. Parse only public content or public page-loaded data; fallback to failed collector if selectors break.
+- Bank silver price primary: Kuveyt Türk public live silver page. Parse only public page content or public browser-loaded finance portal JSON; fallback to failed collector if public discovery or GMS parsing breaks.
 - Global XAG/USD primary: Stooq current CSV quote endpoint. Stooq historical CSV requires a manually obtained key and stays optional.
 - USD/TRY primary: TCMB daily XML. EVDS is optional when a free user key is available.
 - Macro/news primary: official Fed RSS and FRED API. FRED is the preferred no-cost macro-series gateway when `FRED_API_KEY` is configured.
@@ -269,10 +269,33 @@ Initial series:
 
 ### Phase 3.1 Collector Outputs
 
-- `kuveyt_public_silver` writes bank silver prices from the public page POC when visible GMS labels can be parsed; selector failure records a failed collector run.
+- `kuveyt_public_silver` writes bank silver prices from Kuveyt Türk official public page data when a public GMS finance-portal row can be parsed; discovery/parser failure records a failed collector run.
 - `stooq_xag_usd` writes global XAG/USD using Stooq current CSV `Close` as a zero-spread diagnostic/mid price because bid/ask is not provided.
 - `tcmb_usd_try` writes daily USD/TRY using the midpoint of TCMB `ForexBuying` and `ForexSelling`.
 - All three collectors store raw payload hashes and parser versions.
+
+### Phase 3.4 Bank Price Contract
+
+Kuveyt official collector:
+
+- collector: `kuveyt_public_silver`
+- source: `kuveyt-public-silver-page`
+- parser version: `kuveyt-public-finance-portal-v2`
+- output table: `raw_bank_prices`
+- required fields: XAG asset, user buy price, user sell price, TRY currency, `observed_at`, `fetched_at`, raw payload hash, parser version, compact payload metadata.
+- semantics: bank `SellRate` maps to user `buy_price`; bank `BuyRate` maps to user `sell_price`.
+- timestamp: source does not provide a quote timestamp; `observed_at` uses `fetched_at`.
+- failure behavior: missing public script, missing public finance portal endpoint, missing GMS row, invalid JSON, or inverted spread creates a failed collector run and no fake price.
+
+Manual fallback:
+
+- existing endpoint: `POST /collectors/manual-price`
+- accepted source type: `bank`
+- output table: `raw_bank_prices`
+- parser version: `manual-v1`
+- required fields: `buy_price`, `sell_price`, `observed_at`, `source_name`, optional note in payload.
+- use: temporary simulation unblocker only.
+- health: fresh manual price is degraded/manual fallback; stale or missing manual price cannot unblock future risk decisions.
 
 ### Phase 3.2 Fed RSS Output
 

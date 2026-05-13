@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.3: the FRED macro collector is implemented and smoke-tested on the VPS after Phase 3.2 Fed RSS validation. Next is sustained collector operation and data-quality review for the Phase 3 validation gate. Phase 6.5 lightweight PostgreSQL runtime memory is approved for later, but it does not change the immediate collector order.
+SilverPilot is in Phase 3.4: execution-critical bank silver pricing is being resolved before Phase 4. Kuveyt Türk official public page parsing now uses public browser-loaded finance portal data when available; manual bank-price fallback remains a simulation unblocker, not a production-grade source. Next is VPS smoke validation and sustained collector data-quality review.
 
 ## Non-Negotiable Rules
 
@@ -219,9 +219,41 @@ Validation gate:
 - Missing-data ratio is measurable.
 - Collector run status is visible.
 - Failures do not silently pass.
+- Collector health is `blocked` when no execution-critical bank silver buy/sell price exists.
+- Collector health is `degraded` when manual bank-price fallback is fresh but official/primary bank data is unavailable.
 - Fed RSS writes official macro/news items to `raw_news` without requiring an API key.
 - CI runs backend tests, Docker Compose config validation, and API image build on every push or pull request.
 - VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
+
+### Phase 3.4: Bank Silver Price Resolution
+
+Goal: resolve execution-critical bank silver buy/sell data before the risk engine.
+
+Primary path:
+
+- Kuveyt Türk official public silver page.
+- Parser may read only public page content and public browser-loaded JSON.
+- No login, captcha bypass, paywall bypass, anti-bot bypass, private endpoint reverse engineering, or aggressive polling.
+- Current parser records GMS buy/sell from the public finance portal JSON when exposed by the official page scripts.
+- Source timestamp is not provided; `observed_at` uses `fetched_at` and freshness must be enforced.
+
+Fallback path:
+
+- Existing `POST /collectors/manual-price` can insert manual bank prices into `raw_bank_prices`.
+- Manual fallback is allowed only to unblock simulation and validation.
+- Manual fallback must be visible as manual/degraded in health and reports.
+- Stale manual prices must not drive future risk decisions.
+
+Third-party candidates:
+
+- `altin.doviz.com/kuveyt-turk/gumus`: fallback-only comparison, third-party, visible bank buy/sell table, medium ToS/stability risk, reliability 3/5.
+- `altin.app/altin-fiyatlari/kuveyt-turk`: diagnostic/fallback-only, third-party, visible bank metal rows with timestamps, medium ToS/stability risk, reliability 3/5.
+- `altin.in`: diagnostic only, third-party, historical snippets exist but current silver bank page stability is uncertain, reliability 2/5.
+- Investing/Yahoo-style pages remain avoid/diagnostic due dynamic-page and ToS risk.
+
+Phase 4 gate:
+
+- Do not start Phase 4 until official Kuveyt collector is VPS-smoke-tested or manual fallback policy is accepted as temporary simulation-only input.
 
 ## Phase 4: Risk Policy and Rule Engine
 

@@ -46,6 +46,10 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 
 - Selector/parser failure blocks fresh decisions and marks the source stale.
 - Last successful prices may be displayed as stale context, but must not be treated as a fresh decision input.
+- Execution-critical bank silver buy/sell price is required before Phase 4 risk decisions can emit trade signals.
+- Collector health `blocked` means no bank silver buy/sell price is available; automated paper-trade signals must not proceed.
+- Collector health `stale` means the latest bank price exists but is too old; automated paper-trade signals must not proceed.
+- Fresh manual bank-price fallback may unblock simulation, but it must be treated as degraded and explicitly manual.
 - Official free sources rank above third-party public pages.
 - Paid market-data API sources are disabled during MVP and cannot be required for a risk decision.
 - Tax/BSMV rules stay configurable and are not legal or tax advice.

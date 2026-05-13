@@ -185,3 +185,11 @@ FRED macro collector deployed on VPS.
 - Collector health now includes successful `fred_macro`; overall health remains degraded because Kuveyt public parser fails safely and old manual smoke runs are stale.
 - Added Compose env passthrough for Fed RSS and FRED source settings after smoke validation.
 - Next: sustained collector validation and execution-critical bank silver source resolution.
+
+Phase 3.4 bank silver source resolution started.
+
+- Confirmed Kuveyt Türk official page exposes GMS data through public browser-loaded finance portal JSON, not static HTML.
+- Updated Kuveyt collector to parse public GMS buy/sell data without login, bypass, private endpoint use, or fake fallback.
+- Updated collector health states for execution-critical bank price: `healthy`, `degraded`, `blocked`, and `stale`.
+- Documented manual bank-price input as degraded simulation fallback only.
+- Local tests passed; next: VPS smoke test for `kuveyt-silver`.

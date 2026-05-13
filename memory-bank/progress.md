@@ -119,7 +119,11 @@ Completed:
 - Added local Phase 3.3 FRED macro collector for configured FRED observations.
 - Local tests, compile validation, and Docker Compose config passed for FRED macro collector.
 - FRED macro collector was deployed to VPS and inserted 6 configured FRED observations.
+- Started Phase 3.4 execution-critical bank silver source resolution.
+- Updated Kuveyt official public collector to use public browser-loaded finance portal GMS data when available.
+- Updated collector health policy to distinguish `healthy`, `degraded`, `blocked`, and `stale`.
+- Kept manual bank-price ingestion as a visible degraded simulation fallback.
 
 Next milestone:
 
-- Run sustained collector validation and resolve the missing execution-critical public bank silver price source.
+- Smoke-test the Kuveyt official public bank silver collector on VPS, then run sustained collector validation.

@@ -3,7 +3,7 @@ import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
@@ -530,17 +530,56 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
             }
         )
 
+    bank_price = _execution_critical_bank_price_status(db, stale_after_seconds=stale_after_seconds, now=now)
+    any_problem = any(item["stale"] or item["status"] == "failed" for item in collectors)
     if not collectors:
         status = "empty"
-    elif any(item["stale"] or item["status"] == "failed" for item in collectors):
+    elif bank_price["bank_price"] == "missing":
+        status = "blocked"
+    elif bank_price["stale"]:
+        status = "stale"
+    elif bank_price["manual_fallback"] or any_problem:
         status = "degraded"
     else:
-        status = "ok"
+        status = "healthy"
 
     return {
         "status": status,
+        "execution_critical": bank_price,
         "stale_after_minutes": stale_after_minutes,
         "collectors": collectors,
+    }
+
+
+def _execution_critical_bank_price_status(db: Session, *, stale_after_seconds: int, now: datetime) -> dict:
+    latest_bank_price = db.execute(
+        select(RawBankPrice).order_by(desc(RawBankPrice.fetched_at), desc(RawBankPrice.observed_at)).limit(1)
+    ).scalar_one_or_none()
+    if latest_bank_price is None:
+        return {
+            "bank_price": "missing",
+            "source": None,
+            "age_seconds": None,
+            "stale": True,
+            "manual_fallback": False,
+        }
+
+    reference_time = _aware(latest_bank_price.fetched_at or latest_bank_price.observed_at)
+    age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
+    stale = age_seconds is None or age_seconds > stale_after_seconds
+    manual_fallback = latest_bank_price.parser_version == "manual-v1" or latest_bank_price.source.startswith("manual")
+    if stale:
+        bank_price = "stale"
+    elif manual_fallback:
+        bank_price = "manual_fallback"
+    else:
+        bank_price = "fresh"
+    return {
+        "bank_price": bank_price,
+        "source": latest_bank_price.source,
+        "age_seconds": age_seconds,
+        "stale": stale,
+        "manual_fallback": manual_fallback,
     }
 
 

@@ -117,3 +117,9 @@ Explicitly excluded for now:
 - LightRAG.
 - Letta.
 - Mem0 production integration.
+
+## D-019: Bank Silver Price Gates Phase 4
+
+Status: accepted.
+
+Phase 4 risk engine work will not start until execution-critical bank silver buy/sell pricing is resolved. Kuveyt Türk official public page data is the primary source when public browser-loaded finance portal data can be parsed without login or bypass behavior. Manual bank-price input is allowed only as a visible degraded simulation fallback, not as a production collector.

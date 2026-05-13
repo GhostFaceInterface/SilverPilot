@@ -115,6 +115,8 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - Direct BLS collection is deferred; BLS-origin CPI/PPI/labor series should come through FRED first when available.
 - TCMB daily XML is the primary USD/TRY execution-context source; TCMB EVDS and TÜİK are optional deeper local-macro sources.
 - Türkiye local macro data informs TRY execution, bank spread, local risk, and tax/rule context; it is not a primary global silver direction signal.
+- Kuveyt Türk official public silver page is the primary execution-critical bank silver source when its public browser-loaded finance portal data is available.
+- Manual bank-price fallback is a simulation unblocker only; it is not a production collector and must be visible as degraded/manual source context.
 
 ## Data Impact Classes
 
@@ -122,6 +124,14 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - Global-market context: XAG/USD, U.S. rates, dollar index, CPI/PPI, Fed RSS.
 - Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
 - Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
+
+## Collector Health States
+
+- `healthy`: fresh official/primary execution-critical bank price exists and collectors are fresh.
+- `degraded`: core simulation can continue, but some collectors failed/stale or manual bank-price fallback is active.
+- `blocked`: execution-critical bank silver buy/sell price is missing.
+- `stale`: the latest execution-critical bank price exists but exceeded the freshness threshold.
+- `empty`: no collector runs exist yet.
 
 ## LLM Pattern
 
