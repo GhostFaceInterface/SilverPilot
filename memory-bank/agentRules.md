@@ -109,3 +109,8 @@ A task is not complete until:
 19. Do not enable paid market-data APIs during MVP.
 20. Public-source collectors must use polite polling and must fail visibly when parsing fails.
 21. Do not bypass login, captcha, paywall, anti-bot controls, robots restrictions, or private endpoints.
+22. Use FRED as the first no-cost macro-series source when a key is configured; do not implement direct BLS before it is re-approved.
+23. Treat Türkiye macro data as execution/risk context, not as a standalone global silver direction signal.
+24. Use Phase 6.5 PostgreSQL runtime memory as the approved memory path when that phase starts.
+25. Do not use Zep, Graphiti, Neo4j/FalkorDB, Cognee, LightRAG, Letta, or Mem0 as production memory without a new explicit decision.
+26. Do not write secrets, raw payloads, full news dumps, full LLM traces, SSH details, API keys, or bank details into memory tables.

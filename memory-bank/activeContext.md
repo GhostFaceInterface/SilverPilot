@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 3: data collector foundations in progress.
+Phase 3: free/public-source data collectors in progress.
 
 ## Current State
 
@@ -35,6 +35,11 @@ Phase 3: data collector foundations in progress.
 - Phase 3.1 audit fields exist locally for raw collector tables: `fetched_at`, `raw_payload_hash`, and `parser_version`.
 - Phase 3.1 local collectors exist for Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML.
 - Local tests validate Phase 3.1 parser/storage behavior.
+- FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
+- Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
+- Türkiye local data is classified as execution/risk context for TRY execution, bank spread analysis, and local macro context, not as global silver direction.
+- Phase 6.5 lightweight PostgreSQL runtime memory is approved for later roadmap work.
+- Zep/Graphiti are not used; no external memory service is required.
 - GitHub Actions CI/CD workflow exists locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
 - VPS runner one-shot validation passed.
 - VPS `GET /collectors/health` returns `ok`.
@@ -65,10 +70,12 @@ Pending:
 - Implement Phase 3.1 free/public-source collectors.
 - Deploy Phase 3.1 collector migration and code to VPS after commit/push.
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
+- Implement Fed RSS and FRED macro collectors; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
+- Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
 - Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Push CI/CD workflow, configure GitHub VPS secrets, then deploy and smoke test Phase 3.1 collectors on VPS. After that, continue with Fed RSS and optional no-cost BLS/FRED support.
+Deploy and smoke test Phase 3.1 collectors on VPS, then implement Fed RSS and FRED macro collectors. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace the current next step.

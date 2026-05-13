@@ -19,12 +19,30 @@
 - DuckDB
 - NumPy
 
+## Free Data Source Strategy
+
+- FRED is the MVP macro-series gateway when `FRED_API_KEY` is configured.
+- Direct BLS remains optional/backlog; use FRED-hosted BLS-origin series first.
+- TCMB daily XML is the primary no-key USD/TRY source.
+- TCMB EVDS is optional if a free user key is configured later.
+- TÜİK automation is backlog; use it for low-frequency local macro context, not intraday decisions.
+- Paid market-data APIs remain disabled for MVP.
+
 ## Planned LLM Stack
 
 - OpenRouter first.
 - LiteLLM later if routing, fallback, or budget proxying is needed.
 - Langfuse before production agent usage.
 - Instructor/Pydantic for structured output validation.
+- Current code does not read Langfuse settings yet; `.env.example` uses `LANGFUSE_HOST`, while the LLM gateway phase must choose and document the final env name before implementation.
+
+## Runtime Memory Strategy
+
+- Phase 6.5 uses custom PostgreSQL runtime memory tables.
+- No Zep, Graphiti, Neo4j, FalkorDB, Cognee, LightRAG, Letta, or Mem0 production service is planned.
+- Runtime memory stores compact operational facts, reliability summaries, decision summaries, disagreements, postmortems, and outcome notes.
+- Runtime memory must not store raw payloads, full traces, secrets, SSH details, API keys, or bank details.
+- `pgvector` may be evaluated later only if PostgreSQL-native semantic retrieval becomes necessary.
 
 ## Planned ML Stack
 

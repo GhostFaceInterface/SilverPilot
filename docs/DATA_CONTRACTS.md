@@ -201,15 +201,71 @@ Duplicate guard:
 - Bank silver price primary POC: Kuveyt Türk public live silver page. Parse only public content or public page-loaded data; fallback to failed collector if selectors break.
 - Global XAG/USD primary: Stooq current CSV quote endpoint. Stooq historical CSV requires a manually obtained key and stays optional.
 - USD/TRY primary: TCMB daily XML. EVDS is optional when a free user key is available.
-- Macro/news primary: official Fed RSS, BLS API, and FRED API. BLS registration and FRED keys are acceptable no-cost setup tasks; RSS polling should be low-frequency.
+- Macro/news primary: official Fed RSS and FRED API. FRED is the preferred no-cost macro-series gateway when `FRED_API_KEY` is configured.
+- Direct BLS API is deferred. Use FRED-hosted BLS-origin CPI/PPI/labor series first; keep `BLS_API_KEY` optional/backlog.
+- Türkiye macro sources matter for TRY execution simulation, bank spread comparison, local risk context, and official tax/rule checks.
 - Yahoo Finance and Investing are diagnostic/fallback only due robots, ToS, and dynamic-page risk.
 
 ### Free API Key Todo
 
-- Add optional env names for `BLS_API_KEY` and `FRED_API_KEY`; keep empty values disabled.
-- BLS may run without a key at lower quota, but registered free key support should be implemented.
-- FRED requires a free user API key; collector stays disabled until the key is configured.
+- Keep optional env names for `FRED_API_KEY`, `BLS_API_KEY`, and `TCMB_EVDS_API_KEY`; keep empty values disabled.
+- FRED requires a free user API key and is enabled only when configured.
+- Direct BLS stays disabled for MVP even though unregistered and registered no-cost access exist.
+- TCMB EVDS stays disabled/backlog until a free user key is configured and series choices are approved.
 - Never print, log, or commit key values.
+
+Recommended env documentation for future `.env.example` updates:
+
+- `FRED_API_KEY` empty placeholder.
+- `BLS_API_KEY` optional/backlog disabled.
+- `TCMB_EVDS_API_KEY` optional/backlog disabled.
+- `FED_RSS_ENABLED` default true.
+- `TCMB_DAILY_XML_ENABLED` default true.
+- `TUIK_ENABLED` default false.
+
+Langfuse env note:
+
+- Current code does not read Langfuse settings yet.
+- `.env.example` currently uses `LANGFUSE_HOST`; local user env may use `LANGFUSE_BASE_URL`.
+- The LLM gateway phase must pick one canonical env name before implementing Langfuse.
+
+### FRED Macro Contract
+
+FRED observations are pulled through `fred/series/observations` with `file_type=json` unless another format is explicitly needed. The endpoint supports XML, JSON, XLSX, and zipped CSV; missing values such as `.` must be stored as missing, not coerced to zero.
+
+Initial series:
+
+| Series | Class | Source | Frequency | Use |
+| --- | --- | --- | --- | --- |
+| `CPIAUCSL` | Global-market context | BLS via FRED | Monthly | U.S. inflation context |
+| `PPIACO` | Global-market context | BLS via FRED | Monthly | U.S. producer-price pressure |
+| `UNRATE` | Global-market context | BLS via FRED | Monthly | U.S. labor-market context |
+| `FEDFUNDS` | Global-market context | Federal Reserve via FRED | Monthly | Policy-rate context |
+| `DGS10` | Global-market context | Federal Reserve via FRED | Daily | U.S. yield pressure |
+| `DTWEXBGS` | Global-market context | Federal Reserve via FRED | Daily | broad USD strength proxy |
+
+### Türkiye Source Contract
+
+- TCMB daily XML: no API key; key USD/TRY execution-context source; daily indicative rate only, so intraday gaps must be marked as such.
+- TCMB EVDS: free-key optional/backlog; candidate series include USD/TRY, policy rates, local rates, reserves, expectations, inflation-related indicators, and other official macro context.
+- TÜİK data portal: candidate source for CPI/TÜFE, PPI/ÜFE, confidence indicators, unemployment, and other low-frequency local macro context; not required for MVP intraday collectors.
+- Resmi Gazete, GİB, and Hazine ve Maliye Bakanlığı: official tax/KMV/BSMV verification sources; not necessarily continuous collectors.
+
+### Source Research Links
+
+- FRED observations API: https://fred.stlouisfed.org/docs/api/fred/series_observations.html
+- FRED API keys: https://fred.stlouisfed.org/docs/api/fred/v2/api_key.html
+- FRED CPI: https://fred.stlouisfed.org/series/CPIAUCSL
+- FRED PPI: https://fred.stlouisfed.org/series/PPIACO
+- FRED unemployment: https://fred.stlouisfed.org/series/UNRATE
+- FRED fed funds: https://fred.stlouisfed.org/series/FEDFUNDS
+- FRED 10-year yield: https://fred.stlouisfed.org/series/DGS10
+- FRED broad dollar index: https://fred.stlouisfed.org/series/DTWEXBGS
+- BLS API limits: https://www.bls.gov/developers/api_faqs.htm
+- TCMB daily FX XML FAQ: https://www.tcmb.gov.tr/wps/wcm/connect/bab69efb-d66c-45b5-91c6-1533886acd6e/GenelAg-SSS.pdf
+- TCMB EVDS 3 announcement: https://www.tcmb.gov.tr/wps/wcm/connect/tr/tcmb%2Btr/main%2Bmenu/duyurular/basin/2026/duy2026-03
+- TÜİK data portal: https://data.tuik.gov.tr/
+- Federal Reserve RSS feeds: https://www.federalreserve.gov/feeds/
 
 ### Phase 3.1 Collector Outputs
 
@@ -217,6 +273,48 @@ Duplicate guard:
 - `stooq_xag_usd` writes global XAG/USD using Stooq current CSV `Close` as a zero-spread diagnostic/mid price because bid/ask is not provided.
 - `tcmb_usd_try` writes daily USD/TRY using the midpoint of TCMB `ForexBuying` and `ForexSelling`.
 - All three collectors store raw payload hashes and parser versions.
+
+### Runtime Memory Event Contract
+
+Phase 6.5 runtime memory tables store compact operational facts, not raw collector data.
+
+`agent_memory_events` minimum fields:
+
+- `id`
+- `event_type`
+- `source`
+- `agent_name`
+- `severity`
+- `summary`
+- `reason_codes`
+- `tags`
+- `related_record_type`
+- `related_record_id`
+- `occurred_at`
+- `created_at`
+- `metadata_json`
+- `redaction_status`
+
+Allowed initial event types:
+
+- `collector_failure`
+- `collector_recovered`
+- `source_stale`
+- `source_reliability_changed`
+- `risk_decision`
+- `risk_policy_override`
+- `agent_disagreement`
+- `news_market_link`
+- `postmortem`
+- `model_or_strategy_note`
+
+Memory exclusions:
+
+- raw price snapshots.
+- raw HTML payloads.
+- full news dumps.
+- full LLM traces.
+- secrets, API keys, SSH details, bank details, and `.env` values.
 
 Planned runtime tables:
 
@@ -228,6 +326,12 @@ Planned runtime tables:
 - LLM usage logs.
 - backtest results.
 - ML dataset versions.
+- `agent_memory_events`.
+- `source_reliability_daily`.
+- `decision_memory`.
+- optional `memory_facts`.
+- optional `memory_relations`.
+- `postmortems`.
 
 Validation rules:
 

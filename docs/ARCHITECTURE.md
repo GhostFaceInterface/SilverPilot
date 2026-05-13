@@ -32,7 +32,7 @@ Development memory is for code-writing agents:
 - `docs/`
 - `agents/`
 
-Runtime memory belongs in PostgreSQL:
+Runtime market/source data belongs in PostgreSQL raw and normalized tables:
 
 - price history.
 - paper trades.
@@ -40,11 +40,22 @@ Runtime memory belongs in PostgreSQL:
 - risk decisions.
 - agent outputs.
 - daily reports.
-- LLM traces and usage logs.
 - backtest results.
 - ML dataset versions.
 
-Markdown must not become a storage layer for market data, logs, reports, or agent outputs.
+Runtime operational memory also belongs in PostgreSQL, but in compact memory-specific tables:
+
+- high-level agent events.
+- collector reliability facts.
+- source failure patterns.
+- decision summaries.
+- risk policy overrides.
+- agent disagreement records.
+- postmortems.
+- source trust scores.
+- outcome notes.
+
+Langfuse is the home for LLM traces, cost, latency, and prompt observability. Markdown must not become a storage layer for market data, logs, reports, or agent outputs.
 
 ## Runtime Layers
 
@@ -100,6 +111,17 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - Third-party public pages are fallback or comparison sources unless explicitly approved.
 - Public collectors must use polite polling, honest User-Agent headers, selector-failure detection, raw payload hashes, and visible collector failures.
 - Robots/ToS uncertainty must be recorded as medium or high source risk.
+- FRED is the preferred no-cost macro-series gateway for MVP when `FRED_API_KEY` is configured.
+- Direct BLS collection is deferred; BLS-origin CPI/PPI/labor series should come through FRED first when available.
+- TCMB daily XML is the primary USD/TRY execution-context source; TCMB EVDS and TÜİK are optional deeper local-macro sources.
+- Türkiye local macro data informs TRY execution, bank spread, local risk, and tax/rule context; it is not a primary global silver direction signal.
+
+## Data Impact Classes
+
+- Execution-critical: bank silver buy/sell, spread, USD/TRY or bank FX effect, tax/KMV/BSMV rules.
+- Global-market context: XAG/USD, U.S. rates, dollar index, CPI/PPI, Fed RSS.
+- Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
+- Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
 
 ## LLM Pattern
 
@@ -117,6 +139,19 @@ Initial budget guard targets:
 - Report Agent: daily max 0.10 USD.
 - Risk Agent: daily max 0.30 USD.
 - Audit Agent: weekly max 1.00 USD.
+
+## Runtime Operational Memory
+
+Phase 6.5 adds a lightweight PostgreSQL runtime memory layer before external graph memory is considered.
+
+- `memory-bank/*.md`: development memory for coding agents.
+- PostgreSQL raw tables: runtime market/source data and raw payload hashes.
+- PostgreSQL runtime memory tables: compressed operational memory for agents.
+- Langfuse: LLM trace, cost, latency, and prompt observability.
+- Optional future `pgvector`: semantic retrieval inside PostgreSQL only if compact structured queries are not enough.
+- Graph memory frameworks: not part of MVP.
+
+Zep/Graphiti are excluded for now because cloud cost and self-host operations are not justified on the current 4 vCPU / 6 GB VPS. Mem0 OSS, Cognee, LightRAG, and Letta remain research-only.
 
 ## Deployment Shape
 

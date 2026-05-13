@@ -49,6 +49,25 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 - Official free sources rank above third-party public pages.
 - Paid market-data API sources are disabled during MVP and cannot be required for a risk decision.
 - Tax/BSMV rules stay configurable and are not legal or tax advice.
+- FRED macro data is context, not an execution trigger by itself.
+- Direct BLS is backlog; missing direct BLS data must not block MVP decisions if FRED macro series are available.
+- Türkiye data can influence execution-risk scoring because local bank prices, TRY conversion, spread, and local tax/rule context affect simulated fills.
+- Türkiye macro data must not be treated as proof of global XAG/USD direction.
+
+## Impact Classification
+
+- Execution-critical: bank silver buy/sell, spread, TCMB/USDTRY or bank FX effect, tax/KMV/BSMV.
+- Global-market context: XAG/USD, U.S. rates, broad USD strength, CPI/PPI, Fed RSS.
+- Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
+- Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
+
+## Runtime Memory Role
+
+- The deterministic risk policy remains the decision owner.
+- Runtime memory provides historical context only; it cannot override the risk engine.
+- Memory records can inform source trust score, stale source warnings, repeated collector failure detection, repeated agent overconfidence warnings, and postmortem-informed warnings.
+- Risk decisions may write compact memory events, but raw price/news payloads and full LLM traces must stay out of memory tables.
+- If memory lookup returns no relevant records, risk evaluation must still work.
 
 ## Decision Output
 

@@ -77,3 +77,43 @@ Paid market-data APIs are disabled for MVP. Collectors may use official free API
 Status: accepted.
 
 GitHub Actions runs tests, Docker Compose validation, and API image build automatically on push and pull request. VPS deployment and smoke checks are manual because they require server secrets and can mutate the running VPS.
+
+## D-014: FRED First For Macro MVP
+
+Status: accepted.
+
+FRED is the MVP macro-series gateway when a free `FRED_API_KEY` is configured. BLS-origin CPI, PPI, and labor series should be consumed through FRED first to avoid adding a direct BLS integration before it is necessary.
+
+## D-015: Direct BLS Deferred
+
+Status: accepted.
+
+The direct BLS API collector is outside MVP. `BLS_API_KEY` may remain an optional/backlog env placeholder, but no direct BLS implementation is planned until explicitly re-approved.
+
+## D-016: Türkiye Data Is Execution Context
+
+Status: accepted.
+
+Türkiye sources such as TCMB daily XML, optional EVDS, TÜİK, Resmi Gazete, GİB, and Hazine ve Maliye Bakanlığı matter for TRY execution simulation, bank spread comparison, local risk, and tax/rule verification. They are not treated as primary global silver direction signals.
+
+## D-017: Advanced Agent Memory Deferred
+
+Status: superseded by D-018.
+
+Zep/Graphiti, Mem0, Cognee, LightRAG, Letta, and similar memory layers remain research/backlog. The MVP uses markdown for development memory and PostgreSQL for runtime memory; any future graph memory must exclude raw collector data.
+
+## D-018: PostgreSQL-First Lightweight Runtime Memory
+
+Status: accepted.
+
+SilverPilot will implement a custom PostgreSQL-based runtime memory layer before considering external memory frameworks. This lowers operational load, fits the current 4 vCPU / 6 GB VPS, keeps memory records auditable, avoids paid memory platforms, and can later evolve to `pgvector` or external graph memory only if proven necessary.
+
+Explicitly excluded for now:
+
+- Zep.
+- Graphiti.
+- Neo4j/FalkorDB memory stack.
+- Cognee.
+- LightRAG.
+- Letta.
+- Mem0 production integration.

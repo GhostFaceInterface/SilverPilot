@@ -107,10 +107,13 @@ Completed:
 - MVP data source policy set to free/public-source first; paid market-data APIs are disabled.
 - Added `0003_add_collector_audit_fields` migration locally for `fetched_at`, `raw_payload_hash`, and `parser_version`.
 - Added local Phase 3.1 collectors for Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML.
-- Added no-cost BLS/FRED key placeholders; collectors remain disabled until their implementation/key configuration.
+- Added no-cost BLS/FRED key placeholders.
+- Updated strategy: FRED key is available locally and FRED is the MVP macro-series gateway; direct BLS collector is deferred.
+- Classified Türkiye data as execution/risk context for bank spread, TRY conversion, local rates, inflation, and official tax rule checks.
+- Approved Phase 6.5 PostgreSQL-first lightweight runtime memory in the roadmap without changing Phase 3 next steps.
 - Local Phase 3.1 tests passed.
 - Added GitHub Actions CI/CD workflow locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
 
 Next milestone:
 
-- Push CI/CD workflow, configure GitHub VPS secrets, then deploy Phase 3.1 to the VPS and smoke test TCMB/Stooq/Kuveyt collector runs.
+- Deploy Phase 3.1 to the VPS, smoke test TCMB/Stooq/Kuveyt collector runs, then implement Fed RSS and FRED macro collectors.

@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.1: free/public-source collectors are implemented locally, and VPS deployment/smoke validation is being automated through GitHub Actions.
+SilverPilot is in Phase 3.1: free/public-source collectors are implemented locally, CI/CD smoke validation exists, and Fed RSS/FRED macro collectors are next. Phase 6.5 lightweight PostgreSQL runtime memory is approved for later, but it does not change the immediate collector order.
 
 ## Non-Negotiable Rules
 
@@ -163,6 +163,33 @@ Collectors:
 - FxRateCollector.
 - GoldSilverRatioCollector.
 - NewsCollector.
+- FedRssNewsCollector.
+- FredMacroCollector.
+
+MVP free-source order:
+
+1. Kuveyt Türk public silver page POC.
+2. TCMB daily USD/TRY XML.
+3. Stooq XAG/USD current CSV.
+4. Collector health and raw payload audit.
+5. Fed official RSS feeds.
+6. FRED macro series when `FRED_API_KEY` is configured.
+
+Initial FRED macro series:
+
+- `CPIAUCSL`: U.S. CPI, BLS-origin, monthly.
+- `PPIACO`: U.S. producer prices, BLS-origin, monthly.
+- `UNRATE`: U.S. unemployment rate, BLS-origin, monthly.
+- `FEDFUNDS`: effective federal funds rate, monthly.
+- `DGS10`: 10-year Treasury constant maturity yield, daily.
+- `DTWEXBGS`: nominal broad U.S. dollar index, daily dollar-strength proxy.
+
+Deferred Phase 3.x sources:
+
+- Direct BLS API collector. Use FRED-hosted BLS-origin series first.
+- TCMB EVDS deeper Türkiye macro series after a free EVDS key is configured.
+- TÜİK automated collector for CPI/PPI/confidence/labor context.
+- Paid market-data API abstraction remains disabled but interface-ready.
 
 Tables:
 
@@ -181,6 +208,10 @@ Rules:
 - Collector failures are logged.
 - Duplicate rows are prevented.
 - Timestamps are stored in UTC.
+- FRED requires a user API key but no paid market-data subscription.
+- BLS direct collection is optional/backlog; no BLS key is required for MVP.
+- Türkiye data supports TRY execution simulation, bank spread analysis, and local risk context.
+- Türkiye data must not be treated as primary global XAG direction.
 
 Validation gate:
 
@@ -290,6 +321,64 @@ Validation gate:
 - Invalid structured output is rejected or retried.
 - Budget limits can block calls.
 - LLM outage test passes for core backend workflows.
+
+## Phase 6.5: Lightweight Runtime Memory Layer
+
+Goal: give agents compact operational memory before or alongside the first agents, without adding external memory infrastructure.
+
+This is backend-managed structured runtime memory, not LLM hidden state and not markdown. It stores compressed operational facts that help agents explain recurring issues, source reliability, and postmortem lessons.
+
+Deliverables:
+
+- `agent_memory_events` table.
+- `source_reliability_daily` table.
+- `decision_memory` table.
+- optional `memory_facts` table.
+- optional `memory_relations` table.
+- `postmortems` table.
+- memory write service.
+- memory query service.
+- Risk Agent context builder.
+- Report Agent memory summary builder.
+- memory retention policy.
+- memory redaction/safety policy.
+
+Initial event types:
+
+- `collector_failure`
+- `collector_recovered`
+- `source_stale`
+- `source_reliability_changed`
+- `risk_decision`
+- `risk_policy_override`
+- `agent_disagreement`
+- `news_market_link`
+- `postmortem`
+- `model_or_strategy_note`
+
+Out of scope:
+
+- raw price snapshots.
+- raw HTML payloads.
+- full news dumps.
+- full LLM traces.
+- `.env` values.
+- API keys.
+- SSH details.
+- bank information.
+- collector raw data.
+
+Validation gate:
+
+- Memory layer works without external services.
+- Memory layer does not require Zep, Graphiti, Neo4j, FalkorDB, Cognee, Letta, LightRAG, or Mem0.
+- No raw price/news payloads are written into memory tables.
+- No secrets are written into memory tables.
+- Agent context builders retrieve compact summaries, not full logs.
+- Memory records are timestamped and auditable.
+- A Risk Agent can query recent relevant memory before generating explanation.
+- A Report Agent can summarize source reliability and recurring issues.
+- System still works if memory query returns no results.
 
 ## Phase 7: First Agents
 
@@ -497,6 +586,14 @@ Validation gate:
 - Disagreements are logged.
 - Strong models are used only for high-risk reviews or audits.
 
+Backlog research:
+
+- Advanced graph memory frameworks remain research/backlog only.
+- Zep/Graphiti are excluded for now due cost and operations overhead.
+- Mem0 OSS, Cognee, LightRAG, and Letta remain research-only.
+- `pgvector` may be evaluated later as optional semantic retrieval inside PostgreSQL.
+- The approved default memory path is Phase 6.5 custom PostgreSQL runtime memory.
+
 ## Phase 13: Production Hardening
 
 Goal: operate reliably on a VPS.
@@ -535,13 +632,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-After VPS purchase, decide deployment baseline:
-
-- OS and provider.
-- domain or subdomain.
-- Docker install path.
-- PostgreSQL location.
-- backup destination.
-- environment variable strategy.
-
-Then start Phase 1 with FastAPI, database, migrations, and a health endpoint.
+Deploy and smoke test Phase 3.1 collectors on the VPS, then implement Fed RSS and FRED macro collectors. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.

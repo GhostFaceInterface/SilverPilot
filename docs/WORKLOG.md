@@ -141,3 +141,19 @@ CI/CD baseline added locally.
 - VPS smoke covers git pull, Compose config, rebuild, Alembic migration, `/health`, TCMB collector, Stooq collector, optional Kuveyt collector, and collector health.
 - Documented required VPS secrets without storing secret values.
 - Next: push workflow, configure GitHub repository secrets, then run the manual VPS smoke workflow.
+
+FRED-first macro strategy documented.
+
+- Recorded that `FRED_API_KEY` exists locally without writing or reading its value.
+- Updated the MVP data strategy: FRED is the no-cost macro-series gateway; direct BLS is deferred.
+- Added initial FRED series list for CPI, PPI, unemployment, fed funds, 10-year yield, and broad dollar index.
+- Classified Türkiye data as execution/risk context for TRY, bank spread, local macro, and tax/rule validation.
+- Added advanced memory-layer research to backlog only; no implementation or new markdown files were created.
+
+Lightweight runtime memory architecture added.
+
+- Added Phase 6.5 PostgreSQL-first runtime memory to the roadmap.
+- Chose compact operational memory over Zep/Graphiti and external graph-memory services for now.
+- Documented memory contracts, exclusions, and risk-policy boundaries.
+- Fed RSS/FRED collector next-step order remains unchanged.
+- No code implementation or new markdown files were created.
