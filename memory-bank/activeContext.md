@@ -38,7 +38,8 @@ Phase 3: free/public-source data collectors in progress.
 - Phase 3.1 VPS smoke validation passed for TCMB and Stooq; Kuveyt public parser failed safely without fake data.
 - Phase 3.2 Fed RSS collector exists and writes official Fed items to `raw_news`.
 - VPS Fed RSS smoke test passed after a transient network failure retry; 15 Fed RSS items were inserted.
-- Phase 3.3 FRED macro collector exists locally and writes configured FRED observations to `raw_events`.
+- Phase 3.3 FRED macro collector exists and writes configured FRED observations to `raw_events`.
+- VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
 - Türkiye local data is classified as execution/risk context for TRY execution, bank spread analysis, and local macro context, not as global silver direction.
@@ -72,7 +73,7 @@ Phase 3: free/public-source data collectors in progress.
 Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
-- Commit, push, and VPS-smoke the FRED macro collector; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
+- Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
@@ -80,4 +81,4 @@ Pending:
 
 ## Next Step
 
-Commit and deploy FRED macro collector, then run VPS smoke with `python -m app.collectors.runner --job fred-macro`. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace the current next step.
+Run sustained collector validation and decide how to resolve the missing execution-critical public bank silver source. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace Phase 3 data-quality work.

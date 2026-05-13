@@ -176,3 +176,12 @@ FRED macro collector implemented locally.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `compileall`.
 - No secret values were read or written.
 - Next: commit/push, run CI, pull on VPS, and smoke test `fred-macro`.
+
+FRED macro collector deployed on VPS.
+
+- Pushed FRED macro collector and pulled commit `b0cefb6` on the VPS.
+- VPS Compose config/build, Alembic upgrade, and `/health` passed.
+- VPS `fred-macro` runner succeeded and inserted 6 configured FRED observations.
+- Collector health now includes successful `fred_macro`; overall health remains degraded because Kuveyt public parser fails safely and old manual smoke runs are stale.
+- Added Compose env passthrough for Fed RSS and FRED source settings after smoke validation.
+- Next: sustained collector validation and execution-critical bank silver source resolution.

@@ -118,7 +118,8 @@ Completed:
 - Fed RSS collector was deployed to VPS and inserted 15 official RSS items after one transient network retry.
 - Added local Phase 3.3 FRED macro collector for configured FRED observations.
 - Local tests, compile validation, and Docker Compose config passed for FRED macro collector.
+- FRED macro collector was deployed to VPS and inserted 6 configured FRED observations.
 
 Next milestone:
 
-- Commit/push FRED macro collector, run CI, pull on VPS, and smoke test `fred-macro`.
+- Run sustained collector validation and resolve the missing execution-critical public bank silver price source.

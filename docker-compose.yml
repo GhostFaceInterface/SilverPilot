@@ -14,8 +14,12 @@ services:
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}
       STOOQ_XAG_USD_URL: ${STOOQ_XAG_USD_URL:-https://stooq.com/q/l/?s=xagusd&f=sd2t2ohlcv&h&e=csv}
       TCMB_TODAY_XML_URL: ${TCMB_TODAY_XML_URL:-https://www.tcmb.gov.tr/kurlar/today.xml}
+      FED_RSS_ENABLED: ${FED_RSS_ENABLED:-true}
+      FED_RSS_URL: ${FED_RSS_URL:-https://www.federalreserve.gov/feeds/press_monetary.xml}
       BLS_API_KEY: ${BLS_API_KEY:-}
       FRED_API_KEY: ${FRED_API_KEY:-}
+      FRED_API_BASE_URL: ${FRED_API_BASE_URL:-https://api.stlouisfed.org/fred}
+      FRED_SERIES_IDS: ${FRED_SERIES_IDS:-CPIAUCSL,PPIACO,UNRATE,FEDFUNDS,DGS10,DTWEXBGS}
     ports:
       - "8000:8000"
     depends_on:
@@ -42,6 +46,8 @@ services:
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}
       STOOQ_XAG_USD_URL: ${STOOQ_XAG_USD_URL:-https://stooq.com/q/l/?s=xagusd&f=sd2t2ohlcv&h&e=csv}
       TCMB_TODAY_XML_URL: ${TCMB_TODAY_XML_URL:-https://www.tcmb.gov.tr/kurlar/today.xml}
+      FED_RSS_ENABLED: ${FED_RSS_ENABLED:-true}
+      FED_RSS_URL: ${FED_RSS_URL:-https://www.federalreserve.gov/feeds/press_monetary.xml}
       MANUAL_PRICE_SOURCE_TYPE: ${MANUAL_PRICE_SOURCE_TYPE:-bank}
       MANUAL_PRICE_SOURCE: ${MANUAL_PRICE_SOURCE:-manual-scheduled}
       MANUAL_PRICE_ASSET_SYMBOL: ${MANUAL_PRICE_ASSET_SYMBOL:-XAG}
@@ -50,6 +56,8 @@ services:
       MANUAL_PRICE_CURRENCY: ${MANUAL_PRICE_CURRENCY:-USD}
       BLS_API_KEY: ${BLS_API_KEY:-}
       FRED_API_KEY: ${FRED_API_KEY:-}
+      FRED_API_BASE_URL: ${FRED_API_BASE_URL:-https://api.stlouisfed.org/fred}
+      FRED_SERIES_IDS: ${FRED_SERIES_IDS:-CPIAUCSL,PPIACO,UNRATE,FEDFUNDS,DGS10,DTWEXBGS}
     depends_on:
       postgres:
         condition: service_healthy

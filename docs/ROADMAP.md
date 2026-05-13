@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.3: the FRED macro collector is implemented locally after Phase 3.2 Fed RSS VPS validation. Next is commit/push, CI validation, and VPS smoke for `fred-macro`. Phase 6.5 lightweight PostgreSQL runtime memory is approved for later, but it does not change the immediate collector order.
+SilverPilot is in Phase 3.3: the FRED macro collector is implemented and smoke-tested on the VPS after Phase 3.2 Fed RSS validation. Next is sustained collector operation and data-quality review for the Phase 3 validation gate. Phase 6.5 lightweight PostgreSQL runtime memory is approved for later, but it does not change the immediate collector order.
 
 ## Non-Negotiable Rules
 
@@ -633,4 +633,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Commit and deploy the FRED macro collector, then run VPS smoke with `python -m app.collectors.runner --job fred-macro`. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Run the MVP collectors long enough to review freshness, duplicate behavior, and missing-data ratio. The Kuveyt public page parser still fails safely and needs either a better public bank-price source or an approved public-page parser revision. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
