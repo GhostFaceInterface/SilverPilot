@@ -193,3 +193,11 @@ Phase 3.4 bank silver source resolution started.
 - Updated collector health states for execution-critical bank price: `healthy`, `degraded`, `blocked`, and `stale`.
 - Documented manual bank-price input as degraded simulation fallback only.
 - Local tests passed; next: VPS smoke test for `kuveyt-silver`.
+
+Phase 3.4 Kuveyt bank silver smoke passed on VPS.
+
+- Pushed commit `1f79c70` and pulled it on the VPS.
+- VPS Compose config/build and Alembic upgrade passed.
+- VPS `kuveyt-silver` runner succeeded and inserted a fresh `kuveyt-public-silver-page` bank price.
+- VPS collector health reports execution-critical bank price as fresh; overall health remains degraded only because old manual smoke rows are stale.
+- Next: sustained collector validation for freshness, duplicate behavior, and missing-data ratio.

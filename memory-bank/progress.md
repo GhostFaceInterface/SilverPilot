@@ -123,7 +123,8 @@ Completed:
 - Updated Kuveyt official public collector to use public browser-loaded finance portal GMS data when available.
 - Updated collector health policy to distinguish `healthy`, `degraded`, `blocked`, and `stale`.
 - Kept manual bank-price ingestion as a visible degraded simulation fallback.
+- Kuveyt official public collector was deployed to VPS and inserted a fresh bank silver price.
 
 Next milestone:
 
-- Smoke-test the Kuveyt official public bank silver collector on VPS, then run sustained collector validation.
+- Run sustained collector validation for freshness, duplicate behavior, and missing-data ratio.

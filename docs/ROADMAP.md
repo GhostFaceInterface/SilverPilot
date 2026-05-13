@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.4: execution-critical bank silver pricing is being resolved before Phase 4. Kuveyt Türk official public page parsing now uses public browser-loaded finance portal data when available; manual bank-price fallback remains a simulation unblocker, not a production-grade source. Next is VPS smoke validation and sustained collector data-quality review.
+SilverPilot is in Phase 3.4: execution-critical bank silver pricing is resolved for the current MVP path. Kuveyt Türk official public page parsing uses public browser-loaded finance portal data and has passed VPS smoke validation. Manual bank-price fallback remains a simulation unblocker, not a production-grade source. Next is sustained collector operation and data-quality review.
 
 ## Non-Negotiable Rules
 
@@ -253,7 +253,8 @@ Third-party candidates:
 
 Phase 4 gate:
 
-- Do not start Phase 4 until official Kuveyt collector is VPS-smoke-tested or manual fallback policy is accepted as temporary simulation-only input.
+- Official Kuveyt collector has passed VPS smoke validation.
+- Do not start Phase 4 until sustained collector validation confirms freshness, duplicate behavior, and missing-data ratio are acceptable.
 
 ## Phase 4: Risk Policy and Rule Engine
 
