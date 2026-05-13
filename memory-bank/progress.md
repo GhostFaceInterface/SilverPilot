@@ -115,7 +115,8 @@ Completed:
 - Added GitHub Actions CI/CD workflow locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
 - Phase 3.1 VPS smoke validation passed for TCMB and Stooq; Kuveyt public page parser failed safely without fake data.
 - Added local Phase 3.2 Fed RSS collector for official Federal Reserve monetary policy feed.
+- Fed RSS collector was deployed to VPS and inserted 15 official RSS items after one transient network retry.
 
 Next milestone:
 
-- Commit/push and smoke test Fed RSS on the VPS, then implement FRED macro collector.
+- Implement FRED macro collector using the configured no-cost FRED API key.

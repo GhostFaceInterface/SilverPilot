@@ -36,7 +36,8 @@ Phase 3: free/public-source data collectors in progress.
 - Phase 3.1 local collectors exist for Kuveyt public silver page POC, Stooq XAG/USD CSV, and TCMB USD/TRY XML.
 - Local tests validate Phase 3.1 parser/storage behavior.
 - Phase 3.1 VPS smoke validation passed for TCMB and Stooq; Kuveyt public parser failed safely without fake data.
-- Phase 3.2 Fed RSS collector exists locally and writes official Fed items to `raw_news`.
+- Phase 3.2 Fed RSS collector exists and writes official Fed items to `raw_news`.
+- VPS Fed RSS smoke test passed after a transient network failure retry; 15 Fed RSS items were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
 - Türkiye local data is classified as execution/risk context for TRY execution, bank spread analysis, and local macro context, not as global silver direction.
@@ -69,7 +70,6 @@ Phase 3: free/public-source data collectors in progress.
 
 Pending:
 
-- Deploy and smoke test the Fed RSS collector on VPS after commit/push.
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Implement FRED macro collector; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
@@ -79,4 +79,4 @@ Pending:
 
 ## Next Step
 
-Deploy and smoke test Fed RSS on VPS, then implement FRED macro collector. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace the current next step.
+Implement FRED macro collector. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace the current next step.

@@ -164,4 +164,6 @@ Fed RSS collector implemented locally.
 - Added append-only `raw_news` ingestion with duplicate URL handling.
 - Added runner job `--job fed-rss` and env placeholders for `FED_RSS_ENABLED` and `FED_RSS_URL`.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `compileall`.
-- Next: commit/push, smoke test Fed RSS on VPS, then implement FRED macro collector.
+- VPS validation passed: Compose config/build, Alembic upgrade, `/health`, and `fed-rss` runner.
+- First Fed RSS runner attempt hit transient network unreachable; retry succeeded and inserted 15 items.
+- Next: implement FRED macro collector.
