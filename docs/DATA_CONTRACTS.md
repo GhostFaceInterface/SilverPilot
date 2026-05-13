@@ -284,6 +284,19 @@ Initial series:
 - Default source: `federal-reserve-rss`.
 - Default parser version: `fed-rss-v1`.
 
+### Phase 3.3 FRED Macro Output
+
+- `fred_macro` reads configured FRED series through the no-cost FRED API key.
+- Output table: `raw_events`.
+- Event type: `fred_macro_observation`.
+- Default source: `fred-api`.
+- Default parser version: `fred-observations-v1`.
+- Default series: `CPIAUCSL`, `PPIACO`, `UNRATE`, `FEDFUNDS`, `DGS10`, `DTWEXBGS`.
+- Required fields: series ID, observation date, value, fetched timestamp, raw payload hash, parser version, realtime start/end when present, and compact metadata.
+- Parser behavior: FRED missing values such as `.` are skipped; all-missing or empty responses create a failed collector run.
+- Duplicate behavior: exact repeated observations are counted as duplicates, not reinserted.
+- Direct BLS stays disabled; BLS-origin CPI/PPI/labor context is pulled through FRED first.
+
 ### Runtime Memory Event Contract
 
 Phase 6.5 runtime memory tables store compact operational facts, not raw collector data.

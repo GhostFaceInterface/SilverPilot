@@ -167,3 +167,12 @@ Fed RSS collector implemented locally.
 - VPS validation passed: Compose config/build, Alembic upgrade, `/health`, and `fed-rss` runner.
 - First Fed RSS runner attempt hit transient network unreachable; retry succeeded and inserted 15 items.
 - Next: implement FRED macro collector.
+
+FRED macro collector implemented locally.
+
+- Added `fred_macro` collector using FRED `series/observations` JSON responses.
+- Added append-only `raw_events` ingestion for `fred_macro_observation` records with duplicate handling.
+- Added runner job `--job fred-macro` and env placeholders for FRED base URL and series IDs.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `compileall`.
+- No secret values were read or written.
+- Next: commit/push, run CI, pull on VPS, and smoke test `fred-macro`.

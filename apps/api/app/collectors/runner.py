@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from app.collectors.public_sources import (
     collect_fed_rss,
+    collect_fred_macro,
     collect_kuveyt_public_silver,
     collect_stooq_xag_usd,
     collect_tcmb_usd_try,
@@ -44,6 +45,10 @@ def run_once(args: argparse.Namespace) -> None:
             run, inserted = collect_fed_rss(db)
             print(f"collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
             return
+        if args.job == "fred-macro":
+            run, inserted = collect_fred_macro(db)
+            print(f"collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
+            return
 
         request = ManualPriceIngestRequest(
             source_type=args.source_type,
@@ -72,7 +77,7 @@ def main() -> None:
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "900")))
     parser.add_argument(
         "--job",
-        choices=["manual", "kuveyt-silver", "stooq-xag-usd", "tcmb-usd-try", "fed-rss"],
+        choices=["manual", "kuveyt-silver", "stooq-xag-usd", "tcmb-usd-try", "fed-rss", "fred-macro"],
         default=os.getenv("COLLECTOR_JOB", "manual"),
     )
     parser.add_argument("--source-type", choices=["bank", "global"], default=os.getenv("MANUAL_PRICE_SOURCE_TYPE", "bank"))

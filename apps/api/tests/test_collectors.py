@@ -9,15 +9,17 @@ from sqlalchemy.pool import StaticPool
 
 from app.collectors.public_sources import (
     collect_fed_rss,
+    collect_fred_macro,
     collect_stooq_xag_usd,
     collect_tcmb_usd_try,
     parse_fed_rss,
+    parse_fred_observations,
     parse_kuveyt_public_silver_html,
 )
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice, RawNews
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
 
 
 def make_client():
@@ -299,6 +301,68 @@ def test_fed_rss_collector_writes_news_items_and_counts_duplicates():
         assert raw.raw_payload_hash
         assert raw.parser_version == "fed-rss-v1"
         assert raw.payload_json["source_type"] == "official_rss"
+    finally:
+        client.close()
+        db.close()
+
+
+def test_fred_observations_parser_skips_missing_latest_value():
+    parsed = parse_fred_observations(
+        """
+{
+  "observations": [
+    {"realtime_start": "2026-05-13", "realtime_end": "2026-05-13", "date": "2026-05-01", "value": "."},
+    {"realtime_start": "2026-05-13", "realtime_end": "2026-05-13", "date": "2026-04-01", "value": "2.45"}
+  ]
+}
+""",
+        series_id="DGS10",
+    )
+
+    assert parsed.series_id == "DGS10"
+    assert parsed.value == Decimal("2.45")
+    assert parsed.observed_at == datetime(2026, 4, 1, tzinfo=UTC)
+    assert parsed.payload["missing_value_semantics"] == "dot_values_skipped"
+
+
+def test_fred_macro_collector_writes_raw_events_and_counts_duplicates():
+    _, testing_session = make_client()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["user-agent"].startswith("SilverPilot/")
+        assert request.url.params["api_key"] == "test-fred-key"
+        series_id = request.url.params["series_id"]
+        payload = {
+            "observations": [
+                {
+                    "realtime_start": "2026-05-13",
+                    "realtime_end": "2026-05-13",
+                    "date": "2026-04-01",
+                    "value": "3.10" if series_id == "CPIAUCSL" else "4.20",
+                }
+            ]
+        }
+        return httpx.Response(200, json=payload)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    settings = Settings(fred_api_key="test-fred-key", fred_series_ids="CPIAUCSL,DGS10")
+    try:
+        first_run, first_inserted = collect_fred_macro(db, settings=settings, client=client)
+        second_run, second_inserted = collect_fred_macro(db, settings=settings, client=client)
+
+        assert first_run.status == "success"
+        assert first_inserted == 2
+        assert second_run.status == "success"
+        assert second_inserted == 0
+        assert second_run.duplicates == 2
+        rows = db.query(RawEvent).all()
+        assert len(rows) == 2
+        assert {row.payload_json["series_id"] for row in rows} == {"CPIAUCSL", "DGS10"}
+        assert {row.event_type for row in rows} == {"fred_macro_observation"}
+        assert all(row.source == "fred-api" for row in rows)
+        assert all(row.raw_payload_hash for row in rows)
+        assert all(row.parser_version == "fred-observations-v1" for row in rows)
     finally:
         client.close()
         db.close()

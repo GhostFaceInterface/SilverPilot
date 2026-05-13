@@ -116,7 +116,9 @@ Completed:
 - Phase 3.1 VPS smoke validation passed for TCMB and Stooq; Kuveyt public page parser failed safely without fake data.
 - Added local Phase 3.2 Fed RSS collector for official Federal Reserve monetary policy feed.
 - Fed RSS collector was deployed to VPS and inserted 15 official RSS items after one transient network retry.
+- Added local Phase 3.3 FRED macro collector for configured FRED observations.
+- Local tests, compile validation, and Docker Compose config passed for FRED macro collector.
 
 Next milestone:
 
-- Implement FRED macro collector using the configured no-cost FRED API key.
+- Commit/push FRED macro collector, run CI, pull on VPS, and smoke test `fred-macro`.

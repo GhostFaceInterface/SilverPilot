@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     fed_rss_url: str = "https://www.federalreserve.gov/feeds/press_monetary.xml"
     bls_api_key: str = ""
     fred_api_key: str = ""
+    fred_api_base_url: str = "https://api.stlouisfed.org/fred"
+    fred_series_ids: str = "CPIAUCSL,PPIACO,UNRATE,FEDFUNDS,DGS10,DTWEXBGS"
 
 
 @lru_cache

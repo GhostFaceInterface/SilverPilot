@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawFxRate, RawGlobalPrice, RawNews
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
 from app.schemas.collectors import ManualPriceIngestRequest
 
 PRICE_QUANT = Decimal("0.000001")
@@ -368,6 +368,68 @@ def ingest_news_items(
                 raw_payload_hash=payload_hash(payload),
                 parser_version=parser_version,
                 payload_json=payload,
+            )
+        )
+        inserted += 1
+
+    finish_collector_run(db, run, status="success", records_inserted=inserted, duplicates=duplicates)
+    db.commit()
+    db.refresh(run)
+    return run, inserted
+
+
+def ingest_event_items(
+    db: Session,
+    *,
+    collector_name: str,
+    source: str,
+    event_type: str,
+    items: list[dict],
+    fetched_at: datetime,
+    parser_version: str,
+) -> tuple[CollectorRun, int]:
+    fetched_at = _utc(fetched_at)
+    source = source.lower()
+    run = start_collector_run(
+        db,
+        collector_name=collector_name,
+        source=source,
+        records_seen=len(items),
+        details_json={"parser_version": parser_version},
+    )
+    inserted = 0
+    duplicates = 0
+    for item in items:
+        observed_at = item.get("observed_at")
+        if not isinstance(observed_at, datetime):
+            raise CollectorError("Event item observed_at is required")
+        observed_at = _utc(observed_at)
+
+        payload = dict(item)
+        payload["observed_at"] = observed_at.isoformat()
+        raw_hash = payload_hash(payload)
+        duplicate = db.execute(
+            select(RawEvent).where(
+                RawEvent.source == source,
+                RawEvent.event_type == event_type,
+                RawEvent.observed_at == observed_at,
+                RawEvent.raw_payload_hash == raw_hash,
+            )
+        ).scalar_one_or_none()
+        if duplicate is not None:
+            duplicates += 1
+            continue
+
+        db.add(
+            RawEvent(
+                collector_run_id=run.id,
+                source=source,
+                event_type=event_type,
+                payload_json=payload,
+                observed_at=observed_at,
+                fetched_at=fetched_at,
+                raw_payload_hash=raw_hash,
+                parser_version=parser_version,
             )
         )
         inserted += 1

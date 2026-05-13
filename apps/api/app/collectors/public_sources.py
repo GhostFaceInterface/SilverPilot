@@ -1,4 +1,5 @@
 import csv
+import json
 from email.utils import parsedate_to_datetime
 import re
 from dataclasses import dataclass
@@ -14,9 +15,11 @@ from sqlalchemy.orm import Session
 from app.collectors.service import (
     CollectorError,
     ingest_bank_price,
+    ingest_event_items,
     ingest_fx_rate,
     ingest_global_price,
     ingest_news_items,
+    payload_hash,
     record_failed_run,
 )
 from app.core.config import Settings, get_settings
@@ -26,6 +29,7 @@ KUVEYT_PARSER_VERSION = "kuveyt-public-html-v1"
 STOOQ_PARSER_VERSION = "stooq-xagusd-csv-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
 FED_RSS_PARSER_VERSION = "fed-rss-v1"
+FRED_OBSERVATIONS_PARSER_VERSION = "fred-observations-v1"
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,14 @@ class ParsedNewsItem:
     title: str
     url: str
     published_at: datetime | None
+    payload: dict
+
+
+@dataclass(frozen=True)
+class ParsedMacroObservation:
+    series_id: str
+    value: Decimal
+    observed_at: datetime
     payload: dict
 
 
@@ -218,6 +230,68 @@ def collect_fed_rss(
         return run, 0
 
 
+def collect_fred_macro(
+    db: Session,
+    *,
+    settings: Settings | None = None,
+    client: httpx.Client | None = None,
+) -> tuple[CollectorRun, int]:
+    settings = settings or get_settings()
+    fetched_at = datetime.now(UTC)
+    series_ids = _fred_series_ids(settings.fred_series_ids)
+    if not settings.fred_api_key:
+        run = record_failed_run(
+            db,
+            collector_name="fred_macro",
+            source="fred-api",
+            error_message="FRED API key is not configured",
+            details_json={"parser_version": FRED_OBSERVATIONS_PARSER_VERSION, "series_ids": series_ids},
+        )
+        return run, 0
+    try:
+        observations = []
+        raw_hash_inputs = []
+        for series_id in series_ids:
+            raw_payload = _fetch_fred_observations(series_id, settings=settings, client=client)
+            raw_hash_inputs.append(raw_payload)
+            observations.append(parse_fred_observations(raw_payload, series_id=series_id))
+
+        run, inserted = ingest_event_items(
+            db,
+            collector_name="fred_macro",
+            source="fred-api",
+            event_type="fred_macro_observation",
+            items=[
+                {
+                    "series_id": observation.series_id,
+                    "value": str(observation.value),
+                    "observed_at": observation.observed_at,
+                    **observation.payload,
+                }
+                for observation in observations
+            ],
+            fetched_at=fetched_at,
+            parser_version=FRED_OBSERVATIONS_PARSER_VERSION,
+        )
+        run.details_json = {
+            **(run.details_json or {}),
+            "series_ids": series_ids,
+            "raw_payload_hashes": [payload_hash(raw_payload) for raw_payload in raw_hash_inputs],
+        }
+        db.commit()
+        db.refresh(run)
+        return run, inserted
+    except Exception as exc:
+        run = record_failed_run(
+            db,
+            collector_name="fred_macro",
+            source="fred-api",
+            error_message=str(exc),
+            details_json={"parser_version": FRED_OBSERVATIONS_PARSER_VERSION, "series_ids": series_ids},
+        )
+        return run, 0
+
+
 def parse_stooq_xag_usd_csv(raw_payload: str) -> ParsedGlobalPrice:
     rows = list(csv.DictReader(StringIO(raw_payload.strip())))
     if not rows:
@@ -306,6 +380,41 @@ def parse_fed_rss(raw_payload: str) -> list[ParsedNewsItem]:
     return items
 
 
+def parse_fred_observations(raw_payload: str, *, series_id: str) -> ParsedMacroObservation:
+    try:
+        body = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise CollectorError("FRED observations response is not valid JSON") from exc
+    observations = body.get("observations")
+    if not isinstance(observations, list) or not observations:
+        raise CollectorError(f"FRED returned no observations for {series_id}")
+
+    for observation in observations:
+        value = observation.get("value")
+        if value in (None, "."):
+            continue
+        date_value = observation.get("date")
+        if not date_value:
+            raise CollectorError(f"FRED observation date is missing for {series_id}")
+        parsed_value = _decimal(value, field_name=f"{series_id} value")
+        return ParsedMacroObservation(
+            series_id=series_id,
+            value=parsed_value,
+            observed_at=_parse_date(date_value, field_name=f"{series_id} date"),
+            payload={
+                "series_id": series_id,
+                "date": date_value,
+                "value": str(parsed_value),
+                "realtime_start": observation.get("realtime_start"),
+                "realtime_end": observation.get("realtime_end"),
+                "source_type": "official_api",
+                "access_tier": "free_api_key",
+                "missing_value_semantics": "dot_values_skipped",
+            },
+        )
+    raise CollectorError(f"FRED returned only missing observations for {series_id}")
+
+
 def parse_kuveyt_public_silver_html(raw_payload: str, *, fetched_at: datetime) -> ParsedBankPrice:
     text = _html_to_text(raw_payload)
     buy_from_user = _find_price_after_label(
@@ -354,6 +463,31 @@ def _fetch_text(url: str, *, settings: Settings, client: httpx.Client | None) ->
     return response.text
 
 
+def _fetch_fred_observations(series_id: str, *, settings: Settings, client: httpx.Client | None) -> str:
+    url = f"{settings.fred_api_base_url.rstrip('/')}/series/observations"
+    params = {
+        "series_id": series_id,
+        "api_key": settings.fred_api_key,
+        "file_type": "json",
+        "sort_order": "desc",
+        "limit": "10",
+    }
+    headers = {"User-Agent": settings.collector_user_agent}
+    try:
+        if client is None:
+            with httpx.Client(timeout=20, follow_redirects=True, headers=headers) as owned_client:
+                response = owned_client.get(url, params=params)
+        else:
+            response = client.get(url, params=params, headers=headers, timeout=20, follow_redirects=True)
+    except httpx.RequestError as exc:
+        raise CollectorError(f"FRED API request failed for {series_id}") from exc
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise CollectorError(f"FRED API returned HTTP {exc.response.status_code} for {series_id}") from exc
+    return response.text
+
+
 def _parse_datetime(date_value: str | None, time_value: str | None) -> datetime:
     if not date_value:
         raise CollectorError("Date is missing")
@@ -375,6 +509,15 @@ def _parse_tcmb_date(value: str | None) -> datetime:
         except ValueError:
             continue
     raise CollectorError(f"Unsupported TCMB date format: {value}")
+
+
+def _parse_date(value: str | None, *, field_name: str) -> datetime:
+    if not value:
+        raise CollectorError(f"{field_name} is missing")
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise CollectorError(f"Unsupported {field_name} format: {value}") from exc
 
 
 def _element_text(element: ElementTree.Element, child_name: str) -> str:
@@ -430,6 +573,13 @@ def _find_price_after_label(text: str, *, labels: tuple[str, ...]) -> Decimal | 
         if match:
             return _parse_turkish_decimal(match.group(1))
     return None
+
+
+def _fred_series_ids(value: str) -> list[str]:
+    series_ids = [item.strip().upper() for item in value.split(",") if item.strip()]
+    if not series_ids:
+        raise CollectorError("FRED series list is empty")
+    return series_ids
 
 
 def _parse_turkish_decimal(value: str) -> Decimal:
