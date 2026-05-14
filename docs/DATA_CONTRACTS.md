@@ -312,6 +312,9 @@ Output:
 
 - top-level `status`: `empty`, `ok`, or `degraded`.
 - expected runs per collector.
+- expected runs so far per collector.
+- validation window completion flag.
+- elapsed minutes since the first run in the window.
 - per collector/source run count.
 - successful and failed runs.
 - records seen, inserted, and duplicates.
@@ -323,6 +326,7 @@ Output:
 Notes:
 
 - This is a validation metric, not a trading signal.
+- Missing-run ratio is calculated against elapsed runtime, not future time in the selected window.
 - Different collector frequencies may need different review windows before Phase 4.
 - Missing-run ratio is based on the query's expected interval, not provider freshness guarantees.
 

@@ -112,6 +112,10 @@ class CollectorQualityItem(BaseModel):
 class CollectorQualityResponse(BaseModel):
     status: Literal["empty", "ok", "degraded"]
     window_hours: int
+    window_started_at: datetime | None
+    elapsed_minutes: int
+    validation_window_complete: bool
     expected_interval_minutes: int
     expected_runs_per_collector: int
+    expected_runs_so_far_per_collector: int
     collectors: list[CollectorQualityItem]

@@ -217,3 +217,10 @@ Sustained collector validation started on VPS.
 - Initial collector loop succeeded for all five jobs.
 - `/collectors/health` returned `healthy` with fresh official bank price.
 - `/collectors/quality` is expected to remain degraded until enough runtime fills the validation window and older failed POC runs age out.
+
+Collector quality warm-up semantics tightened.
+
+- Updated `/collectors/quality` so missing-run ratio is measured against elapsed runtime, not future intervals in the selected validation window.
+- Added `validation_window_complete`, `window_started_at`, `elapsed_minutes`, and `expected_runs_so_far_per_collector`.
+- This keeps Phase 3 validation useful while the 24-hour collector window is still accumulating.
+- No new markdown files were created.

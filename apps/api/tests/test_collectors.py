@@ -262,9 +262,37 @@ def test_collector_quality_reports_missing_and_duplicate_ratios():
     body = response.json()
     assert body["status"] == "ok"
     assert body["expected_runs_per_collector"] == 2
+    assert body["expected_runs_so_far_per_collector"] == 1
+    assert body["validation_window_complete"] is False
     assert body["collectors"][0]["runs"] == 2
     assert body["collectors"][0]["duplicates"] == 1
     assert body["collectors"][0]["duplicate_ratio"] == 0.5
+    assert body["collectors"][0]["missing_ratio"] == 0.0
+
+
+def test_collector_quality_does_not_count_future_validation_window_as_missing():
+    client, _ = make_client()
+    payload = {
+        "source_type": "bank",
+        "source": "manual-test-bank",
+        "asset_symbol": "XAG",
+        "buy_price": "10.00",
+        "sell_price": "9.80",
+        "currency": "USD",
+        "observed_at": "2026-05-13T12:00:00Z",
+        "payload": {},
+    }
+    client.post("/collectors/manual-price", json=payload)
+
+    response = client.get("/collectors/quality?window_hours=24&expected_interval_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["expected_runs_per_collector"] == 24
+    assert body["expected_runs_so_far_per_collector"] == 1
+    assert body["validation_window_complete"] is False
+    assert body["collectors"][0]["missing_runs"] == 0
     assert body["collectors"][0]["missing_ratio"] == 0.0
 
 

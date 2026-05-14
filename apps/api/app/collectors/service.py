@@ -569,6 +569,18 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
         .scalars()
         .all()
     )
+    window_started_at = min((_aware(run.started_at) for run in runs), default=None)
+    elapsed_minutes = (
+        min(window_hours * 60, max(0, int((now - window_started_at).total_seconds() / 60)))
+        if window_started_at is not None
+        else 0
+    )
+    expected_runs_so_far = 0
+    if runs:
+        expected_runs_so_far = max(1, int(elapsed_minutes / expected_interval_minutes) + 1)
+        expected_runs_so_far = min(expected_runs_so_far, expected_runs)
+    validation_window_complete = elapsed_minutes >= window_hours * 60
+
     groups: dict[tuple[str, str], list[CollectorRun]] = {}
     for run in runs:
         groups.setdefault((run.collector_name, run.source), []).append(run)
@@ -581,7 +593,7 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
         records_seen = sum(run.records_seen for run in collector_runs)
         records_inserted = sum(run.records_inserted for run in collector_runs)
         duplicates = sum(run.duplicates for run in collector_runs)
-        missing_runs = max(expected_runs - total_runs, 0)
+        missing_runs = max(expected_runs_so_far - total_runs, 0)
         latest = collector_runs[0]
         collectors.append(
             {
@@ -612,8 +624,12 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
     return {
         "status": status,
         "window_hours": window_hours,
+        "window_started_at": window_started_at,
+        "elapsed_minutes": elapsed_minutes,
+        "validation_window_complete": validation_window_complete,
         "expected_interval_minutes": expected_interval_minutes,
         "expected_runs_per_collector": expected_runs,
+        "expected_runs_so_far_per_collector": expected_runs_so_far,
         "collectors": collectors,
     }
 
