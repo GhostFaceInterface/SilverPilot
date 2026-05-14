@@ -45,6 +45,7 @@ Phase 3: free/public-source data collectors in progress.
 - Manual bank-price ingestion remains a simulation fallback and must show as degraded/manual, not production-grade.
 - Collector runner supports comma-separated `COLLECTOR_JOBS` and defaults the collector profile to the MVP source batch.
 - Collector quality endpoint exists at `GET /collectors/quality`.
+- Collector validation gate exists at `GET /collectors/validation-gate` to decide when Phase 4 can start.
 - VPS collector profile is running with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs every 900 seconds.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.

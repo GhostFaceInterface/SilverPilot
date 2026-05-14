@@ -226,3 +226,9 @@ Collector quality warm-up semantics tightened.
 - Excluded inactive manual fallback runs from quality summaries when public collector groups exist.
 - This keeps Phase 3 validation useful while the 24-hour collector window is still accumulating.
 - No new markdown files were created.
+
+Collector Phase 4 validation gate added.
+
+- Added `GET /collectors/validation-gate` as a machine-readable readiness check.
+- Gate returns `ready` only when health is healthy, quality is ok, and the selected validation window is complete.
+- This does not start Phase 4 risk decisions; it only prevents manual interpretation drift while data accumulates.

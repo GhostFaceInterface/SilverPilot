@@ -637,6 +637,57 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
     }
 
 
+def collector_validation_gate(
+    db: Session,
+    *,
+    window_hours: int = 24,
+    expected_interval_minutes: int = 15,
+    stale_after_minutes: int = 60,
+) -> dict:
+    health = collector_health(db, stale_after_minutes=stale_after_minutes)
+    quality = collector_quality(db, window_hours=window_hours, expected_interval_minutes=expected_interval_minutes)
+
+    reasons = []
+    if health["status"] != "healthy":
+        reasons.append("COLLECTOR_HEALTH_NOT_HEALTHY")
+    if health["execution_critical"]["bank_price"] != "fresh":
+        reasons.append("EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH")
+    if quality["status"] != "ok":
+        reasons.append("QUALITY_STATUS_NOT_OK")
+    if not quality["validation_window_complete"]:
+        reasons.append("VALIDATION_WINDOW_INCOMPLETE")
+    if any(item["failed_runs"] > 0 for item in quality["collectors"]):
+        reasons.append("COLLECTOR_FAILURES_PRESENT")
+    if any(item["missing_runs"] > 0 for item in quality["collectors"]):
+        reasons.append("MISSING_RUNS_PRESENT")
+
+    if not health["collectors"] and not quality["collectors"]:
+        status = "empty"
+    elif health["status"] in {"blocked", "stale"} or health["execution_critical"]["bank_price"] != "fresh":
+        status = "blocked"
+    elif quality["status"] != "ok" or any(reason.endswith("_PRESENT") for reason in reasons):
+        status = "degraded"
+    elif not quality["validation_window_complete"]:
+        status = "warming_up"
+    else:
+        status = "ready"
+        reasons = ["READY"]
+
+    return {
+        "status": status,
+        "phase4_allowed": status == "ready",
+        "reasons": reasons,
+        "health_status": health["status"],
+        "quality_status": quality["status"],
+        "window_hours": quality["window_hours"],
+        "elapsed_minutes": quality["elapsed_minutes"],
+        "validation_window_complete": quality["validation_window_complete"],
+        "expected_interval_minutes": quality["expected_interval_minutes"],
+        "expected_runs_per_collector": quality["expected_runs_per_collector"],
+        "expected_runs_so_far_per_collector": quality["expected_runs_so_far_per_collector"],
+    }
+
+
 def _execution_critical_bank_price_status(db: Session, *, stale_after_seconds: int, now: datetime) -> dict:
     latest_bank_price = db.execute(
         select(RawBankPrice).order_by(desc(RawBankPrice.fetched_at), desc(RawBankPrice.observed_at)).limit(1)

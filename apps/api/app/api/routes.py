@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.collectors.public_sources import collect_kuveyt_public_silver, collect_stooq_xag_usd, collect_tcmb_usd_try
-from app.collectors.service import CollectorError, collector_health, collector_quality, ingest_manual_price, latest_collector_run
+from app.collectors.service import (
+    CollectorError,
+    collector_health,
+    collector_quality,
+    collector_validation_gate,
+    ingest_manual_price,
+    latest_collector_run,
+)
 from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.schemas.collectors import (
@@ -13,6 +20,7 @@ from app.schemas.collectors import (
     CollectorQualityResponse,
     CollectorRunResultResponse,
     CollectorRunPayload,
+    CollectorValidationGateResponse,
     ManualPriceIngestRequest,
     ManualPriceIngestResponse,
 )
@@ -203,6 +211,26 @@ def get_collector_quality(
 ) -> dict:
     try:
         return collector_quality(db, window_hours=window_hours, expected_interval_minutes=expected_interval_minutes)
+    except CollectorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/collectors/validation-gate", response_model=CollectorValidationGateResponse)
+def get_collector_validation_gate(
+    window_hours: int = 24,
+    expected_interval_minutes: int = 15,
+    stale_after_minutes: int = 60,
+    db: Session = Depends(get_db),
+) -> dict:
+    if stale_after_minutes <= 0:
+        raise HTTPException(status_code=400, detail="stale_after_minutes must be greater than zero")
+    try:
+        return collector_validation_gate(
+            db,
+            window_hours=window_hours,
+            expected_interval_minutes=expected_interval_minutes,
+            stale_after_minutes=stale_after_minutes,
+        )
     except CollectorError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

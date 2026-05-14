@@ -119,3 +119,17 @@ class CollectorQualityResponse(BaseModel):
     expected_runs_per_collector: int
     expected_runs_so_far_per_collector: int
     collectors: list[CollectorQualityItem]
+
+
+class CollectorValidationGateResponse(BaseModel):
+    status: Literal["empty", "warming_up", "ready", "degraded", "blocked"]
+    phase4_allowed: bool
+    reasons: list[str]
+    health_status: Literal["empty", "healthy", "degraded", "blocked", "stale"]
+    quality_status: Literal["empty", "ok", "degraded"]
+    window_hours: int
+    elapsed_minutes: int
+    validation_window_complete: bool
+    expected_interval_minutes: int
+    expected_runs_per_collector: int
+    expected_runs_so_far_per_collector: int

@@ -331,6 +331,19 @@ Notes:
 - Different collector frequencies may need different review windows before Phase 4.
 - Missing-run ratio is based on the query's expected interval, not provider freshness guarantees.
 
+### Collector Validation Gate Contract
+
+Endpoint: `GET /collectors/validation-gate`
+
+Purpose: machine-readable Phase 4 readiness check without starting the risk engine.
+
+Output:
+
+- `status`: `empty`, `warming_up`, `ready`, `degraded`, or `blocked`.
+- `phase4_allowed`: true only when collector health is healthy, quality is ok, and the validation window is complete.
+- `reasons`: compact reason codes such as `VALIDATION_WINDOW_INCOMPLETE`, `QUALITY_STATUS_NOT_OK`, or `EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH`.
+- window and expected-run fields matching `/collectors/quality`.
+
 ### Phase 3.2 Fed RSS Output
 
 - `fed_rss` reads the official Federal Reserve monetary policy RSS feed by default.

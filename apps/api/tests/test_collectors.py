@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
 import httpx
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -341,6 +341,66 @@ def test_collector_quality_rejects_invalid_window():
     response = client.get("/collectors/quality?window_hours=0")
 
     assert response.status_code == 400
+
+
+def test_collector_validation_gate_reports_empty_without_runs():
+    client, _ = make_client()
+
+    response = client.get("/collectors/validation-gate")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "empty"
+    assert body["phase4_allowed"] is False
+    assert "COLLECTOR_HEALTH_NOT_HEALTHY" in body["reasons"]
+
+
+def test_collector_validation_gate_reports_warming_up_before_window_completes():
+    client, testing_session = make_client()
+    now = datetime.now(UTC)
+    db = testing_session()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+    run = CollectorRun(
+        collector_name="kuveyt_public_silver",
+        source="kuveyt-public-silver-page",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=now - timedelta(minutes=10),
+        finished_at=now - timedelta(minutes=10),
+        details_json={},
+    )
+    db.add(run)
+    db.flush()
+    db.add(
+        RawBankPrice(
+            collector_run_id=run.id,
+            asset_id=asset.id,
+            source="kuveyt-public-silver-page",
+            buy_price=Decimal("130.00"),
+            sell_price=Decimal("126.00"),
+            currency="TRY",
+            observed_at=now - timedelta(minutes=10),
+            fetched_at=now - timedelta(minutes=10),
+            raw_payload_hash="test",
+            parser_version="kuveyt-public-finance-portal-v2",
+            payload_json={},
+        )
+    )
+    db.commit()
+    db.close()
+
+    response = client.get("/collectors/validation-gate?window_hours=24&expected_interval_minutes=15")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "warming_up"
+    assert body["health_status"] == "healthy"
+    assert body["quality_status"] == "ok"
+    assert body["phase4_allowed"] is False
+    assert body["validation_window_complete"] is False
+    assert body["reasons"] == ["VALIDATION_WINDOW_INCOMPLETE"]
 
 
 def test_runner_parse_collector_jobs_uses_comma_list_or_fallback():

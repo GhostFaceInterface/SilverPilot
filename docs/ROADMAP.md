@@ -219,6 +219,7 @@ Validation gate:
 - Missing-data ratio is measurable.
 - Collector run status is visible.
 - `/collectors/quality` summarizes run count, failures, duplicates, and missing-run ratio.
+- `/collectors/validation-gate` gives a machine-readable Phase 4 readiness check.
 - Failures do not silently pass.
 - Collector health is `blocked` when no execution-critical bank silver buy/sell price exists.
 - Collector health is `degraded` when manual bank-price fallback is fresh but official/primary bank data is unavailable.
@@ -668,4 +669,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Run the MVP collectors long enough to review freshness, duplicate behavior, and missing-data ratio through `/collectors/health` and `/collectors/quality`. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Run the MVP collectors long enough to review freshness, duplicate behavior, missing-data ratio, and `/collectors/validation-gate`. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
