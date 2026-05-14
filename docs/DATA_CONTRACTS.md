@@ -327,6 +327,7 @@ Notes:
 
 - This is a validation metric, not a trading signal.
 - Missing-run ratio is calculated against elapsed runtime, not future time in the selected window.
+- Inactive manual fallback runs are excluded from quality summaries when public/non-manual collector groups exist.
 - Different collector frequencies may need different review windows before Phase 4.
 - Missing-run ratio is based on the query's expected interval, not provider freshness guarantees.
 

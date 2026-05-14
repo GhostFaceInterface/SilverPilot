@@ -296,6 +296,45 @@ def test_collector_quality_does_not_count_future_validation_window_as_missing():
     assert body["collectors"][0]["missing_ratio"] == 0.0
 
 
+def test_collector_quality_excludes_inactive_manual_fallback_when_public_collector_exists():
+    client, testing_session = make_client()
+    payload = {
+        "source_type": "bank",
+        "source": "manual-test-bank",
+        "asset_symbol": "XAG",
+        "buy_price": "10.00",
+        "sell_price": "9.80",
+        "currency": "USD",
+        "observed_at": "2026-05-13T12:00:00Z",
+        "payload": {},
+    }
+    client.post("/collectors/manual-price", json=payload)
+    now = datetime.now(UTC)
+    db = testing_session()
+    db.add(
+        CollectorRun(
+            collector_name="kuveyt_public_silver",
+            source="kuveyt-public-silver-page",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            duplicates=0,
+            started_at=now,
+            finished_at=now,
+            details_json={},
+        )
+    )
+    db.commit()
+    db.close()
+
+    response = client.get("/collectors/quality?window_hours=1&expected_interval_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert [item["collector_name"] for item in body["collectors"]] == ["kuveyt_public_silver"]
+
+
 def test_collector_quality_rejects_invalid_window():
     client, _ = make_client()
 

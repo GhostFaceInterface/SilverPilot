@@ -584,9 +584,12 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
     groups: dict[tuple[str, str], list[CollectorRun]] = {}
     for run in runs:
         groups.setdefault((run.collector_name, run.source), []).append(run)
+    has_non_manual_group = any(not _is_manual_fallback_group(*key) for key in groups)
 
     collectors = []
     for (collector_name, source), collector_runs in groups.items():
+        if has_non_manual_group and _is_manual_fallback_group(collector_name, source):
+            continue
         total_runs = len(collector_runs)
         successful_runs = sum(1 for run in collector_runs if run.status == "success")
         failed_runs = sum(1 for run in collector_runs if run.status == "failed")
@@ -669,7 +672,11 @@ def _execution_critical_bank_price_status(db: Session, *, stale_after_seconds: i
 def _ignore_inactive_manual_fallback(item: dict, *, bank_price: dict) -> bool:
     if bank_price["bank_price"] != "fresh":
         return False
-    return item["collector_name"].startswith("manual_") or item["source"].startswith("manual")
+    return _is_manual_fallback_group(item["collector_name"], item["source"])
+
+
+def _is_manual_fallback_group(collector_name: str, source: str) -> bool:
+    return collector_name.startswith("manual_") or source.startswith("manual")
 
 
 def _utc(value: datetime) -> datetime:

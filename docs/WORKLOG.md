@@ -223,5 +223,6 @@ Collector quality warm-up semantics tightened.
 - Updated `/collectors/quality` so missing-run ratio is measured against elapsed runtime, not future intervals in the selected validation window.
 - Added `validation_window_complete`, `window_started_at`, `elapsed_minutes`, and `expected_runs_so_far_per_collector`.
 - Set the Compose collector profile defaults to the MVP source batch so service recreation does not fall back to manual-only collection.
+- Excluded inactive manual fallback runs from quality summaries when public collector groups exist.
 - This keeps Phase 3 validation useful while the 24-hour collector window is still accumulating.
 - No new markdown files were created.
