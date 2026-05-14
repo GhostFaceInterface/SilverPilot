@@ -133,7 +133,7 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - `stale`: the latest execution-critical bank price exists but exceeded the freshness threshold.
 - `empty`: no collector runs exist yet.
 
-Collector quality review uses `/collectors/quality` to summarize recent run counts, failures, duplicates, and missing-run ratio. Missing runs are measured against elapsed runtime inside the selected window so a new 24-hour validation run does not count future intervals as already missing. The collector runner supports `COLLECTOR_JOBS` for comma-separated sustained MVP collector batches without starting separate containers per source.
+Collector quality review uses `/collectors/quality` to summarize recent run counts, failures, duplicates, and missing-run ratio. Missing runs are measured against elapsed runtime inside the selected window so a new 24-hour validation run does not count future intervals as already missing. The collector runner supports `COLLECTOR_JOBS` for comma-separated sustained MVP collector batches without starting separate containers per source; the Compose collector profile defaults to the current MVP source batch.
 
 ## LLM Pattern
 

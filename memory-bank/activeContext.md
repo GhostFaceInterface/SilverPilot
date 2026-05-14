@@ -43,7 +43,7 @@ Phase 3: free/public-source data collectors in progress.
 - Kuveyt Türk official public page parser now targets public browser-loaded finance portal GMS data when available.
 - VPS Kuveyt collector smoke passed with fresh `kuveyt-public-silver-page` bank price.
 - Manual bank-price ingestion remains a simulation fallback and must show as degraded/manual, not production-grade.
-- Collector runner supports comma-separated `COLLECTOR_JOBS` for sustained multi-source validation.
+- Collector runner supports comma-separated `COLLECTOR_JOBS` and defaults the collector profile to the MVP source batch.
 - Collector quality endpoint exists at `GET /collectors/quality`.
 - VPS collector profile is running with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs every 900 seconds.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
