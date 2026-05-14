@@ -20,6 +20,7 @@ from app.collectors.public_sources import (
     parse_kuveyt_finance_portal_json,
     parse_kuveyt_public_silver_html,
 )
+from app.collectors.runner import parse_collector_jobs
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
@@ -186,12 +187,110 @@ def test_collector_health_reports_manual_bank_price_as_degraded_fallback():
     assert body["collectors"][0]["stale"] is False
 
 
+def test_collector_health_ignores_stale_manual_when_official_bank_price_is_fresh():
+    client, testing_session = make_client()
+    client.post(
+        "/collectors/manual-price",
+        json={
+            "source_type": "bank",
+            "source": "manual-test-bank",
+            "asset_symbol": "XAG",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "currency": "USD",
+            "observed_at": "2026-05-13T12:00:00Z",
+        },
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "GMS (gr)", "CurrencyDescription": "Gümüş", "BuyRate": 125.0, "SellRate": 129.0},
+                ],
+            )
+        return httpx.Response(404)
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        collect_kuveyt_public_silver(db, settings=Settings(), client=mock_client)
+    finally:
+        mock_client.close()
+        db.close()
+
+    response = client.get("/collectors/health?stale_after_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "healthy"
+    assert body["execution_critical"]["bank_price"] == "fresh"
+    assert body["execution_critical"]["source"] == "kuveyt-public-silver-page"
+
+
 def test_collector_health_rejects_invalid_stale_threshold():
     client, _ = make_client()
 
     response = client.get("/collectors/health?stale_after_minutes=0")
 
     assert response.status_code == 400
+
+
+def test_collector_quality_reports_missing_and_duplicate_ratios():
+    client, _ = make_client()
+    payload = {
+        "source_type": "bank",
+        "source": "manual-test-bank",
+        "asset_symbol": "XAG",
+        "buy_price": "10.00",
+        "sell_price": "9.80",
+        "currency": "USD",
+        "observed_at": "2026-05-13T12:00:00Z",
+        "payload": {},
+    }
+    client.post("/collectors/manual-price", json=payload)
+    client.post("/collectors/manual-price", json=payload)
+
+    response = client.get("/collectors/quality?window_hours=2&expected_interval_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["expected_runs_per_collector"] == 2
+    assert body["collectors"][0]["runs"] == 2
+    assert body["collectors"][0]["duplicates"] == 1
+    assert body["collectors"][0]["duplicate_ratio"] == 0.5
+    assert body["collectors"][0]["missing_ratio"] == 0.0
+
+
+def test_collector_quality_rejects_invalid_window():
+    client, _ = make_client()
+
+    response = client.get("/collectors/quality?window_hours=0")
+
+    assert response.status_code == 400
+
+
+def test_runner_parse_collector_jobs_uses_comma_list_or_fallback():
+    assert parse_collector_jobs("", fallback_job="manual") == ["manual"]
+    assert parse_collector_jobs("kuveyt-silver, stooq-xag-usd", fallback_job="manual") == [
+        "kuveyt-silver",
+        "stooq-xag-usd",
+    ]
+
+
+def test_runner_parse_collector_jobs_rejects_unknown_job():
+    try:
+        parse_collector_jobs("kuveyt-silver,unknown", fallback_job="manual")
+    except ValueError as exc:
+        assert "unknown" in str(exc)
+    else:
+        raise AssertionError("unknown collector job should be rejected")
 
 
 def test_stooq_xag_usd_collector_writes_global_price_and_snapshot():

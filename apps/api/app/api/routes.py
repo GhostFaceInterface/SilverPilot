@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
 from app.collectors.public_sources import collect_kuveyt_public_silver, collect_stooq_xag_usd, collect_tcmb_usd_try
-from app.collectors.service import CollectorError, collector_health, ingest_manual_price, latest_collector_run
+from app.collectors.service import CollectorError, collector_health, collector_quality, ingest_manual_price, latest_collector_run
 from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.schemas.collectors import (
     CollectorHealthResponse,
+    CollectorQualityResponse,
     CollectorRunResultResponse,
     CollectorRunPayload,
     ManualPriceIngestRequest,
@@ -192,6 +193,18 @@ def get_collector_health(stale_after_minutes: int = 60, db: Session = Depends(ge
     if stale_after_minutes <= 0:
         raise HTTPException(status_code=400, detail="stale_after_minutes must be greater than zero")
     return collector_health(db, stale_after_minutes=stale_after_minutes)
+
+
+@router.get("/collectors/quality", response_model=CollectorQualityResponse)
+def get_collector_quality(
+    window_hours: int = 24,
+    expected_interval_minutes: int = 60,
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return collector_quality(db, window_hours=window_hours, expected_interval_minutes=expected_interval_minutes)
+    except CollectorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _collector_run_payload(run: CollectorRun) -> dict:

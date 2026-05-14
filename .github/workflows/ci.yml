@@ -108,5 +108,6 @@ jobs:
             curl -fsS http://127.0.0.1:8000/health && \
             docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job tcmb-usd-try && \
             docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job stooq-xag-usd && \
-            (docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver || true) && \
-            curl -fsS http://127.0.0.1:8000/collectors/health"
+            docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver && \
+            curl -fsS http://127.0.0.1:8000/collectors/health && \
+            curl -fsS http://127.0.0.1:8000/collectors/quality"

@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.4: execution-critical bank silver pricing is resolved for the current MVP path. Kuveyt Türk official public page parsing uses public browser-loaded finance portal data and has passed VPS smoke validation. Manual bank-price fallback remains a simulation unblocker, not a production-grade source. Next is sustained collector operation and data-quality review.
+SilverPilot is in Phase 3.4: execution-critical bank silver pricing is resolved for the current MVP path. Kuveyt Türk official public page parsing uses public browser-loaded finance portal data and has passed VPS smoke validation. Manual bank-price fallback remains a simulation unblocker, not a production-grade source. Next is sustained collector operation using multi-job runner support and data-quality review.
 
 ## Non-Negotiable Rules
 
@@ -218,6 +218,7 @@ Validation gate:
 - Data can be collected for at least 24 hours.
 - Missing-data ratio is measurable.
 - Collector run status is visible.
+- `/collectors/quality` summarizes run count, failures, duplicates, and missing-run ratio.
 - Failures do not silently pass.
 - Collector health is `blocked` when no execution-critical bank silver buy/sell price exists.
 - Collector health is `degraded` when manual bank-price fallback is fresh but official/primary bank data is unavailable.
@@ -254,6 +255,7 @@ Third-party candidates:
 Phase 4 gate:
 
 - Official Kuveyt collector has passed VPS smoke validation.
+- Multi-job collector runner exists for sustained validation.
 - Do not start Phase 4 until sustained collector validation confirms freshness, duplicate behavior, and missing-data ratio are acceptable.
 
 ## Phase 4: Risk Policy and Rule Engine
@@ -666,4 +668,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Run the MVP collectors long enough to review freshness, duplicate behavior, and missing-data ratio. The Kuveyt public page parser still fails safely and needs either a better public bank-price source or an approved public-page parser revision. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Run the MVP collectors long enough to review freshness, duplicate behavior, and missing-data ratio through `/collectors/health` and `/collectors/quality`. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.

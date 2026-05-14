@@ -133,6 +133,8 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - `stale`: the latest execution-critical bank price exists but exceeded the freshness threshold.
 - `empty`: no collector runs exist yet.
 
+Collector quality review uses `/collectors/quality` to summarize recent run counts, failures, duplicates, and missing-run ratio. The collector runner supports `COLLECTOR_JOBS` for comma-separated sustained MVP collector batches without starting separate containers per source.
+
 ## LLM Pattern
 
 - OpenRouter is the first provider gateway.

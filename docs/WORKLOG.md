@@ -201,3 +201,11 @@ Phase 3.4 Kuveyt bank silver smoke passed on VPS.
 - VPS `kuveyt-silver` runner succeeded and inserted a fresh `kuveyt-public-silver-page` bank price.
 - VPS collector health reports execution-critical bank price as fresh; overall health remains degraded only because old manual smoke rows are stale.
 - Next: sustained collector validation for freshness, duplicate behavior, and missing-data ratio.
+
+Phase 3.4 sustained collector validation support added.
+
+- Added `COLLECTOR_JOBS` comma-separated multi-job runner support while keeping single `COLLECTOR_JOB` compatibility.
+- Added `GET /collectors/quality` to summarize recent run count, failures, duplicates, and missing-run ratio.
+- Updated CI smoke to require Kuveyt collector success and query collector quality.
+- Local validation passed: pytest, Compose config, compileall, and diff check.
+- Next: deploy to VPS and run a sustained multi-job collector validation window.

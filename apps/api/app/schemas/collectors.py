@@ -90,3 +90,28 @@ class CollectorHealthResponse(BaseModel):
     execution_critical: ExecutionCriticalHealth
     stale_after_minutes: int
     collectors: list[CollectorHealthItem]
+
+
+class CollectorQualityItem(BaseModel):
+    collector_name: str
+    source: str
+    runs: int
+    successful_runs: int
+    failed_runs: int
+    records_seen: int
+    records_inserted: int
+    duplicates: int
+    failure_ratio: float
+    duplicate_ratio: float
+    missing_runs: int
+    missing_ratio: float
+    latest_status: str
+    latest_finished_at: datetime | None
+
+
+class CollectorQualityResponse(BaseModel):
+    status: Literal["empty", "ok", "degraded"]
+    window_hours: int
+    expected_interval_minutes: int
+    expected_runs_per_collector: int
+    collectors: list[CollectorQualityItem]

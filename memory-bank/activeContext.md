@@ -43,6 +43,8 @@ Phase 3: free/public-source data collectors in progress.
 - Kuveyt Türk official public page parser now targets public browser-loaded finance portal GMS data when available.
 - VPS Kuveyt collector smoke passed with fresh `kuveyt-public-silver-page` bank price.
 - Manual bank-price ingestion remains a simulation fallback and must show as degraded/manual, not production-grade.
+- Collector runner supports comma-separated `COLLECTOR_JOBS` for sustained multi-source validation.
+- Collector quality endpoint exists at `GET /collectors/quality`.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -78,7 +80,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Run sustained collector validation now that the Kuveyt official public finance-portal parser passed VPS smoke.
+- Run sustained collector validation with multi-job runner now that the Kuveyt official public finance-portal parser passed VPS smoke.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
@@ -86,4 +88,4 @@ Pending:
 
 ## Next Step
 
-Run sustained collector validation for freshness, duplicate behavior, and missing-data ratio. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace Phase 3 data-quality work.
+Run sustained collector validation for freshness, duplicate behavior, and missing-data ratio using `/collectors/health` and `/collectors/quality`. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace Phase 3 data-quality work.

@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import desc, select
@@ -531,7 +531,11 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
         )
 
     bank_price = _execution_critical_bank_price_status(db, stale_after_seconds=stale_after_seconds, now=now)
-    any_problem = any(item["stale"] or item["status"] == "failed" for item in collectors)
+    any_problem = any(
+        (item["stale"] or item["status"] == "failed")
+        and not _ignore_inactive_manual_fallback(item, bank_price=bank_price)
+        for item in collectors
+    )
     if not collectors:
         status = "empty"
     elif bank_price["bank_price"] == "missing":
@@ -547,6 +551,69 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
         "status": status,
         "execution_critical": bank_price,
         "stale_after_minutes": stale_after_minutes,
+        "collectors": collectors,
+    }
+
+
+def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_minutes: int = 60) -> dict:
+    if window_hours <= 0:
+        raise CollectorError("window_hours must be greater than zero")
+    if expected_interval_minutes <= 0:
+        raise CollectorError("expected_interval_minutes must be greater than zero")
+
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=window_hours)
+    expected_runs = max(1, int((window_hours * 60) / expected_interval_minutes))
+    runs = (
+        db.execute(select(CollectorRun).where(CollectorRun.started_at >= since).order_by(CollectorRun.started_at.desc()))
+        .scalars()
+        .all()
+    )
+    groups: dict[tuple[str, str], list[CollectorRun]] = {}
+    for run in runs:
+        groups.setdefault((run.collector_name, run.source), []).append(run)
+
+    collectors = []
+    for (collector_name, source), collector_runs in groups.items():
+        total_runs = len(collector_runs)
+        successful_runs = sum(1 for run in collector_runs if run.status == "success")
+        failed_runs = sum(1 for run in collector_runs if run.status == "failed")
+        records_seen = sum(run.records_seen for run in collector_runs)
+        records_inserted = sum(run.records_inserted for run in collector_runs)
+        duplicates = sum(run.duplicates for run in collector_runs)
+        missing_runs = max(expected_runs - total_runs, 0)
+        latest = collector_runs[0]
+        collectors.append(
+            {
+                "collector_name": collector_name,
+                "source": source,
+                "runs": total_runs,
+                "successful_runs": successful_runs,
+                "failed_runs": failed_runs,
+                "records_seen": records_seen,
+                "records_inserted": records_inserted,
+                "duplicates": duplicates,
+                "failure_ratio": _ratio(failed_runs, total_runs),
+                "duplicate_ratio": _ratio(duplicates, records_seen),
+                "missing_runs": missing_runs,
+                "missing_ratio": _ratio(missing_runs, expected_runs),
+                "latest_status": latest.status,
+                "latest_finished_at": latest.finished_at,
+            }
+        )
+
+    if not collectors:
+        status = "empty"
+    elif any(item["failed_runs"] or item["missing_runs"] for item in collectors):
+        status = "degraded"
+    else:
+        status = "ok"
+
+    return {
+        "status": status,
+        "window_hours": window_hours,
+        "expected_interval_minutes": expected_interval_minutes,
+        "expected_runs_per_collector": expected_runs,
         "collectors": collectors,
     }
 
@@ -583,6 +650,12 @@ def _execution_critical_bank_price_status(db: Session, *, stale_after_seconds: i
     }
 
 
+def _ignore_inactive_manual_fallback(item: dict, *, bank_price: dict) -> bool:
+    if bank_price["bank_price"] != "fresh":
+        return False
+    return item["collector_name"].startswith("manual_") or item["source"].startswith("manual")
+
+
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
@@ -599,3 +672,9 @@ def _aware(value: datetime | None) -> datetime | None:
 
 def _price(value: Decimal) -> Decimal:
     return value.quantize(PRICE_QUANT)
+
+
+def _ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator, 6)

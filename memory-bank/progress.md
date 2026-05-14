@@ -124,7 +124,9 @@ Completed:
 - Updated collector health policy to distinguish `healthy`, `degraded`, `blocked`, and `stale`.
 - Kept manual bank-price ingestion as a visible degraded simulation fallback.
 - Kuveyt official public collector was deployed to VPS and inserted a fresh bank silver price.
+- Added multi-job collector runner support through `COLLECTOR_JOBS`.
+- Added `GET /collectors/quality` for recent run count, failure, duplicate, and missing-run summaries.
 
 Next milestone:
 
-- Run sustained collector validation for freshness, duplicate behavior, and missing-data ratio.
+- Run sustained collector validation using `/collectors/health` and `/collectors/quality`.

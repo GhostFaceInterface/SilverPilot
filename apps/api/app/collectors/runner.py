@@ -15,39 +15,42 @@ from app.collectors.service import ingest_manual_price
 from app.core.db import SessionLocal
 from app.schemas.collectors import ManualPriceIngestRequest
 
+JOB_CHOICES = ("manual", "kuveyt-silver", "stooq-xag-usd", "tcmb-usd-try", "fed-rss", "fred-macro")
 
-def run_once(args: argparse.Namespace) -> None:
+
+def run_once(args: argparse.Namespace, job: str | None = None) -> None:
+    selected_job = job or args.job
     db = SessionLocal()
     try:
-        if args.job == "kuveyt-silver":
+        if selected_job == "kuveyt-silver":
             run, raw_inserted, snapshot = collect_kuveyt_public_silver(db)
             snapshot_id = snapshot.id if snapshot is not None else None
             print(
-                f"collector_run_id={run.id} status={run.status} "
+                f"job={selected_job} collector_run_id={run.id} status={run.status} "
                 f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
                 flush=True,
             )
             return
-        if args.job == "stooq-xag-usd":
+        if selected_job == "stooq-xag-usd":
             run, raw_inserted, snapshot = collect_stooq_xag_usd(db)
             snapshot_id = snapshot.id if snapshot is not None else None
             print(
-                f"collector_run_id={run.id} status={run.status} "
+                f"job={selected_job} collector_run_id={run.id} status={run.status} "
                 f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
                 flush=True,
             )
             return
-        if args.job == "tcmb-usd-try":
+        if selected_job == "tcmb-usd-try":
             run, raw_inserted = collect_tcmb_usd_try(db)
-            print(f"collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}", flush=True)
+            print(f"job={selected_job} collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}", flush=True)
             return
-        if args.job == "fed-rss":
+        if selected_job == "fed-rss":
             run, inserted = collect_fed_rss(db)
-            print(f"collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
+            print(f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
             return
-        if args.job == "fred-macro":
+        if selected_job == "fred-macro":
             run, inserted = collect_fred_macro(db)
-            print(f"collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
+            print(f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
             return
 
         request = ManualPriceIngestRequest(
@@ -63,7 +66,7 @@ def run_once(args: argparse.Namespace) -> None:
         run, raw_inserted, snapshot = ingest_manual_price(db, request)
         snapshot_id = snapshot.id if snapshot is not None else None
         print(
-            f"collector_run_id={run.id} status={run.status} "
+            f"job={selected_job} collector_run_id={run.id} status={run.status} "
             f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
             flush=True,
         )
@@ -71,13 +74,33 @@ def run_once(args: argparse.Namespace) -> None:
         db.close()
 
 
+def run_jobs(args: argparse.Namespace) -> None:
+    for job in parse_collector_jobs(args.jobs, fallback_job=args.job):
+        run_once(args, job=job)
+
+
+def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:
+    jobs = [item.strip() for item in value.split(",") if item.strip()]
+    if not jobs:
+        return [fallback_job]
+    unknown = [job for job in jobs if job not in JOB_CHOICES]
+    if unknown:
+        raise ValueError(f"Unsupported collector job(s): {', '.join(unknown)}")
+    return jobs
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run SilverPilot collector jobs.")
     parser.add_argument("--loop", action="store_true", help="Run continuously.")
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "900")))
     parser.add_argument(
+        "--jobs",
+        default=os.getenv("COLLECTOR_JOBS", ""),
+        help="Comma-separated collector jobs. When set, this overrides --job.",
+    )
+    parser.add_argument(
         "--job",
-        choices=["manual", "kuveyt-silver", "stooq-xag-usd", "tcmb-usd-try", "fed-rss", "fred-macro"],
+        choices=JOB_CHOICES,
         default=os.getenv("COLLECTOR_JOB", "manual"),
     )
     parser.add_argument("--source-type", choices=["bank", "global"], default=os.getenv("MANUAL_PRICE_SOURCE_TYPE", "bank"))
@@ -91,10 +114,10 @@ def main() -> None:
     if args.interval_seconds <= 0:
         raise ValueError("interval-seconds must be greater than zero")
 
-    run_once(args)
+    run_jobs(args)
     while args.loop:
         time.sleep(args.interval_seconds)
-        run_once(args)
+        run_jobs(args)
 
 
 if __name__ == "__main__":

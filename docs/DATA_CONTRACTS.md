@@ -297,6 +297,35 @@ Manual fallback:
 - use: temporary simulation unblocker only.
 - health: fresh manual price is degraded/manual fallback; stale or missing manual price cannot unblock future risk decisions.
 
+### Collector Quality Contract
+
+Endpoint: `GET /collectors/quality`
+
+Purpose: compact Phase 3 validation summary for recent collector operation.
+
+Query:
+
+- `window_hours`, default 24.
+- `expected_interval_minutes`, default 60.
+
+Output:
+
+- top-level `status`: `empty`, `ok`, or `degraded`.
+- expected runs per collector.
+- per collector/source run count.
+- successful and failed runs.
+- records seen, inserted, and duplicates.
+- failure ratio.
+- duplicate ratio.
+- missing-run count and missing-run ratio.
+- latest status and latest finish timestamp.
+
+Notes:
+
+- This is a validation metric, not a trading signal.
+- Different collector frequencies may need different review windows before Phase 4.
+- Missing-run ratio is based on the query's expected interval, not provider freshness guarantees.
+
 ### Phase 3.2 Fed RSS Output
 
 - `fed_rss` reads the official Federal Reserve monetary policy RSS feed by default.
