@@ -226,6 +226,7 @@ Validation gate:
 - Fed RSS writes official macro/news items to `raw_news` without requiring an API key.
 - CI runs backend tests, Docker Compose config validation, and API image build on every push or pull request.
 - VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
+- One-shot collector smoke commands must fail the process when a collector records failed status.
 
 ### Phase 3.4: Bank Silver Price Resolution
 
@@ -257,6 +258,7 @@ Phase 4 gate:
 
 - Official Kuveyt collector has passed VPS smoke validation.
 - Multi-job collector runner exists for sustained validation.
+- CI/VPS smoke must cover Kuveyt, Stooq, TCMB, Fed RSS, FRED macro, collector health, collector quality, and validation-gate endpoints.
 - Do not start Phase 4 until sustained collector validation confirms freshness, duplicate behavior, and missing-data ratio are acceptable.
 
 ## Phase 4: Risk Policy and Rule Engine

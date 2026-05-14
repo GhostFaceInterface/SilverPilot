@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 import httpx
@@ -20,7 +21,7 @@ from app.collectors.public_sources import (
     parse_kuveyt_finance_portal_json,
     parse_kuveyt_public_silver_html,
 )
-from app.collectors.runner import parse_collector_jobs
+from app.collectors.runner import parse_collector_jobs, run_jobs
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
@@ -418,6 +419,22 @@ def test_runner_parse_collector_jobs_rejects_unknown_job():
         assert "unknown" in str(exc)
     else:
         raise AssertionError("unknown collector job should be rejected")
+
+
+def test_runner_reports_failed_collector_job(monkeypatch):
+    class FakeDb:
+        def close(self):
+            return None
+
+    failed_run = SimpleNamespace(id=1, status="failed")
+    monkeypatch.setattr("app.collectors.runner.SessionLocal", lambda: FakeDb())
+    monkeypatch.setattr(
+        "app.collectors.runner.collect_kuveyt_public_silver",
+        lambda db: (failed_run, False, None),
+    )
+    args = SimpleNamespace(job="kuveyt-silver", jobs="")
+
+    assert run_jobs(args) is False
 
 
 def test_stooq_xag_usd_collector_writes_global_price_and_snapshot():

@@ -187,7 +187,7 @@ Deployment target:
 - GitHub Actions runs backend tests, Docker Compose config validation, and API image build on push and pull request.
 - VPS deployment/smoke validation is manual through `workflow_dispatch`.
 - The VPS workflow uses repository secrets for host, user, SSH key, and optional known hosts; secrets must not be committed or written to markdown.
-- Required VPS smoke checks are Compose config, container rebuild, Alembic migration, `/health`, TCMB collector, Stooq collector, and collector health.
-- Kuveyt public-page collector remains best-effort during smoke validation because selector failure is an expected safe failure mode.
+- Required VPS smoke checks are Compose config, container rebuild, Alembic migration, `/health`, Kuveyt bank silver, Stooq XAG/USD, TCMB USD/TRY, Fed RSS, FRED macro, collector health, collector quality, and collector validation gate.
+- One-shot collector runner commands must exit non-zero when the collector records a failed run, so CI smoke cannot silently pass a failed public-source parser.
 
 Production hardening is Phase 13, not Phase 1.

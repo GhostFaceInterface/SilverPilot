@@ -232,3 +232,11 @@ Collector Phase 4 validation gate added.
 - Added `GET /collectors/validation-gate` as a machine-readable readiness check.
 - Gate returns `ready` only when health is healthy, quality is ok, and the selected validation window is complete.
 - This does not start Phase 4 risk decisions; it only prevents manual interpretation drift while data accumulates.
+
+Phase 3.4 audit and smoke guard tightened.
+
+- Reviewed roadmap, memory bank, collector code, CI workflow, Docker Compose, tests, and VPS collector status.
+- VPS collector health is healthy, but `/collectors/validation-gate` still blocks Phase 4 because the 24-hour quality window is not clean yet.
+- Updated one-shot collector runner behavior so failed collector runs exit non-zero for smoke checks.
+- Expanded manual VPS smoke workflow coverage to Fed RSS, FRED macro, collector quality, and validation gate.
+- Updated stale README/architecture references without creating new markdown files.

@@ -128,6 +128,7 @@ Completed:
 - Added `GET /collectors/quality` for recent run count, failure, duplicate, and missing-run summaries.
 - Added `GET /collectors/validation-gate` for machine-readable Phase 4 readiness.
 - Deployed the sustained collector profile on VPS with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs at a 900-second interval.
+- Tightened collector smoke validation so one-shot runner commands exit non-zero when a collector records failed status.
 
 Next milestone:
 

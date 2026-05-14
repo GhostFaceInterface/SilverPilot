@@ -11,7 +11,7 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 
 ## Current Phase
 
-Phase 3.1 free/public-source collectors are implemented locally; CI/CD and VPS smoke validation are being added before the next collector work.
+Phase 3.4 sustained collector validation is running on the VPS. Execution-critical Kuveyt Türk public bank silver pricing has passed smoke validation, and Phase 4 must wait until `/collectors/validation-gate` allows it.
 
 ## Canonical Sources
 
@@ -37,9 +37,9 @@ Phase 3.1 free/public-source collectors are implemented locally; CI/CD and VPS s
 
 Next implementation task:
 
-- Select the first real configurable price data source.
-- Implement the source collector behind the existing runner.
-- Keep collector profile opt-in until source reliability is validated.
+- Review sustained collector freshness, failures, duplicates, and missing-run ratio.
+- Keep Phase 4 blocked until `/collectors/validation-gate` reports `phase4_allowed: true`.
+- If the gate remains degraded after enough runtime, fix the specific gate reasons before adding the risk engine.
 
 ## Local Validation
 
@@ -54,6 +54,8 @@ curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/paper-trades/position
 curl -fsS http://127.0.0.1:8000/collectors/runs/latest
 curl -fsS http://127.0.0.1:8000/collectors/health
+curl -fsS "http://127.0.0.1:8000/collectors/quality?window_hours=24&expected_interval_minutes=15"
+curl -fsS "http://127.0.0.1:8000/collectors/validation-gate?window_hours=24&expected_interval_minutes=15&stale_after_minutes=60"
 curl -fsS http://127.0.0.1:8000/prices/latest
 ```
 
@@ -61,6 +63,11 @@ Optional collector runner:
 
 ```bash
 docker compose --profile collector up -d collector
+docker compose run --rm api python -m app.collectors.runner --job kuveyt-silver
+docker compose run --rm api python -m app.collectors.runner --job stooq-xag-usd
+docker compose run --rm api python -m app.collectors.runner --job tcmb-usd-try
+docker compose run --rm api python -m app.collectors.runner --job fed-rss
+docker compose run --rm api python -m app.collectors.runner --job fred-macro
 ```
 
 ## CI/CD
