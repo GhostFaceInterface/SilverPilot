@@ -45,6 +45,7 @@ Phase 3: free/public-source data collectors in progress.
 - Manual bank-price ingestion remains a simulation fallback and must show as degraded/manual, not production-grade.
 - Collector runner supports comma-separated `COLLECTOR_JOBS` for sustained multi-source validation.
 - Collector quality endpoint exists at `GET /collectors/quality`.
+- VPS collector profile is running with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs every 900 seconds.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -88,4 +89,4 @@ Pending:
 
 ## Next Step
 
-Run sustained collector validation for freshness, duplicate behavior, and missing-data ratio using `/collectors/health` and `/collectors/quality`. Keep BLS direct disabled for MVP unless explicitly re-approved. Runtime memory is approved for Phase 6.5, but it does not replace Phase 3 data-quality work.
+Let the VPS collector run through a sustained validation window, then review `/collectors/health` and `/collectors/quality` for freshness, duplicate behavior, failures, and missing-data ratio. Keep BLS direct disabled for MVP unless explicitly re-approved.

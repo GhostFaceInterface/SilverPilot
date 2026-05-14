@@ -126,7 +126,8 @@ Completed:
 - Kuveyt official public collector was deployed to VPS and inserted a fresh bank silver price.
 - Added multi-job collector runner support through `COLLECTOR_JOBS`.
 - Added `GET /collectors/quality` for recent run count, failure, duplicate, and missing-run summaries.
+- Deployed the sustained collector profile on VPS with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs at a 900-second interval.
 
 Next milestone:
 
-- Run sustained collector validation using `/collectors/health` and `/collectors/quality`.
+- Review sustained collector validation results after enough VPS runtime has accumulated.

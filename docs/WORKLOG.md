@@ -209,3 +209,11 @@ Phase 3.4 sustained collector validation support added.
 - Updated CI smoke to require Kuveyt collector success and query collector quality.
 - Local validation passed: pytest, Compose config, compileall, and diff check.
 - Next: deploy to VPS and run a sustained multi-job collector validation window.
+
+Sustained collector validation started on VPS.
+
+- Deployed commit `3d39450` to VPS.
+- Started the collector profile with `COLLECTOR_JOBS=kuveyt-silver,stooq-xag-usd,tcmb-usd-try,fed-rss,fred-macro`.
+- Initial collector loop succeeded for all five jobs.
+- `/collectors/health` returned `healthy` with fresh official bank price.
+- `/collectors/quality` is expected to remain degraded until enough runtime fills the validation window and older failed POC runs age out.
