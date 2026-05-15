@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -38,6 +39,27 @@ class RecentRiskDecisionCountPayload(BaseModel):
     count: int
 
 
+class GlobalXagSourceDiagnosticsPayload(BaseModel):
+    source: str
+    sample_count: int
+    first_observed_at: datetime | None
+    last_observed_at: datetime | None
+    min_price: Decimal | None
+    max_price: Decimal | None
+
+
+class GlobalXagWindowDiagnosticsPayload(BaseModel):
+    window_hours: int
+    sample_count: int
+    first_observed_at: datetime | None
+    last_observed_at: datetime | None
+    latest_source: str | None
+    latest_price: Decimal | None
+    min_price: Decimal | None
+    max_price: Decimal | None
+    sources: list[GlobalXagSourceDiagnosticsPayload]
+
+
 class RiskPolicyStatusResponse(BaseModel):
     portfolio_name: str
     asset_symbol: str
@@ -45,3 +67,4 @@ class RiskPolicyStatusResponse(BaseModel):
     current_metrics: RiskCurrentMetricsPayload
     would_block_now: list[RiskWouldBlockPayload]
     recent_decisions: list[RecentRiskDecisionCountPayload]
+    global_xag_diagnostics: list[GlobalXagWindowDiagnosticsPayload]

@@ -249,6 +249,10 @@ def risk_policy_status(
         },
         "would_block_now": would_block_now,
         "recent_decisions": _recent_risk_decision_counts(db, since=now - timedelta(hours=24)),
+        "global_xag_diagnostics": [
+            _global_price_window_summary(db, asset_id=asset.id, since=now - timedelta(hours=24), window_hours=24),
+            _global_price_window_summary(db, asset_id=asset.id, since=now - timedelta(days=7), window_hours=24 * 7),
+        ],
     }
 
 
@@ -452,13 +456,72 @@ def _price_rise_percent(prices: list[Decimal]) -> Decimal | None:
     return (((latest_price - first_price) / first_price) * Decimal("100")).quantize(PERCENT_QUANT)
 
 
+def _global_price_rows_since(db: Session, *, asset_id: int, since: datetime) -> list[RawGlobalPrice]:
+    return list(
+        db.execute(
+            select(RawGlobalPrice)
+            .where(RawGlobalPrice.asset_id == asset_id, RawGlobalPrice.observed_at >= since)
+            .order_by(RawGlobalPrice.observed_at.asc(), RawGlobalPrice.id.asc())
+        ).scalars()
+    )
+
+
 def _global_mid_prices_since(db: Session, *, asset_id: int, since: datetime) -> list[Decimal]:
-    rows = db.execute(
-        select(RawGlobalPrice)
-        .where(RawGlobalPrice.asset_id == asset_id, RawGlobalPrice.observed_at >= since)
-        .order_by(RawGlobalPrice.observed_at.asc(), RawGlobalPrice.id.asc())
-    ).scalars()
-    return [((row.buy_price + row.sell_price) / Decimal("2")).quantize(Decimal("0.000001")) for row in rows]
+    return [_global_mid_price(row) for row in _global_price_rows_since(db, asset_id=asset_id, since=since)]
+
+
+def _global_mid_price(row: RawGlobalPrice) -> Decimal:
+    return ((row.buy_price + row.sell_price) / Decimal("2")).quantize(Decimal("0.000001"))
+
+
+def _global_price_window_summary(db: Session, *, asset_id: int, since: datetime, window_hours: int) -> dict:
+    rows = _global_price_rows_since(db, asset_id=asset_id, since=since)
+    if not rows:
+        return {
+            "window_hours": window_hours,
+            "sample_count": 0,
+            "first_observed_at": None,
+            "last_observed_at": None,
+            "latest_source": None,
+            "latest_price": None,
+            "min_price": None,
+            "max_price": None,
+            "sources": [],
+        }
+
+    source_summaries: dict[str, dict] = {}
+    prices: list[Decimal] = []
+    for row in rows:
+        price = _global_mid_price(row)
+        prices.append(price)
+        summary = source_summaries.setdefault(
+            row.source,
+            {
+                "source": row.source,
+                "sample_count": 0,
+                "first_observed_at": row.observed_at,
+                "last_observed_at": row.observed_at,
+                "min_price": price,
+                "max_price": price,
+            },
+        )
+        summary["sample_count"] += 1
+        summary["last_observed_at"] = row.observed_at
+        summary["min_price"] = min(summary["min_price"], price)
+        summary["max_price"] = max(summary["max_price"], price)
+
+    latest_row = rows[-1]
+    return {
+        "window_hours": window_hours,
+        "sample_count": len(rows),
+        "first_observed_at": rows[0].observed_at,
+        "last_observed_at": latest_row.observed_at,
+        "latest_source": latest_row.source,
+        "latest_price": _global_mid_price(latest_row),
+        "min_price": min(prices),
+        "max_price": max(prices),
+        "sources": sorted(source_summaries.values(), key=lambda item: item["source"]),
+    }
 
 
 def _realized_loss_since(db: Session, *, portfolio_id: int, asset_id: int, since: datetime) -> Decimal:

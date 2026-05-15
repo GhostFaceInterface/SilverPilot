@@ -425,11 +425,13 @@ Response:
 - `current_metrics`: runtime 24-hour/7-day global XAG/USD volatility, FOMO rise, and realized paper loss metrics.
 - `would_block_now`: market/history-based block diagnostics such as `VOLATILITY_TOO_HIGH`, `FOMO_RISK`, `DAILY_LOSS_LIMIT_REACHED`, or `WEEKLY_LOSS_LIMIT_REACHED`.
 - `recent_decisions`: 24-hour grouped risk decision counts by `decision` and `reason_code`.
+- `global_xag_diagnostics`: 24-hour and 7-day global XAG sample counts, latest source/price, min/max price, and per-source sample summaries used to explain volatility tuning.
 
 Policy:
 
 - This endpoint is observational only; it does not create trades or override risk policy.
 - Request-specific checks such as spread, expected exit, cash, and position remain enforced by `POST /paper-trades`.
+- Global XAG diagnostics are tuning metadata only; they do not select sources or override the collector validation gate.
 
 ### Phase 3.2 Fed RSS Output
 

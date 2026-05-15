@@ -327,3 +327,12 @@ Phase 4 risk status diagnostics deployed and smoked on VPS.
 - VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `phase4_allowed: true` and execution-critical status `healthy`.
 - VPS `/risk/status` returned configured thresholds, runtime metrics, `would_block_now: []`, and recent risk decision counts.
 - Runtime metrics at smoke time were below blocking thresholds: 24h global XAG volatility `11.502771`, 7d volatility `13.869986`, FOMO rise `0.028355`, and daily/weekly realized loss `0.000000`.
+
+Phase 4 risk status source diagnostics implemented locally.
+
+- Added `global_xag_diagnostics` to read-only `GET /risk/status` so threshold tuning can see 24-hour and 7-day sample counts, source distribution, latest source/price, and min/max prices.
+- Current VPS diagnostics before the change showed `phase4_allowed: true`, but `/risk/status` would block on 24-hour global XAG volatility `12.108178` versus threshold `12.0`.
+- VPS raw global-price summary showed the 24-hour volatility diagnostic was Stooq-heavy, with Stooq rows ranging from `85.802000` to `76.006000` and a small Gold-API fallback sample.
+- No threshold was relaxed yet; this change makes the next tuning decision source-aware.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
+- No real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.

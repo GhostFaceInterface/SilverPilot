@@ -163,7 +163,9 @@ Completed:
 - Local validation passed for `/risk/status`: backend tests, compileall, and Docker Compose config.
 - Deployed `/risk/status` to VPS at commit `835caf7`.
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, and `/risk/status`; runtime diagnostics returned `would_block_now: []`.
+- Added local `/risk/status` global XAG source/sample diagnostics for 24-hour and 7-day threshold tuning.
+- Local validation passed for source/sample diagnostics: backend tests, compileall, and Docker Compose config.
 
 Next milestone:
 
-- Tune Phase 4 thresholds from `/risk/status` runtime data before adding more policy surface.
+- Tune Phase 4 thresholds from `/risk/status` runtime source/sample diagnostics before adding more policy surface.

@@ -131,7 +131,13 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
         db.close()
 
 
-def seed_global_price_history(testing_session, *, prices: list[Decimal], observed_at: datetime | None = None):
+def seed_global_price_history(
+    testing_session,
+    *,
+    prices: list[Decimal],
+    observed_at: datetime | None = None,
+    source: str = "gold-api-xag-usd",
+):
     observed_at = observed_at or datetime.now(UTC)
     db = testing_session()
     try:
@@ -140,13 +146,13 @@ def seed_global_price_history(testing_session, *, prices: list[Decimal], observe
             point_time = observed_at - timedelta(minutes=len(prices) - index)
             run = CollectorRun(
                 collector_name="global_xag_usd",
-                source="gold-api-xag-usd",
+                source=source,
                 status="success",
                 records_seen=1,
                 records_inserted=1,
                 started_at=point_time,
                 finished_at=point_time,
-                details_json={"selected_global_xag_source": "gold-api-xag-usd"},
+                details_json={"selected_global_xag_source": source},
             )
             db.add(run)
             db.flush()
@@ -154,14 +160,14 @@ def seed_global_price_history(testing_session, *, prices: list[Decimal], observe
                 RawGlobalPrice(
                     collector_run_id=run.id,
                     asset_id=asset.id,
-                    source="gold-api-xag-usd",
+                    source=source,
                     buy_price=price,
                     sell_price=price,
                     currency="USD",
                     observed_at=point_time,
                     fetched_at=point_time,
                     raw_payload_hash=f"global-history-{index}",
-                    parser_version="gold-api-xag-usd-v1",
+                    parser_version=f"{source}-v1",
                     payload_json={},
                 )
             )
@@ -525,7 +531,54 @@ def test_risk_status_reports_thresholds_and_current_metrics():
     assert payload["thresholds"]["max_24h_volatility_percent"] == "12.0"
     assert payload["current_metrics"]["daily_realized_loss_usd"] == "0.000000"
     assert payload["current_metrics"]["global_xag_volatility_24h_percent"] is not None
+    assert payload["global_xag_diagnostics"][0]["window_hours"] == 24
+    assert payload["global_xag_diagnostics"][0]["sample_count"] == 3
+    assert payload["global_xag_diagnostics"][0]["latest_source"] == "gold-api-xag-usd"
+    assert payload["global_xag_diagnostics"][0]["sources"] == [
+        {
+            "source": "gold-api-xag-usd",
+            "sample_count": 3,
+            "first_observed_at": payload["global_xag_diagnostics"][0]["first_observed_at"],
+            "last_observed_at": payload["global_xag_diagnostics"][0]["last_observed_at"],
+            "min_price": "32.000000",
+            "max_price": "33.000000",
+        }
+    ]
     assert payload["would_block_now"] == []
+
+
+def test_risk_status_reports_global_xag_source_diagnostics():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    now = datetime.now(UTC)
+    seed_global_price_history(
+        testing_session,
+        prices=[Decimal("76.000000"), Decimal("77.000000")],
+        observed_at=now - timedelta(minutes=10),
+        source="stooq-xagusd-csv",
+    )
+    seed_global_price_history(
+        testing_session,
+        prices=[Decimal("78.000000")],
+        observed_at=now,
+        source="gold-api-xag-usd",
+    )
+
+    response = client.get("/risk/status")
+
+    assert response.status_code == 200
+    diagnostics_24h = response.json()["global_xag_diagnostics"][0]
+    assert diagnostics_24h["sample_count"] == 4
+    assert diagnostics_24h["latest_source"] == "gold-api-xag-usd"
+    assert diagnostics_24h["min_price"] == "32.000000"
+    assert diagnostics_24h["max_price"] == "78.000000"
+    assert [
+        {"source": item["source"], "sample_count": item["sample_count"]}
+        for item in diagnostics_24h["sources"]
+    ] == [
+        {"source": "gold-api-xag-usd", "sample_count": 2},
+        {"source": "stooq-xagusd-csv", "sample_count": 2},
+    ]
 
 
 def test_risk_status_reports_runtime_blocking_thresholds():
