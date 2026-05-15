@@ -23,6 +23,24 @@ class TradeAmounts:
     net_amount: Decimal
 
 
+@dataclass(frozen=True)
+class GlobalPriceRangeMetric:
+    percent: Decimal
+    source: str
+    sample_count: int
+    min_price: Decimal
+    max_price: Decimal
+
+
+@dataclass(frozen=True)
+class GlobalPriceRiseMetric:
+    percent: Decimal
+    source: str
+    sample_count: int
+    first_price: Decimal
+    latest_price: Decimal
+
+
 class PositionLike(Protocol):
     quantity: Decimal
 
@@ -168,13 +186,16 @@ def risk_policy_status(
     now = datetime.now(UTC)
     daily_loss = _realized_loss_since(db, portfolio_id=portfolio.id, asset_id=asset.id, since=now - timedelta(days=1))
     weekly_loss = _realized_loss_since(db, portfolio_id=portfolio.id, asset_id=asset.id, since=now - timedelta(days=7))
-    volatility_24h = _global_price_range_percent(db, asset_id=asset.id, since=now - timedelta(hours=24))
-    volatility_7d = _global_price_range_percent(db, asset_id=asset.id, since=now - timedelta(days=7))
-    fomo_rise = _global_price_rise_percent(
+    volatility_24h_metric = _global_price_range_metric(db, asset_id=asset.id, since=now - timedelta(hours=24))
+    volatility_7d_metric = _global_price_range_metric(db, asset_id=asset.id, since=now - timedelta(days=7))
+    fomo_rise_metric = _global_price_rise_metric(
         db,
         asset_id=asset.id,
         since=now - timedelta(minutes=settings.risk_fomo_lookback_minutes),
     )
+    volatility_24h = volatility_24h_metric.percent if volatility_24h_metric is not None else None
+    volatility_7d = volatility_7d_metric.percent if volatility_7d_metric is not None else None
+    fomo_rise = fomo_rise_metric.percent if fomo_rise_metric is not None else None
 
     would_block_now = []
     if daily_loss >= settings.risk_max_daily_loss_usd:
@@ -203,6 +224,8 @@ def risk_policy_status(
                 "metric": str(volatility_24h),
                 "threshold": str(settings.risk_max_24h_volatility_percent),
                 "window_hours": 24,
+                "source": volatility_24h_metric.source,
+                "sample_count": volatility_24h_metric.sample_count,
             }
         )
     if volatility_7d is not None and volatility_7d > settings.risk_max_7d_volatility_percent:
@@ -213,6 +236,8 @@ def risk_policy_status(
                 "metric": str(volatility_7d),
                 "threshold": str(settings.risk_max_7d_volatility_percent),
                 "window_hours": 168,
+                "source": volatility_7d_metric.source,
+                "sample_count": volatility_7d_metric.sample_count,
             }
         )
     if fomo_rise is not None and fomo_rise > settings.risk_fomo_rise_percent:
@@ -223,6 +248,8 @@ def risk_policy_status(
                 "metric": str(fomo_rise),
                 "threshold": str(settings.risk_fomo_rise_percent),
                 "lookback_minutes": settings.risk_fomo_lookback_minutes,
+                "source": fomo_rise_metric.source,
+                "sample_count": fomo_rise_metric.sample_count,
             }
         )
 
@@ -242,8 +269,16 @@ def risk_policy_status(
         },
         "current_metrics": {
             "global_xag_volatility_24h_percent": volatility_24h,
+            "global_xag_volatility_24h_source": volatility_24h_metric.source if volatility_24h_metric else None,
+            "global_xag_volatility_24h_sample_count": (
+                volatility_24h_metric.sample_count if volatility_24h_metric else None
+            ),
             "global_xag_volatility_7d_percent": volatility_7d,
+            "global_xag_volatility_7d_source": volatility_7d_metric.source if volatility_7d_metric else None,
+            "global_xag_volatility_7d_sample_count": volatility_7d_metric.sample_count if volatility_7d_metric else None,
             "fomo_rise_percent": fomo_rise,
+            "fomo_rise_source": fomo_rise_metric.source if fomo_rise_metric else None,
+            "fomo_rise_sample_count": fomo_rise_metric.sample_count if fomo_rise_metric else None,
             "daily_realized_loss_usd": daily_loss,
             "weekly_realized_loss_usd": weekly_loss,
         },
@@ -347,8 +382,8 @@ def _volatility_block(
     max_7d_percent: Decimal,
 ) -> RiskDecision | None:
     for hours, max_percent in ((24, max_24h_percent), (24 * 7, max_7d_percent)):
-        volatility = _global_price_range_percent(db, asset_id=asset_id, since=datetime.now(UTC) - timedelta(hours=hours))
-        if volatility is None or volatility <= max_percent:
+        metric = _global_price_range_metric(db, asset_id=asset_id, since=datetime.now(UTC) - timedelta(hours=hours))
+        if metric is None or metric.percent <= max_percent:
             continue
         return _decision(
             db,
@@ -357,8 +392,12 @@ def _volatility_block(
             risk_level="high",
             details={
                 "window_hours": hours,
-                "volatility_percent": str(volatility),
+                "volatility_percent": str(metric.percent),
                 "max_volatility_percent": str(max_percent),
+                "source": metric.source,
+                "sample_count": metric.sample_count,
+                "min_price": str(metric.min_price),
+                "max_price": str(metric.max_price),
             },
         )
     return None
@@ -376,14 +415,9 @@ def _fomo_block(
         return None
 
     since = datetime.now(UTC) - timedelta(minutes=lookback_minutes)
-    prices = _global_mid_prices_since(db, asset_id=asset_id, since=since)
-    rise_percent = _price_rise_percent(prices)
-    if rise_percent is None:
+    metric = _global_price_rise_metric(db, asset_id=asset_id, since=since)
+    if metric is None or metric.percent <= max_rise_percent:
         return None
-    if rise_percent <= max_rise_percent:
-        return None
-    first_price = prices[0]
-    latest_price = prices[-1]
     return _decision(
         db,
         decision="blocked",
@@ -391,10 +425,12 @@ def _fomo_block(
         risk_level="medium",
         details={
             "lookback_minutes": lookback_minutes,
-            "rise_percent": str(rise_percent.quantize(PERCENT_QUANT)),
+            "rise_percent": str(metric.percent.quantize(PERCENT_QUANT)),
             "max_rise_percent": str(max_rise_percent),
-            "first_price": str(first_price),
-            "latest_price": str(latest_price),
+            "source": metric.source,
+            "sample_count": metric.sample_count,
+            "first_price": str(metric.first_price),
+            "latest_price": str(metric.latest_price),
         },
     )
 
@@ -429,21 +465,69 @@ def _expected_gain_block(
     )
 
 
-def _global_price_range_percent(db: Session, *, asset_id: int, since: datetime) -> Decimal | None:
-    prices = _global_mid_prices_since(db, asset_id=asset_id, since=since)
+def _global_price_range_metric(db: Session, *, asset_id: int, since: datetime) -> GlobalPriceRangeMetric | None:
+    rows = _global_price_rows_since(db, asset_id=asset_id, since=since)
+    prices_by_source: dict[str, list[Decimal]] = {}
+    for row in rows:
+        prices_by_source.setdefault(row.source, []).append(_global_mid_price(row))
+
+    candidates: list[GlobalPriceRangeMetric] = []
+    for source, prices in prices_by_source.items():
+        range_percent = _price_range_percent(prices)
+        if range_percent is None:
+            continue
+        candidates.append(
+            GlobalPriceRangeMetric(
+                percent=range_percent,
+                source=source,
+                sample_count=len(prices),
+                min_price=min(prices),
+                max_price=max(prices),
+            )
+        )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (item.percent, item.sample_count, item.source))
+
+
+def _price_range_percent(prices: list[Decimal]) -> Decimal | None:
     if len(prices) < 2:
         return None
     high_price = max(prices)
     low_price = min(prices)
+    return _price_range_percent_from_bounds(low_price=low_price, high_price=high_price)
+
+
+def _price_range_percent_from_bounds(*, low_price: Decimal, high_price: Decimal) -> Decimal | None:
     mid_price = (high_price + low_price) / Decimal("2")
     if mid_price <= 0:
         return None
     return (((high_price - low_price) / mid_price) * Decimal("100")).quantize(PERCENT_QUANT)
 
 
-def _global_price_rise_percent(db: Session, *, asset_id: int, since: datetime) -> Decimal | None:
-    prices = _global_mid_prices_since(db, asset_id=asset_id, since=since)
-    return _price_rise_percent(prices)
+def _global_price_rise_metric(db: Session, *, asset_id: int, since: datetime) -> GlobalPriceRiseMetric | None:
+    rows = _global_price_rows_since(db, asset_id=asset_id, since=since)
+    prices_by_source: dict[str, list[Decimal]] = {}
+    for row in rows:
+        prices_by_source.setdefault(row.source, []).append(_global_mid_price(row))
+
+    candidates: list[GlobalPriceRiseMetric] = []
+    for source, prices in prices_by_source.items():
+        rise_percent = _price_rise_percent(prices)
+        if rise_percent is None:
+            continue
+        candidates.append(
+            GlobalPriceRiseMetric(
+                percent=rise_percent,
+                source=source,
+                sample_count=len(prices),
+                first_price=prices[0],
+                latest_price=prices[-1],
+            )
+        )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (item.percent, item.sample_count, item.source))
 
 
 def _price_rise_percent(prices: list[Decimal]) -> Decimal | None:
@@ -486,6 +570,7 @@ def _global_price_window_summary(db: Session, *, asset_id: int, since: datetime,
             "latest_price": None,
             "min_price": None,
             "max_price": None,
+            "range_percent": None,
             "sources": [],
         }
 
@@ -511,6 +596,7 @@ def _global_price_window_summary(db: Session, *, asset_id: int, since: datetime,
         summary["max_price"] = max(summary["max_price"], price)
 
     latest_row = rows[-1]
+    window_range = _price_range_percent(prices)
     return {
         "window_hours": window_hours,
         "sample_count": len(rows),
@@ -520,7 +606,17 @@ def _global_price_window_summary(db: Session, *, asset_id: int, since: datetime,
         "latest_price": _global_mid_price(latest_row),
         "min_price": min(prices),
         "max_price": max(prices),
-        "sources": sorted(source_summaries.values(), key=lambda item: item["source"]),
+        "range_percent": window_range,
+        "sources": [
+            {
+                **summary,
+                "range_percent": _price_range_percent_from_bounds(
+                    low_price=summary["min_price"],
+                    high_price=summary["max_price"],
+                ),
+            }
+            for summary in sorted(source_summaries.values(), key=lambda item: item["source"])
+        ],
     }
 
 

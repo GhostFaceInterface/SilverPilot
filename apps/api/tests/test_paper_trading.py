@@ -542,6 +542,7 @@ def test_risk_status_reports_thresholds_and_current_metrics():
             "last_observed_at": payload["global_xag_diagnostics"][0]["last_observed_at"],
             "min_price": "32.000000",
             "max_price": "33.000000",
+            "range_percent": "3.076923",
         }
     ]
     assert payload["would_block_now"] == []
@@ -572,6 +573,7 @@ def test_risk_status_reports_global_xag_source_diagnostics():
     assert diagnostics_24h["latest_source"] == "gold-api-xag-usd"
     assert diagnostics_24h["min_price"] == "32.000000"
     assert diagnostics_24h["max_price"] == "78.000000"
+    assert diagnostics_24h["range_percent"] == "83.636364"
     assert [
         {"source": item["source"], "sample_count": item["sample_count"]}
         for item in diagnostics_24h["sources"]
@@ -579,6 +581,47 @@ def test_risk_status_reports_global_xag_source_diagnostics():
         {"source": "gold-api-xag-usd", "sample_count": 2},
         {"source": "stooq-xagusd-csv", "sample_count": 2},
     ]
+
+
+def test_risk_engine_does_not_create_synthetic_volatility_across_sources():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    now = datetime.now(UTC)
+    seed_global_price_history(
+        testing_session,
+        prices=[Decimal("32.000000"), Decimal("33.000000")],
+        observed_at=now - timedelta(minutes=10),
+        source="gold-api-xag-usd",
+    )
+    seed_global_price_history(
+        testing_session,
+        prices=[Decimal("44.000000"), Decimal("45.000000")],
+        observed_at=now - timedelta(minutes=10),
+        source="stooq-xagusd-csv",
+    )
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "paper_buy"
+    assert response.json()["risk_decision"]["reason_code"] == "RISK_CHECK_PASSED"
+
+    status_response = client.get("/risk/status")
+    assert status_response.status_code == 200
+    metrics = status_response.json()["current_metrics"]
+    assert metrics["global_xag_volatility_24h_source"] == "gold-api-xag-usd"
+    assert metrics["global_xag_volatility_24h_percent"] == "3.076923"
+    assert status_response.json()["global_xag_diagnostics"][0]["range_percent"] == "33.766234"
 
 
 def test_risk_status_reports_runtime_blocking_thresholds():

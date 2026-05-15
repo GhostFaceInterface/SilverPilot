@@ -74,9 +74,10 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 
 ## Implemented Phase 4.2 Rules
 
-- Buy/sell requests are blocked when global XAG/USD 24-hour range exceeds `RISK_MAX_24H_VOLATILITY_PERCENT`, default `12.0`.
-- Buy/sell requests are blocked when global XAG/USD 7-day range exceeds `RISK_MAX_7D_VOLATILITY_PERCENT`, default `25.0`.
-- Buy requests are blocked with `FOMO_RISK` when global XAG/USD rises more than `RISK_FOMO_RISE_PERCENT`, default `6.0`, over `RISK_FOMO_LOOKBACK_MINUTES`, default `180`.
+- Buy/sell requests are blocked when source-aware global XAG/USD 24-hour range exceeds `RISK_MAX_24H_VOLATILITY_PERCENT`, default `12.0`.
+- Buy/sell requests are blocked when source-aware global XAG/USD 7-day range exceeds `RISK_MAX_7D_VOLATILITY_PERCENT`, default `25.0`.
+- Buy requests are blocked with `FOMO_RISK` when source-aware global XAG/USD rises more than `RISK_FOMO_RISE_PERCENT`, default `6.0`, over `RISK_FOMO_LOOKBACK_MINUTES`, default `180`.
+- Global XAG volatility and FOMO metrics are evaluated per source, then the highest source-specific risk metric is used; cross-source price jumps are shown in diagnostics but do not create synthetic blocks by themselves.
 - Buy/sell requests are blocked when realized paper loss reaches `RISK_MAX_DAILY_LOSS_USD`, default `30.0`, or `RISK_MAX_WEEKLY_LOSS_USD`, default `60.0`.
 - Paper-buy requests with `expected_exit_price` are blocked with `EXPECTED_GAIN_BELOW_COST` when expected net gain does not exceed `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`, default `0.0`.
 - `GET /risk/status` reports the configured thresholds, current runtime metrics, market/history-based `would_block_now` diagnostics, recent risk decision counts, and global XAG source/sample diagnostics for threshold tuning.

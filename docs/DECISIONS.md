@@ -137,3 +137,9 @@ Stooq failure degrades source reliability but does not block Phase 4 when an app
 Status: accepted.
 
 Phase 4 starts by making paper trading depend on the backend risk engine. Every persisted paper-trade record must reference a persisted `risk_decisions` row. Policy-blocked buy/sell attempts are recorded as `paper_trades.action=blocked` with no cash or position mutation, so the user can inspect why the action was blocked. The first implemented blocks are missing/stale execution-critical data, excessive spread, insufficient paper cash, and insufficient paper position. Real-money execution, bank automation, LLM decisions, volatility/FOMO strategy rules, and dashboard work remain excluded from this slice.
+
+## D-022: Global XAG Risk Metrics Are Source-Aware
+
+Status: accepted.
+
+Phase 4 global XAG/USD volatility and FOMO checks compute risk metrics per source and use the highest source-specific metric for blocking. Combined cross-source min/max/range remains visible in `/risk/status` diagnostics, but source switching between Stooq, Gold-API, and optional Metals.Dev must not create synthetic volatility or FOMO blocks by itself.

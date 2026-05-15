@@ -422,16 +422,17 @@ Purpose: read-only threshold tuning and policy diagnostics for Phase 4.
 Response:
 
 - `thresholds`: current deterministic risk thresholds from configuration.
-- `current_metrics`: runtime 24-hour/7-day global XAG/USD volatility, FOMO rise, and realized paper loss metrics.
-- `would_block_now`: market/history-based block diagnostics such as `VOLATILITY_TOO_HIGH`, `FOMO_RISK`, `DAILY_LOSS_LIMIT_REACHED`, or `WEEKLY_LOSS_LIMIT_REACHED`.
+- `current_metrics`: runtime source-aware 24-hour/7-day global XAG/USD volatility, source/sample metadata, FOMO rise, and realized paper loss metrics.
+- `would_block_now`: market/history-based block diagnostics such as `VOLATILITY_TOO_HIGH`, `FOMO_RISK`, `DAILY_LOSS_LIMIT_REACHED`, or `WEEKLY_LOSS_LIMIT_REACHED`; source-aware global XAG blocks include the source and sample count used for the metric.
 - `recent_decisions`: 24-hour grouped risk decision counts by `decision` and `reason_code`.
-- `global_xag_diagnostics`: 24-hour and 7-day global XAG sample counts, latest source/price, min/max price, and per-source sample summaries used to explain volatility tuning.
+- `global_xag_diagnostics`: 24-hour and 7-day global XAG sample counts, latest source/price, combined min/max/range, and per-source sample/range summaries used to explain volatility tuning.
 
 Policy:
 
 - This endpoint is observational only; it does not create trades or override risk policy.
 - Request-specific checks such as spread, expected exit, cash, and position remain enforced by `POST /paper-trades`.
 - Global XAG diagnostics are tuning metadata only; they do not select sources or override the collector validation gate.
+- Source-aware risk metrics prevent fallback/source-mix price differences from creating synthetic volatility or FOMO blocks.
 
 ### Phase 3.2 Fed RSS Output
 

@@ -18,8 +18,14 @@ class RiskThresholdsPayload(BaseModel):
 
 class RiskCurrentMetricsPayload(BaseModel):
     global_xag_volatility_24h_percent: Decimal | None
+    global_xag_volatility_24h_source: str | None
+    global_xag_volatility_24h_sample_count: int | None
     global_xag_volatility_7d_percent: Decimal | None
+    global_xag_volatility_7d_source: str | None
+    global_xag_volatility_7d_sample_count: int | None
     fomo_rise_percent: Decimal | None
+    fomo_rise_source: str | None
+    fomo_rise_sample_count: int | None
     daily_realized_loss_usd: Decimal
     weekly_realized_loss_usd: Decimal
 
@@ -31,6 +37,8 @@ class RiskWouldBlockPayload(BaseModel):
     threshold: str
     window_hours: int | None = None
     lookback_minutes: int | None = None
+    source: str | None = None
+    sample_count: int | None = None
 
 
 class RecentRiskDecisionCountPayload(BaseModel):
@@ -46,6 +54,7 @@ class GlobalXagSourceDiagnosticsPayload(BaseModel):
     last_observed_at: datetime | None
     min_price: Decimal | None
     max_price: Decimal | None
+    range_percent: Decimal | None
 
 
 class GlobalXagWindowDiagnosticsPayload(BaseModel):
@@ -57,6 +66,7 @@ class GlobalXagWindowDiagnosticsPayload(BaseModel):
     latest_price: Decimal | None
     min_price: Decimal | None
     max_price: Decimal | None
+    range_percent: Decimal | None
     sources: list[GlobalXagSourceDiagnosticsPayload]
 
 

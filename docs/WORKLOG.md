@@ -345,3 +345,14 @@ Phase 4 risk status source diagnostics deployed and smoked on VPS.
 - VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `phase4_allowed: true` and execution-critical status `healthy`.
 - VPS `/risk/status` returned `global_xag_diagnostics` for 24-hour and 7-day windows.
 - Production `/risk/status` smoke returned `would_block_now: []`; 24-hour global XAG diagnostics showed 60 samples, latest source `stooq-xagusd-csv`, min price `76.006000`, max price `85.150000`, and source counts of 53 Stooq rows plus 7 Gold-API rows.
+
+Phase 4 source-aware global XAG risk metrics implemented locally.
+
+- Reviewed live VPS `/collectors/validation-gate` and `/risk/status`: Phase 4 gate remained ready and `/risk/status` returned `would_block_now: []`.
+- Live diagnostics showed the 24-hour volatility metric was close to the `12.0` threshold and the sample window mixed Stooq and Gold-API fallback rows.
+- Updated global XAG volatility and FOMO checks to compute metrics per source and use the highest source-specific metric for blocking.
+- Kept combined cross-source range visible in `/risk/status` diagnostics as tuning metadata, not as the blocking metric.
+- Added a regression test showing cross-source price differences do not create synthetic volatility blocks.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, `docker compose config --quiet`, and `git diff --check`.
+- Secret scan of touched paths found only policy/doc references to secrets or token/cost wording, not secret values.
+- No risk threshold was relaxed, and no real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.
