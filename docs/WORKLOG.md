@@ -420,5 +420,6 @@ Phase 5 dashboard snapshot reviewed and local collector profile restored.
 - Started the local collector profile; Kuveyt, global XAG/USD, TCMB, and Fed RSS succeeded, execution-critical freshness became healthy, and `/collectors/validation-gate` returned `phase4_allowed=true`.
 - Local FRED macro remained degraded because the FRED API key is not configured in the running local collector environment; this is context-only and does not block Phase 4.
 - Updated the dashboard presentation layer so validation-gate `READY` sentinel values are not displayed as blocking reasons.
-- Validation passed: dashboard syntax compile, backend tests, Docker Compose config, diff check, dashboard container health, and local validation-gate smoke.
+- Pushed commit `07cb5d3`, pulled it on the VPS, rebuilt the dashboard profile, and smoke-tested dashboard health plus `/collectors/validation-gate` and `/risk/status`.
+- Validation passed: dashboard syntax compile, backend tests, Docker Compose config, diff check, dashboard container health, local validation-gate smoke, and VPS dashboard/gate/risk smoke.
 - No threshold change, backend risk-policy change, real-money execution, bank automation, LLM decisioning, OpenClaw implementation, or secret access was added.
