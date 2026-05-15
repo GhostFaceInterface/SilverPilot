@@ -390,3 +390,13 @@ Phase 4 risk threshold headroom diagnostics deployed and smoked on VPS.
 - VPS `/risk/status` returned `threshold_headroom` and `would_block_now: []`.
 - Runtime headroom now shows the 24-hour source-aware global XAG volatility threshold as near-limit, so the next Phase 4 action is to decide whether this threshold should stay conservative or be tuned.
 - No real-money execution, bank automation, LLM decisioning, dashboard, or OpenClaw implementation was added.
+
+Phase 4 threshold policy accepted as conservative.
+
+- Volatility thresholds stay conservative for now; `near_limit` alone is not a reason to relax `RISK_MAX_GLOBAL_XAG_VOLATILITY_24H` / `RISK_MAX_24H_VOLATILITY_PERCENT`, `RISK_MAX_7D_VOLATILITY_PERCENT`, or related values.
+- `/risk/status` `threshold_headroom` remains diagnostic and monitor-only.
+- Threshold tuning is deferred until Phase 5 dashboard visibility and more runtime evidence exist, unless a critical bug or clearly incorrect block appears.
+- Phase 5 dashboard scope now includes risk status summary, threshold headroom, `would_block_now`, 24-hour/7-day global XAG volatility, spread percent, blocked trade count, reason-code distribution, collector freshness, volatility samples, and selected global XAG source.
+- Validation passed: local backend tests, Docker Compose config, and diff check.
+- VPS smoke confirmed `/risk/status` still returns `threshold_headroom` and `/collectors/validation-gate` still returns `phase4_allowed: true` with execution-critical status healthy.
+- No code implementation, threshold change, real-money execution, bank automation, LLM decisioning, dashboard implementation, or OpenClaw implementation was performed.

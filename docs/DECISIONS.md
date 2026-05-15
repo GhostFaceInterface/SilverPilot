@@ -166,3 +166,25 @@ Consequences:
 Supersedes:
 
 - Any previous decision or planning note that marked OpenClaw as optional, implicit, or backlog-only.
+
+## D-024: Keep Phase 4 Volatility Thresholds Conservative
+
+Status: accepted.
+
+SilverPilot will not relax Phase 4 volatility thresholds just because `/risk/status` reports a `near_limit` state. `RISK_MAX_GLOBAL_XAG_VOLATILITY_24H` / `RISK_MAX_24H_VOLATILITY_PERCENT`, `RISK_MAX_7D_VOLATILITY_PERCENT`, and related volatility thresholds remain conservative until dashboard visibility and more runtime evidence exist.
+
+Rationale:
+
+- The system is still in paper-trading and early Phase 4.
+- There is no dashboard yet.
+- There is no backtest yet.
+- Runtime evidence is still short.
+- Buy-and-hold versus blocked-trade comparison does not exist yet.
+- False-positive paper-trade blocks are acceptable at this stage; false-negative risk permissions are more dangerous.
+
+Consequences:
+
+- `/risk/status` `threshold_headroom` stays diagnostic.
+- `near_limit` can be monitored in `docs/WORKLOG.md` and `memory-bank/activeContext.md`, but it does not trigger automatic tuning.
+- Threshold tuning during Phase 4 is reserved for critical bugs or clearly incorrect blocking behavior.
+- Phase 5 dashboard must make risk status, threshold headroom, block reasons, collector freshness, and global XAG source diagnostics visible before broader tuning.

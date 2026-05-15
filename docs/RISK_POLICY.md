@@ -1,6 +1,6 @@
 # Risk Policy
 
-This file is the canonical policy for paper-trading safety. Phase 4 has started with deterministic paper-trade risk decisions. Volatility, realized-loss, FOMO, and optional expected-gain blocks are configurable MVP safeguards and can be tuned after runtime data accumulates.
+This file is the canonical policy for paper-trading safety. Phase 4 has started with deterministic paper-trade risk decisions. Volatility, realized-loss, FOMO, and optional expected-gain blocks are configurable MVP safeguards. The current Phase 4 threshold decision keeps volatility defaults conservative until dashboard visibility and more runtime evidence exist.
 
 ## Hard Safety Rules
 
@@ -83,6 +83,16 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 - Buy/sell requests are blocked when realized paper loss reaches `RISK_MAX_DAILY_LOSS_USD`, default `30.0`, or `RISK_MAX_WEEKLY_LOSS_USD`, default `60.0`.
 - Paper-buy requests with `expected_exit_price` are blocked with `EXPECTED_GAIN_BELOW_COST` when expected net gain does not exceed `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`, default `0.0`.
 - `GET /risk/status` reports the configured thresholds, current runtime metrics, per-threshold headroom diagnostics, market/history-based `would_block_now` diagnostics, recent risk decision counts, and global XAG source/sample diagnostics for threshold tuning.
+
+## Phase 4 Threshold Decision
+
+- Current volatility thresholds remain conservative by default.
+- `RISK_MAX_GLOBAL_XAG_VOLATILITY_24H` / `RISK_MAX_24H_VOLATILITY_PERCENT`, `RISK_MAX_7D_VOLATILITY_PERCENT`, and related volatility thresholds are not relaxed during early Phase 4.
+- `/risk/status` `threshold_headroom` remains monitoring and diagnostic output only.
+- A `near_limit` status is not enough reason to loosen a threshold.
+- False-positive paper-trade blocks are acceptable at this stage; false-negative risk permissions are more dangerous.
+- Broader threshold tuning is deferred until dashboard visibility, longer runtime data, backtesting, and buy-and-hold versus blocked-trade comparison exist.
+- Phase 4 threshold tuning should happen only for a critical bug or clearly incorrect blocking behavior.
 
 ## Impact Classification
 

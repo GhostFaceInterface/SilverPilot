@@ -435,9 +435,12 @@ Policy:
 
 - This endpoint is observational only; it does not create trades or override risk policy.
 - `threshold_headroom` is diagnostic only; it must not relax or tighten the configured risk thresholds by itself.
+- `near_limit` is a monitoring state, not an automatic tuning trigger.
 - Request-specific checks such as spread, expected exit, cash, and position remain enforced by `POST /paper-trades`.
 - Global XAG diagnostics are tuning metadata only; they do not select sources or override the collector validation gate.
 - Source-aware risk metrics prevent fallback/source-mix price differences from creating synthetic volatility or FOMO blocks.
+
+Phase 5 dashboard should consume this endpoint for the risk summary, `threshold_headroom`, `would_block_now`, 24-hour and 7-day global XAG volatility, recent blocked-decision counts, reason-code distribution, volatility sample metadata, and selected global XAG source.
 
 ### Phase 3.2 Fed RSS Output
 

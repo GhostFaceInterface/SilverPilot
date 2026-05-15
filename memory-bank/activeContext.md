@@ -69,6 +69,7 @@ Phase 4: risk policy and rule engine in progress.
 - VPS `/risk/status` source-diagnostics smoke returned `would_block_now: []` and showed 24-hour global XAG samples from Stooq plus Gold-API fallback.
 - Phase 4 source-aware global XAG volatility/FOMO risk metrics are implemented, deployed, and smoke-tested on VPS.
 - Phase 4 `/risk/status` threshold headroom diagnostics are implemented, deployed, and smoke-tested on VPS.
+- Phase 4 threshold decision is accepted: keep volatility thresholds conservative; `near_limit` is monitor-only and not an automatic tuning trigger.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -105,8 +106,7 @@ Phase 4: risk policy and rule engine in progress.
 Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
-- Review `/risk/status` threshold headroom and global XAG source/sample diagnostics before adding more policy surface.
-- Build Phase 5 dashboard after Phase 4 threshold tuning.
+- Build Phase 5 dashboard with `/risk/status`, `threshold_headroom`, `would_block_now`, blocked-decision counts, reason-code distribution, volatility samples, collector freshness, and selected global XAG source.
 - Keep OpenClaw implementation for Phase 6 foundation; do not move it ahead of Phase 4 tuning or Phase 5 dashboard.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
@@ -116,4 +116,4 @@ Pending:
 
 ## Next Step
 
-Next: use deployed Phase 4 threshold headroom to decide whether current thresholds need tuning, then Phase 5 dashboard. OpenClaw is mandatory but starts later in Phase 6 foundation work after safe boundaries are documented and implemented. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Next: build Phase 5 dashboard visibility. Phase 4 volatility thresholds stay conservative unless a critical bug or clearly incorrect block appears. OpenClaw starts later in Phase 6 foundation work after safe boundaries are documented and implemented. Keep BLS direct disabled for MVP unless explicitly re-approved.

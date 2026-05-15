@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Immediate next work remains Phase 4 threshold tuning and then Phase 5 dashboard. OpenClaw is mandatory for the future agent orchestration layer, but implementation starts later in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, dashboard work, and ML remain out of scope.
+SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Phase 4 threshold policy is accepted as conservative by default; near-limit diagnostics alone are not a reason to relax volatility thresholds. Immediate next work is Phase 5 dashboard visibility. OpenClaw is mandatory for the future agent orchestration layer, but implementation starts later in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -337,7 +337,10 @@ Validation gate:
 
 Pending Phase 4.x:
 
-- Review `/risk/status` threshold headroom and global XAG diagnostics against runtime collector and paper-trade history, then tune thresholds if production data shows source-aware metrics are too loose or too strict.
+- Keep `RISK_MAX_GLOBAL_XAG_VOLATILITY_24H` / `RISK_MAX_24H_VOLATILITY_PERCENT`, `RISK_MAX_7D_VOLATILITY_PERCENT`, and related volatility thresholds conservative for now.
+- Treat `/risk/status` `threshold_headroom` as monitoring/diagnostic output only.
+- Do not relax thresholds because of `near_limit` alone; tune only for a critical bug or clearly incorrect blocking behavior.
+- Defer broader threshold tuning until Phase 5 dashboard visibility, longer runtime evidence, backtesting, and buy-and-hold versus blocked-trade comparison exist.
 - Add richer strategy target inputs if expected-return checks need more than `expected_exit_price`.
 
 ## Phase 5: Dashboard
@@ -360,8 +363,20 @@ Views:
 - Realized and unrealized PnL.
 - Latest prices.
 - Spread chart.
+- `/risk/status` summary.
+- `threshold_headroom`.
+- `would_block_now`.
+- 24-hour global XAG volatility.
+- 7-day global XAG volatility.
+- Spread percent.
+- Blocked trade count.
+- `reason_code` distribution.
 - Avoided or blocked trades.
 - Paper trade history.
+- Recent blocked decisions.
+- Volatility samples.
+- Collector freshness.
+- Selected global XAG source.
 - Daily reports.
 - Collector health.
 
@@ -772,4 +787,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Immediate next remains Phase 4 threshold tuning from `/risk/status` and then Phase 5 dashboard visibility. OpenClaw is mandatory for the agent layer, but implementation starts later in Phase 6 foundation work after dashboard and LLM gateway boundaries are ready. After dashboard and LLM gateway foundation, OpenClaw workspace, project-local skills, sandbox policy, secrets boundaries, and auditability will be implemented. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Immediate next is Phase 5 dashboard visibility. Phase 4 threshold policy keeps conservative volatility defaults; `near_limit` output is monitored but does not trigger automatic tuning. Threshold tuning is deferred until dashboard visibility and more runtime evidence exist unless there is a critical bug or clearly incorrect blocking behavior. OpenClaw is mandatory for the agent layer, but implementation starts later in Phase 6 foundation work after dashboard and LLM gateway boundaries are ready. After dashboard and LLM gateway foundation, OpenClaw workspace, project-local skills, sandbox policy, secrets boundaries, and auditability will be implemented. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
