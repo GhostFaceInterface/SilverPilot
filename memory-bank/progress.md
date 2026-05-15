@@ -176,3 +176,17 @@ Completed:
 Next milestone:
 
 - Build Phase 5 dashboard with risk status, threshold headroom, block reasons, collector freshness, volatility samples, selected global XAG source, and blocked-decision summaries.
+
+## Phase 5
+
+Status: in progress.
+
+Completed:
+
+- Added initial read-only Streamlit dashboard for portfolio, latest price, `/risk/status`, threshold headroom, `would_block_now`, blocked decision summaries, collector freshness, and global XAG sample diagnostics.
+- Added dashboard Dockerfile, dependency file, and optional Docker Compose `dashboard` profile.
+- Local dashboard container health and browser render validation passed.
+
+Next milestone:
+
+- Deploy and smoke the dashboard on the VPS without changing deterministic risk policy or thresholds.

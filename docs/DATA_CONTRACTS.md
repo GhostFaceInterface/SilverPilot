@@ -442,6 +442,8 @@ Policy:
 
 Phase 5 dashboard should consume this endpoint for the risk summary, `threshold_headroom`, `would_block_now`, 24-hour and 7-day global XAG volatility, recent blocked-decision counts, reason-code distribution, volatility sample metadata, and selected global XAG source.
 
+The initial Streamlit dashboard is read-only. It may call `/health`, `/portfolio`, `/paper-trades/position`, `/prices/latest`, `/collectors/health`, `/collectors/validation-gate`, and `/risk/status`; it must not call `POST /paper-trades` or collector mutation endpoints.
+
 ### Phase 3.2 Fed RSS Output
 
 - `fed_rss` reads the official Federal Reserve monetary policy RSS feed by default.

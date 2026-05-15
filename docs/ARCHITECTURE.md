@@ -73,6 +73,7 @@ Langfuse is the home for LLM traces, cost, latency, and prompt observability. Ma
 
 - dashboard.
 - health/status endpoints.
+- Initial dashboard is a read-only Streamlit app served through the optional Docker Compose `dashboard` profile.
 
 3. LLM/Observability Layer
 
@@ -213,7 +214,7 @@ Initial VPS deployment should use Docker Compose:
 
 - API container.
 - PostgreSQL container or managed PostgreSQL.
-- Optional dashboard container.
+- Optional dashboard container through the `dashboard` Compose profile.
 - Backup job.
 - Health checks.
 

@@ -400,3 +400,12 @@ Phase 4 threshold policy accepted as conservative.
 - Validation passed: local backend tests, Docker Compose config, and diff check.
 - VPS smoke confirmed `/risk/status` still returns `threshold_headroom` and `/collectors/validation-gate` still returns `phase4_allowed: true` with execution-critical status healthy.
 - No code implementation, threshold change, real-money execution, bank automation, LLM decisioning, dashboard implementation, or OpenClaw implementation was performed.
+
+Phase 5 initial dashboard implemented locally.
+
+- Added a read-only Streamlit dashboard that consumes `/health`, `/portfolio`, `/paper-trades/position`, `/prices/latest`, `/collectors/health`, `/collectors/validation-gate`, and `/risk/status`.
+- Dashboard surfaces risk status, `threshold_headroom`, `would_block_now`, 24-hour and 7-day global XAG volatility, spread percent, blocked-decision counts, reason-code distribution, collector freshness, volatility samples, and selected global XAG source.
+- Added dashboard Dockerfile, `apps/dashboard/requirements.txt`, and an optional Docker Compose `dashboard` profile on port `8501`.
+- Local validation passed: dashboard syntax compile, Docker Compose config, dashboard Docker build, dashboard container health, browser render check, backend tests, and diff check.
+- VPS smoke confirmed `/risk/status` still returns `threshold_headroom` and `/collectors/validation-gate` still returns `phase4_allowed: true` with execution-critical status healthy.
+- No threshold change, real-money execution, bank automation, LLM decisioning, OpenClaw implementation, or production secret access was added.

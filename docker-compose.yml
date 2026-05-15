@@ -94,6 +94,19 @@ services:
       postgres:
         condition: service_healthy
 
+  dashboard:
+    profiles: ["dashboard"]
+    build:
+      context: ./apps/dashboard
+    container_name: silverpilot-dashboard
+    environment:
+      SILVERPILOT_API_BASE_URL: ${SILVERPILOT_API_BASE_URL:-http://api:8000}
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: silverpilot-postgres

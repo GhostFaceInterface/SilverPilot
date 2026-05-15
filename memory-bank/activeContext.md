@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 4: risk policy and rule engine in progress.
+Phase 5: dashboard visibility in progress.
 
 ## Current State
 
@@ -70,6 +70,7 @@ Phase 4: risk policy and rule engine in progress.
 - Phase 4 source-aware global XAG volatility/FOMO risk metrics are implemented, deployed, and smoke-tested on VPS.
 - Phase 4 `/risk/status` threshold headroom diagnostics are implemented, deployed, and smoke-tested on VPS.
 - Phase 4 threshold decision is accepted: keep volatility thresholds conservative; `near_limit` is monitor-only and not an automatic tuning trigger.
+- Phase 5 initial read-only Streamlit dashboard exists locally for `/risk/status`, threshold headroom, block diagnostics, portfolio, latest price, collector freshness, and selected global XAG source.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -106,14 +107,13 @@ Phase 4: risk policy and rule engine in progress.
 Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
-- Build Phase 5 dashboard with `/risk/status`, `threshold_headroom`, `would_block_now`, blocked-decision counts, reason-code distribution, volatility samples, collector freshness, and selected global XAG source.
+- Deploy/smoke Phase 5 dashboard on VPS after local validation is complete.
 - Keep OpenClaw implementation for Phase 6 foundation; do not move it ahead of Phase 4 tuning or Phase 5 dashboard.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
 - Keep VPS-local `.env.production` secrets out of git and markdown.
-- Ignore editor swap files created while editing production env files.
 
 ## Next Step
 
-Next: build Phase 5 dashboard visibility. Phase 4 volatility thresholds stay conservative unless a critical bug or clearly incorrect block appears. OpenClaw starts later in Phase 6 foundation work after safe boundaries are documented and implemented. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Next: deploy/smoke the Phase 5 read-only dashboard on VPS, then close the initial dashboard visibility slice. Phase 4 volatility thresholds stay conservative unless a critical bug or clearly incorrect block appears. OpenClaw starts later in Phase 6 foundation work after safe boundaries are documented and implemented.

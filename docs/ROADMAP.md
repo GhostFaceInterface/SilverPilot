@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Phase 4 threshold policy is accepted as conservative by default; near-limit diagnostics alone are not a reason to relax volatility thresholds. Immediate next work is Phase 5 dashboard visibility. OpenClaw is mandatory for the future agent orchestration layer, but implementation starts later in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
+SilverPilot is entering Phase 5: dashboard visibility. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Phase 4 threshold policy is accepted as conservative by default; near-limit diagnostics alone are not a reason to relax volatility thresholds. Initial Phase 5 work is a read-only Streamlit dashboard over existing backend endpoints. OpenClaw is mandatory for the future agent orchestration layer, but implementation starts later in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -347,6 +347,8 @@ Pending Phase 4.x:
 
 Goal: make system state inspectable without reading database rows manually.
 
+Status: in progress. Initial read-only Streamlit dashboard exists locally and consumes current backend API surfaces.
+
 Initial tool:
 
 - Streamlit.
@@ -385,6 +387,7 @@ Validation gate:
 - System health is understandable at a glance.
 - Portfolio values match trade records.
 - No admin-only secrets are exposed.
+- Dashboard is read-only and does not create trades, mutate balances, or change risk policy.
 
 ## Phase 6: LLM Gateway, Observability, and OpenClaw Foundation
 
