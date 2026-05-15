@@ -186,7 +186,8 @@ Completed:
 - Added initial read-only Streamlit dashboard for portfolio, latest price, `/risk/status`, threshold headroom, `would_block_now`, blocked decision summaries, collector freshness, and global XAG sample diagnostics.
 - Added dashboard Dockerfile, dependency file, and optional Docker Compose `dashboard` profile.
 - Local dashboard container health and browser render validation passed.
+- VPS dashboard deploy/smoke passed through the optional `dashboard` Compose profile.
 
 Next milestone:
 
-- Deploy and smoke the dashboard on the VPS without changing deterministic risk policy or thresholds.
+- Review whether Phase 5 needs small visibility polish before moving to Phase 6 foundation work.

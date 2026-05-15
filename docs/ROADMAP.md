@@ -347,7 +347,7 @@ Pending Phase 4.x:
 
 Goal: make system state inspectable without reading database rows manually.
 
-Status: in progress. Initial read-only Streamlit dashboard exists locally and consumes current backend API surfaces.
+Status: in progress. Initial read-only Streamlit dashboard exists locally and is deployed/smoke-tested on the VPS.
 
 Initial tool:
 

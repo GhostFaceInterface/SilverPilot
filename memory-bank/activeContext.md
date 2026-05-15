@@ -70,7 +70,7 @@ Phase 5: dashboard visibility in progress.
 - Phase 4 source-aware global XAG volatility/FOMO risk metrics are implemented, deployed, and smoke-tested on VPS.
 - Phase 4 `/risk/status` threshold headroom diagnostics are implemented, deployed, and smoke-tested on VPS.
 - Phase 4 threshold decision is accepted: keep volatility thresholds conservative; `near_limit` is monitor-only and not an automatic tuning trigger.
-- Phase 5 initial read-only Streamlit dashboard exists locally for `/risk/status`, threshold headroom, block diagnostics, portfolio, latest price, collector freshness, and selected global XAG source.
+- Phase 5 initial read-only Streamlit dashboard exists and is deployed/smoke-tested on VPS for `/risk/status`, threshold headroom, block diagnostics, portfolio, latest price, collector freshness, and selected global XAG source.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -107,7 +107,7 @@ Phase 5: dashboard visibility in progress.
 Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
-- Deploy/smoke Phase 5 dashboard on VPS after local validation is complete.
+- Review the deployed Phase 5 dashboard and decide whether any small visibility gaps remain before Phase 6 foundation work.
 - Keep OpenClaw implementation for Phase 6 foundation; do not move it ahead of Phase 4 tuning or Phase 5 dashboard.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
@@ -116,4 +116,4 @@ Pending:
 
 ## Next Step
 
-Next: deploy/smoke the Phase 5 read-only dashboard on VPS, then close the initial dashboard visibility slice. Phase 4 volatility thresholds stay conservative unless a critical bug or clearly incorrect block appears. OpenClaw starts later in Phase 6 foundation work after safe boundaries are documented and implemented.
+Next: review the deployed Phase 5 read-only dashboard, keep thresholds conservative, and only add small missing visibility pieces if needed before Phase 6 foundation work. OpenClaw starts later after safe boundaries are documented and implemented.
