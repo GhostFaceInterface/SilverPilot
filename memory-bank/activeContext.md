@@ -71,6 +71,7 @@ Phase 5: dashboard visibility in progress.
 - Phase 4 `/risk/status` threshold headroom diagnostics are implemented, deployed, and smoke-tested on VPS.
 - Phase 4 threshold decision is accepted: keep volatility thresholds conservative; `near_limit` is monitor-only and not an automatic tuning trigger.
 - Phase 5 initial read-only Streamlit dashboard exists and is deployed/smoke-tested on VPS for `/risk/status`, threshold headroom, block diagnostics, portfolio, latest price, collector freshness, and selected global XAG source.
+- Phase 5 dashboard snapshot review found local stale data when the collector profile was not running; local collector startup restored execution-critical freshness, and dashboard now avoids showing `READY` as a blocking reason.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -92,8 +93,7 @@ Phase 5: dashboard visibility in progress.
 - Full canonical roadmap exists in `docs/ROADMAP.md`.
 - Architecture, data contracts, risk policy, decisions, tech context, and agent rules have Phase 0 detail.
 - Efficiency rules now distinguish development memory from runtime database memory.
-- No real-money integration exists.
-- No bank automation exists.
+- No real-money integration or bank automation exists.
 
 ## Current Infrastructure Status
 

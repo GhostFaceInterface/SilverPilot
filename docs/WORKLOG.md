@@ -412,3 +412,13 @@ Phase 5 initial dashboard implemented and deployed.
 - VPS `/risk/status` still returns `threshold_headroom`, `would_block_now: []`, and recent blocked-decision summaries.
 - VPS `/collectors/validation-gate` still returns `phase4_allowed: true` with execution-critical status healthy.
 - No threshold change, real-money execution, bank automation, LLM decisioning, OpenClaw implementation, or production secret access was added.
+
+Phase 5 dashboard snapshot reviewed and local collector profile restored.
+
+- Reviewed `streamlit_snapshot.html`; the dashboard app was connected and read-only, but data showed `Phase 4 gate=blocked`, collector staleness, zero 24-hour XAG samples, and execution-critical freshness failures.
+- Confirmed the local dashboard/API stack was running without the optional `collector` profile, so collector data had gone stale.
+- Started the local collector profile; Kuveyt, global XAG/USD, TCMB, and Fed RSS succeeded, execution-critical freshness became healthy, and `/collectors/validation-gate` returned `phase4_allowed=true`.
+- Local FRED macro remained degraded because the FRED API key is not configured in the running local collector environment; this is context-only and does not block Phase 4.
+- Updated the dashboard presentation layer so validation-gate `READY` sentinel values are not displayed as blocking reasons.
+- Validation passed: dashboard syntax compile, backend tests, Docker Compose config, diff check, dashboard container health, and local validation-gate smoke.
+- No threshold change, backend risk-policy change, real-money execution, bank automation, LLM decisioning, OpenClaw implementation, or secret access was added.

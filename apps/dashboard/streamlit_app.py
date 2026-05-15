@@ -84,6 +84,21 @@ def utc_now_label() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def phase4_gate_label(gate: dict[str, Any]) -> str:
+    phase4_allowed = gate.get("phase4_allowed")
+    if phase4_allowed is True:
+        return "allowed"
+    if phase4_allowed is False:
+        return "blocked"
+    return "-"
+
+
+def active_blocking_reasons(gate: dict[str, Any]) -> list[str]:
+    if gate.get("phase4_allowed") is True:
+        return []
+    return [reason for reason in gate.get("blocking_reasons", []) if reason != "READY"]
+
+
 @st.cache_data(ttl=20)
 def load_dashboard_data(api_base_url: str) -> dict[str, Any]:
     del api_base_url
@@ -125,7 +140,7 @@ def render_status_overview(data: dict[str, Any]) -> None:
     with cols[1]:
         metric_card("Database", str(health.get("database", "-")))
     with cols[2]:
-        metric_card("Phase 4 gate", "allowed" if gate.get("phase4_allowed") else "blocked")
+        metric_card("Phase 4 gate", phase4_gate_label(gate))
     with cols[3]:
         metric_card("Collectors", str(collector.get("execution_critical_status", "-")))
     with cols[4]:
@@ -271,9 +286,10 @@ def render_collectors(data: dict[str, Any]) -> None:
     ]
     st.table(freshness_rows)
 
-    if gate.get("blocking_reasons"):
+    blocking_reasons = active_blocking_reasons(gate)
+    if blocking_reasons:
         st.error("Validation gate blocking reasons")
-        st.write(gate.get("blocking_reasons"))
+        st.write(blocking_reasons)
     if gate.get("degraded_reasons"):
         st.warning("Validation gate degraded reasons")
         st.write(gate.get("degraded_reasons"))

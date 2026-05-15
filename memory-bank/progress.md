@@ -187,6 +187,9 @@ Completed:
 - Added dashboard Dockerfile, dependency file, and optional Docker Compose `dashboard` profile.
 - Local dashboard container health and browser render validation passed.
 - VPS dashboard deploy/smoke passed through the optional `dashboard` Compose profile.
+- Snapshot review confirmed local stale dashboard data was caused by the collector profile not running.
+- Local collector startup restored execution-critical freshness and `phase4_allowed=true`; FRED macro remains degraded locally without a configured key.
+- Dashboard now suppresses `READY` sentinel values from validation-gate blocking reason display.
 
 Next milestone:
 
