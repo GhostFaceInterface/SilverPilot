@@ -1,4 +1,5 @@
 from functools import lru_cache
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field
@@ -13,6 +14,8 @@ class Settings(BaseSettings):
     app_debug: bool = False
     initial_balance_usd: float = Field(default=600, gt=0)
     real_money_enabled: bool = False
+    risk_data_stale_after_minutes: int = Field(default=60, ge=1)
+    risk_max_spread_percent: Decimal = Field(default=Decimal("5.0"), gt=0)
 
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"

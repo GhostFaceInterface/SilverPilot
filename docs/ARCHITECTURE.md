@@ -92,7 +92,7 @@ raw data
 -> agent explanation
 ```
 
-The paper-trading engine must not run without a risk decision once Phase 4 exists.
+The paper-trading engine must not run without a risk decision now that Phase 4 has started. `POST /paper-trades` evaluates deterministic risk before mutating the paper portfolio. Allowed actions update virtual balances, while policy-blocked buy/sell attempts create a `blocked` paper-trade audit row with `risk_decision_id` and do not mutate cash or position. Hold and user-blocked records also receive explicit risk decisions.
 
 ## Data Storage Pattern
 
@@ -136,6 +136,10 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - `empty`: no collector runs exist yet.
 
 Collector quality review uses `/collectors/quality` to summarize recent run counts, failures, duplicates, and missing-run ratio. Missing runs are measured against elapsed validation coverage so a new 24-hour validation run does not count future intervals as already missing, while a sliding query window does not stay permanently incomplete after older runs age out of the metric window. `/collectors/validation-gate` separates execution-critical blockers from context degradation: Kuveyt bank silver, global XAG/USD, and USD/TRY can block Phase 4; Fed RSS and FRED macro failures degrade the output but do not block by themselves. The collector runner supports `COLLECTOR_JOBS` for comma-separated sustained MVP collector batches without starting separate containers per source; the Compose collector profile defaults to the current MVP source batch.
+
+## Risk Engine
+
+Phase 4.1 uses a deterministic backend risk service before paper-trade persistence. It checks the current execution-critical collector state, request spread, paper cash, and paper position. Missing/stale Kuveyt bank silver, global XAG/USD, or USD/TRY blocks buy/sell decisions; context collectors do not block by themselves. The first configurable thresholds are `RISK_DATA_STALE_AFTER_MINUTES` and `RISK_MAX_SPREAD_PERCENT`.
 
 ## LLM Pattern
 

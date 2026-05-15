@@ -75,7 +75,7 @@ Validation:
 
 ## Phase 3
 
-Status: in progress.
+Status: complete for Phase 4 entry.
 
 Completed:
 
@@ -138,4 +138,22 @@ Completed:
 
 Next milestone:
 
-- Start Phase 4 only after explicit user approval.
+- Continue Phase 4 risk policy.
+
+## Phase 4
+
+Status: in progress.
+
+Completed:
+
+- Started deterministic risk policy and rule engine work.
+- Added paper-trade risk evaluation before paper-trade persistence.
+- Every persisted paper trade now references a persisted risk decision.
+- Missing/stale execution-critical data blocks buy/sell paper actions.
+- High request spread, insufficient paper cash, and insufficient paper position create blocked risk decisions.
+- Policy-blocked buy/sell attempts are persisted as `paper_trades.action=blocked` without mutating paper balances.
+- Local validation passed: backend tests, compileall, and Docker Compose config.
+
+Next milestone:
+
+- Deploy/smoke Phase 4.1 on VPS if requested, then add remaining Phase 4.x volatility, loss-limit, FOMO, and expected-return rules.

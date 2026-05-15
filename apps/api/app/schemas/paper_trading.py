@@ -46,6 +46,16 @@ class PaperTradePayload(BaseModel):
     fees: Decimal
     taxes: Decimal
     net_amount: Decimal
+    risk_decision_id: int
+
+
+class RiskDecisionPayload(BaseModel):
+    id: int
+    decision: str
+    reason_code: str
+    risk_level: str
+    confidence: Decimal
+    details: dict
 
 
 class PortfolioSnapshotPayload(BaseModel):
@@ -60,4 +70,5 @@ class PortfolioSnapshotPayload(BaseModel):
 
 class PaperTradeResponse(BaseModel):
     trade: PaperTradePayload
+    risk_decision: RiskDecisionPayload
     snapshot: PortfolioSnapshotPayload

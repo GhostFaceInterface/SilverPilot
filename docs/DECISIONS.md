@@ -131,3 +131,9 @@ Status: accepted.
 Stooq current CSV remains the primary public global XAG/USD source, but Phase 4 readiness must not depend on Stooq alone because VPS network timeouts have been observed. The collector uses a configurable `GlobalSilverPriceProvider` priority list. Gold-API free no-auth JSON is an approved fallback, and Metals.Dev is an optional free API-key fallback disabled when no key is configured. Paid APIs, payment-required tiers, login/captcha/paywall bypass, and fake/stale price reuse remain excluded.
 
 Stooq failure degrades source reliability but does not block Phase 4 when an approved fallback global XAG/USD value is fresh. Missing or stale global XAG/USD still blocks Phase 4.
+
+## D-021: Paper Trades Must Reference Deterministic Risk Decisions
+
+Status: accepted.
+
+Phase 4 starts by making paper trading depend on the backend risk engine. Every persisted paper-trade record must reference a persisted `risk_decisions` row. Policy-blocked buy/sell attempts are recorded as `paper_trades.action=blocked` with no cash or position mutation, so the user can inspect why the action was blocked. The first implemented blocks are missing/stale execution-critical data, excessive spread, insufficient paper cash, and insufficient paper position. Real-money execution, bank automation, LLM decisions, volatility/FOMO strategy rules, and dashboard work remain excluded from this slice.

@@ -1,6 +1,6 @@
 # Risk Policy
 
-This file is the canonical policy for paper-trading safety. Exact thresholds are configured during Phase 4 after real spread and volatility data exists.
+This file is the canonical policy for paper-trading safety. Phase 4 has started with deterministic paper-trade risk decisions; exact volatility, loss-limit, and strategy-return thresholds remain pending until enough runtime data exists.
 
 ## Hard Safety Rules
 
@@ -41,6 +41,9 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 - `PARSER_FAILURE`
 - `INSUFFICIENT_CASH`
 - `POSITION_LIMIT_REACHED`
+- `RISK_CHECK_PASSED`
+- `HOLD_REQUESTED`
+- `BLOCKED_REQUESTED`
 
 ## Data Quality Policy
 
@@ -58,6 +61,16 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 - Direct BLS is backlog; missing direct BLS data must not block MVP decisions if FRED macro series are available.
 - Türkiye data can influence execution-risk scoring because local bank prices, TRY conversion, spread, and local tax/rule context affect simulated fills.
 - Türkiye macro data must not be treated as proof of global XAG/USD direction.
+
+## Implemented Phase 4.1 Rules
+
+- `POST /paper-trades` must create a persisted `risk_decisions` row for every persisted paper-trade record.
+- Buy/sell requests are blocked when execution-critical bank silver, global XAG/USD, or USD/TRY is missing or stale.
+- Buy/sell requests are blocked when request spread exceeds `RISK_MAX_SPREAD_PERCENT`, default `5.0`.
+- Buy requests are blocked when required paper cash exceeds the portfolio cash balance.
+- Sell requests are blocked when requested quantity exceeds the paper position.
+- Policy-blocked buy/sell requests create `paper_trades.action=blocked`, attach `risk_decision_id`, and do not mutate paper balances.
+- Hold and user-blocked audit records receive deterministic risk decisions but do not require fresh market data.
 
 ## Impact Classification
 
@@ -98,4 +111,5 @@ Allowed decisions:
 - Every block is persisted with a reason code.
 - Every paper trade references a risk decision.
 - Stale or missing data blocks action.
-- Tests cover spread, loss limit, stale data, and insufficient cash cases.
+- Tests cover spread, stale data, missing data, insufficient cash, and risk-decision references.
+- Loss-limit, volatility, FOMO, and expected-return blocks are pending Phase 4.x rules.

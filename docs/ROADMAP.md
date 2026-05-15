@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.5: global XAG/USD source hardening. The 24-hour validation-window bug is fixed, and the remaining blocker is global XAG/USD source reliability after Stooq timed out from the VPS. Stooq is no longer the only global source path; the collector now has a configurable primary/fallback resolver while Phase 4 remains blocked until execution-critical collector health is verified again.
+SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has started with deterministic paper-trade risk decisions; real-money trading, bank automation, LLM decisions, dashboard work, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -288,6 +288,16 @@ Phase 4 gate:
 
 Goal: prevent obviously bad or invalid paper-trading actions.
 
+Current Phase 4.1 implementation:
+
+- Paper-trading now creates a persisted `risk_decisions` row for every accepted trade record.
+- `paper_trades.risk_decision_id` is populated for allowed, hold, user-blocked, and policy-blocked paper records.
+- Missing or stale execution-critical data blocks buy/sell actions with `MISSING_DATA` or `STALE_DATA`.
+- Spread above `RISK_MAX_SPREAD_PERCENT` blocks with `SPREAD_TOO_HIGH`.
+- Insufficient paper cash blocks with `INSUFFICIENT_CASH` and records a blocked paper-trade audit row.
+- Insufficient paper position blocks with `POSITION_LIMIT_REACHED`.
+- `POST /paper-trades` response includes the deterministic risk decision.
+
 Initial rules:
 
 - Block if spread is too high.
@@ -314,6 +324,13 @@ Validation gate:
 - Paper trading cannot bypass risk policy.
 - Every blocked decision is recorded.
 - The user can see why an action was blocked.
+
+Pending Phase 4.x:
+
+- 24-hour and 7-day volatility blocks.
+- Daily and weekly realized-loss limits.
+- FOMO behavior detection.
+- Expected net gain versus cost once strategy targets exist.
 
 ## Phase 5: Dashboard
 

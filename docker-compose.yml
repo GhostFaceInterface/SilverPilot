@@ -9,6 +9,8 @@ services:
       APP_DEBUG: ${APP_DEBUG:-false}
       INITIAL_BALANCE_USD: ${INITIAL_BALANCE_USD:-600}
       REAL_MONEY_ENABLED: ${REAL_MONEY_ENABLED:-false}
+      RISK_DATA_STALE_AFTER_MINUTES: ${RISK_DATA_STALE_AFTER_MINUTES:-60}
+      RISK_MAX_SPREAD_PERCENT: ${RISK_MAX_SPREAD_PERCENT:-5.0}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://silverpilot:change_me@postgres:5432/silverpilot}
       COLLECTOR_USER_AGENT: ${COLLECTOR_USER_AGENT:-SilverPilot/0.1 public-source paper-trading collector}
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}

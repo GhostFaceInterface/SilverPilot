@@ -390,6 +390,29 @@ Policy:
 - Fed RSS and FRED macro failures degrade readiness but do not block Phase 4 by themselves.
 - Stooq failure does not block Phase 4 when an approved fallback global XAG source is fresh.
 
+### Paper Trade Risk Contract
+
+Endpoint: `POST /paper-trades`
+
+Purpose: create paper-only trade audit records after deterministic risk evaluation.
+
+Response additions:
+
+- `trade.risk_decision_id`: required for every persisted paper-trade record.
+- `risk_decision.id`: persisted risk decision id.
+- `risk_decision.decision`: `allow`, `hold`, or `blocked`.
+- `risk_decision.reason_code`: compact reason such as `RISK_CHECK_PASSED`, `SPREAD_TOO_HIGH`, `MISSING_DATA`, `STALE_DATA`, `INSUFFICIENT_CASH`, or `POSITION_LIMIT_REACHED`.
+- `risk_decision.risk_level`: current severity label.
+- `risk_decision.confidence`: deterministic confidence, currently `1.0000`.
+- `risk_decision.details`: compact machine-readable context; do not place secrets or raw payloads here.
+
+Policy:
+
+- Paper buy/sell cannot bypass the risk engine.
+- Policy-blocked buy/sell attempts are persisted as `paper_trades.action=blocked` with the risk decision attached and no portfolio balance mutation.
+- Missing/stale execution-critical data blocks buy/sell actions.
+- Hold and user-blocked audit records do not require market data freshness but still receive a risk decision.
+
 ### Phase 3.2 Fed RSS Output
 
 - `fed_rss` reads the official Federal Reserve monetary policy RSS feed by default.

@@ -276,3 +276,12 @@ Phase 3.5 global XAG/USD hardening deployed and verified on VPS.
 - VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `status: ready`, `phase4_allowed: true`, `validation_window_complete: true`, and `selected_global_xag_source: gold-api-xag-usd`.
 - Health/quality still report degraded history from Stooq/context failures and missing runs, but these are now non-blocking `degraded_reasons`.
 - Phase 4 was not started.
+
+Phase 4.1 deterministic paper-trade risk gate implemented locally.
+
+- Added backend risk evaluation before paper-trade persistence.
+- Every persisted paper trade now references a persisted risk decision.
+- Missing/stale execution-critical data, excessive spread, insufficient paper cash, and insufficient paper position now create blocked decisions.
+- Policy-blocked buy/sell attempts are stored as `paper_trades.action=blocked` without mutating paper cash or position.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
+- No real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.

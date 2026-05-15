@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot
+from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
 
 MONEY_QUANT = Decimal("0.000001")
@@ -39,27 +40,38 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
     current_position = calculate_position(db, portfolio.id, asset.id)
 
     quantity, price, gross_amount, net_amount = _calculate_trade_amounts(request)
-    if request.action == "paper_buy" and portfolio.cash_balance < net_amount:
-        raise PaperTradingError("Insufficient paper cash balance")
-    if request.action == "paper_sell" and current_position.quantity < quantity:
-        raise PaperTradingError("Insufficient paper asset quantity")
+    risk_decision = evaluate_paper_trade_risk(
+        db,
+        request=request,
+        portfolio=portfolio,
+        asset=asset,
+        position=current_position,
+        amounts=TradeAmounts(
+            quantity=quantity,
+            price=price,
+            gross_amount=gross_amount,
+            net_amount=net_amount,
+        ),
+    )
+    stored_action = request.action if risk_decision.decision != "blocked" else "blocked"
 
     trade = PaperTrade(
         portfolio_id=portfolio.id,
         asset_id=asset.id,
-        action=request.action,
+        action=stored_action,
         quantity=quantity,
         price=price,
         gross_amount=gross_amount,
         fees=request.fees,
         taxes=request.taxes,
         net_amount=net_amount,
+        risk_decision_id=risk_decision.id,
     )
     db.add(trade)
 
-    if request.action == "paper_buy":
+    if risk_decision.decision == "allow" and request.action == "paper_buy":
         portfolio.cash_balance = _money(portfolio.cash_balance - net_amount)
-    elif request.action == "paper_sell":
+    elif risk_decision.decision == "allow" and request.action == "paper_sell":
         portfolio.cash_balance = _money(portfolio.cash_balance + net_amount)
 
     db.flush()
