@@ -268,3 +268,11 @@ Phase 3.5 global XAG/USD source hardening implemented locally.
 - Updated CI/VPS smoke to run the global XAG resolver instead of direct Stooq.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `.venv/bin/python -m compileall apps/api/app`.
 - Secret scan of touched paths found only placeholder/test key names, not secret values.
+
+Phase 3.5 global XAG/USD hardening deployed and verified on VPS.
+
+- Pushed commits `2cbd98d` and `5d1d7e8`, pulled them on the VPS, and rebuilt API/collector with `.env.production` without printing secrets.
+- VPS global XAG resolver smoke succeeded. Stooq recorded a timeout failure, and the resolver selected `gold-api-xag-usd`.
+- VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `status: ready`, `phase4_allowed: true`, `validation_window_complete: true`, and `selected_global_xag_source: gold-api-xag-usd`.
+- Health/quality still report degraded history from Stooq/context failures and missing runs, but these are now non-blocking `degraded_reasons`.
+- Phase 4 was not started.

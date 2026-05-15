@@ -134,7 +134,8 @@ Completed:
 - Added Stooq timeout/retry/backoff settings and provider failure reason codes.
 - Updated Phase 4 validation gate to block on execution-critical bank/global XAG/USD/USDTRY freshness while treating Fed RSS and FRED macro as non-blocking context degradation.
 - Local collector tests passed for Stooq timeout no-fake-data, fallback freshness, execution-critical blocking, context-only non-blocking behavior, and duplicate behavior.
+- Deployed Phase 3.5 to VPS and verified `/collectors/validation-gate` returns `status: ready` and `phase4_allowed: true` with `gold-api-xag-usd` selected as global XAG fallback.
 
 Next milestone:
 
-- Deploy Phase 3.5 to VPS and re-check `/collectors/validation-gate`.
+- Start Phase 4 only after explicit user approval.

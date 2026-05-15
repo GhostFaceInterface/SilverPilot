@@ -49,12 +49,14 @@ Phase 3: free/public-source data collectors in progress.
 - One-shot collector runner commands now fail the process when a collector records failed status, so smoke checks cannot silently pass failed collectors.
 - Collector quality validation window completion was fixed and deployed so sustained runs do not remain permanently incomplete as the 24-hour query window slides.
 - VPS `/collectors/validation-gate` now reports `validation_window_complete: true` and `elapsed_minutes: 1440`.
-- Phase 3.5 global XAG/USD source hardening is implemented locally.
+- Phase 3.5 global XAG/USD source hardening is implemented and deployed.
 - Global XAG/USD now uses a configurable resolver: Stooq primary, Gold-API free no-auth fallback, optional Metals.Dev free-key fallback.
 - Stooq timeout/failure records explicit reason codes and writes no fake global price.
 - Phase 4 gate now separates execution-critical sources from context sources.
 - Execution-critical sources are Kuveyt bank silver, global XAG/USD, and USD/TRY; Fed RSS and FRED macro are context and degrade but do not block by themselves.
-- VPS collector profile still needs redeploy from `stooq-xag-usd` to `global-xag-usd`.
+- VPS collector profile now uses the `global-xag-usd` resolver path.
+- VPS `/collectors/validation-gate` reports `status: ready`, `phase4_allowed: true`, and `selected_global_xag_source: gold-api-xag-usd`.
+- Health/quality still show degraded history from Stooq/context failures and missing runs, but they are non-blocking degraded reasons.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -90,7 +92,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Deploy Phase 3.5 global XAG/USD resolver to VPS, then re-check `/collectors/validation-gate`.
+- Phase 4 may be planned next, but do not start it unless the user explicitly asks.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
@@ -99,4 +101,4 @@ Pending:
 
 ## Next Step
 
-Deploy Phase 3.5 to VPS, run the global XAG resolver smoke, then review `/collectors/validation-gate`. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Phase 3.5 is verified. Wait for explicit user approval before starting Phase 4. Keep BLS direct disabled for MVP unless explicitly re-approved.
