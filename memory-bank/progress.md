@@ -153,7 +153,9 @@ Completed:
 - High request spread, insufficient paper cash, and insufficient paper position create blocked risk decisions.
 - Policy-blocked buy/sell attempts are persisted as `paper_trades.action=blocked` without mutating paper balances.
 - Local validation passed: backend tests, compileall, and Docker Compose config.
+- Phase 4.1 was deployed to VPS at commit `f7612d9`.
+- VPS smoke passed for `/health`, `/collectors/validation-gate`, `HOLD_REQUESTED`, and `SPREAD_TOO_HIGH` blocked-trade behavior.
 
 Next milestone:
 
-- Deploy/smoke Phase 4.1 on VPS if requested, then add remaining Phase 4.x volatility, loss-limit, FOMO, and expected-return rules.
+- Add remaining Phase 4.x volatility, loss-limit, FOMO, and expected-return rules.

@@ -285,3 +285,12 @@ Phase 4.1 deterministic paper-trade risk gate implemented locally.
 - Policy-blocked buy/sell attempts are stored as `paper_trades.action=blocked` without mutating paper cash or position.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
 - No real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.
+
+Phase 4.1 deterministic paper-trade risk gate deployed and smoked on VPS.
+
+- Pushed commit `f7612d9`, pulled it on the VPS, and rebuilt API/collector with `.env.production` without printing secrets.
+- VPS Compose config passed, Alembic `upgrade head` completed, and `/health` returned production `database: ok` with `real_money_enabled: false`.
+- VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `status: ready`, `phase4_allowed: true`, `validation_window_complete: true`, and execution-critical status `healthy`.
+- VPS paper-trade smoke confirmed `hold` writes a `risk_decision` with `HOLD_REQUESTED`.
+- VPS blocked-trade smoke confirmed high spread writes `paper_trades.action=blocked` with `SPREAD_TOO_HIGH` and leaves paper cash at `600.000000`.
+- Remaining non-blocking degraded reasons are collector history/quality artifacts; Phase 4.x can continue with additional deterministic risk rules.

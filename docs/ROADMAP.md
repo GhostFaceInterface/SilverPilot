@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has started with deterministic paper-trade risk decisions; real-money trading, bank automation, LLM decisions, dashboard work, and ML remain out of scope.
+SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has started with deterministic paper-trade risk decisions, and Phase 4.1 is deployed and smoke-tested on the VPS. Real-money trading, bank automation, LLM decisions, dashboard work, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 

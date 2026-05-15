@@ -57,11 +57,12 @@ Phase 4: risk policy and rule engine in progress.
 - VPS collector profile now uses the `global-xag-usd` resolver path.
 - VPS `/collectors/validation-gate` reports `status: ready`, `phase4_allowed: true`, and `selected_global_xag_source: gold-api-xag-usd`.
 - Health/quality still show degraded history from Stooq/context failures and missing runs, but they are non-blocking degraded reasons.
-- Phase 4.1 deterministic paper-trade risk gate is implemented locally.
+- Phase 4.1 deterministic paper-trade risk gate is implemented, deployed, and smoke-tested on VPS.
 - Paper-trade persistence now creates and references a `risk_decisions` row.
 - Missing/stale execution-critical data, high spread, insufficient paper cash, and insufficient paper position create blocked risk decisions.
 - Policy-blocked buy/sell attempts are stored as `paper_trades.action=blocked` without mutating paper balances.
 - Local Phase 4.1 validation passed: backend tests, compileall, and Docker Compose config.
+- VPS Phase 4.1 smoke passed: `/health` is ok, `/collectors/validation-gate` is ready with `phase4_allowed: true`, hold returns `HOLD_REQUESTED`, and excessive spread returns `SPREAD_TOO_HIGH` without changing paper cash.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -97,7 +98,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Phase 4.1 is started locally; deploy to VPS only after user asks for deployment.
+- Phase 4.1 is deployed on VPS; continue Phase 4.x locally before the next deploy.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
@@ -106,4 +107,4 @@ Pending:
 
 ## Next Step
 
-Phase 4.1 is implemented locally. Next: deploy/smoke on VPS if requested, then continue Phase 4.x with volatility, loss-limit, FOMO, and expected-return rules. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Phase 4.1 is deployed and smoked on VPS. Next: continue Phase 4.x with volatility, loss-limit, FOMO, and expected-return rules. Keep BLS direct disabled for MVP unless explicitly re-approved.
