@@ -67,7 +67,7 @@ Phase 4: risk policy and rule engine in progress.
 - Read-only `/risk/status` is implemented, deployed, and smoke-tested on VPS for Phase 4 threshold tuning diagnostics.
 - `/risk/status` reports configured thresholds, runtime metrics, global XAG source/sample diagnostics, market/history `would_block_now` reasons, and recent risk decision counts.
 - VPS `/risk/status` source-diagnostics smoke returned `would_block_now: []` and showed 24-hour global XAG samples from Stooq plus Gold-API fallback.
-- Local Phase 4 hardening now computes global XAG volatility/FOMO risk metrics per source so fallback/source mixing cannot create synthetic blocks.
+- Phase 4 source-aware global XAG volatility/FOMO risk metrics are implemented, deployed, and smoke-tested on VPS.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -112,4 +112,4 @@ Pending:
 
 ## Next Step
 
-Next: validate and deploy source-aware global XAG risk metrics, then use `/risk/status` runtime diagnostics to tune Phase 4 thresholds. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Next: continue Phase 4 threshold tuning from `/risk/status` runtime diagnostics; current deployed source-aware metrics do not require threshold relaxation yet. Keep BLS direct disabled for MVP unless explicitly re-approved.

@@ -167,8 +167,8 @@ Completed:
 - Local validation passed for source/sample diagnostics: backend tests, compileall, and Docker Compose config.
 - Deployed `/risk/status` source/sample diagnostics to VPS at commit `048eb8b`.
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, and `/risk/status`; production diagnostics returned 24-hour and 7-day global XAG sample/source summaries.
-- Added local source-aware global XAG volatility/FOMO metrics so fallback/source mixing does not create synthetic risk blocks.
+- Added and deployed source-aware global XAG volatility/FOMO metrics so fallback/source mixing does not create synthetic risk blocks.
 
 Next milestone:
 
-- Validate and deploy source-aware global XAG risk metrics, then tune Phase 4 thresholds from `/risk/status` runtime diagnostics before adding more policy surface.
+- Continue Phase 4 threshold tuning from `/risk/status` runtime diagnostics before adding more policy surface.

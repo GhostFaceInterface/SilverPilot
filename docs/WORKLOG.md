@@ -356,3 +356,12 @@ Phase 4 source-aware global XAG risk metrics implemented locally.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, `docker compose config --quiet`, and `git diff --check`.
 - Secret scan of touched paths found only policy/doc references to secrets or token/cost wording, not secret values.
 - No risk threshold was relaxed, and no real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.
+
+Phase 4 source-aware global XAG risk metrics deployed and smoked on VPS.
+
+- Pushed commit `52da838`, pulled it on the VPS, rebuilt the API, and ran Alembic `upgrade head`.
+- VPS `/health` returned production `database: ok` with `real_money_enabled: false`.
+- VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `phase4_allowed: true` and execution-critical status `healthy`.
+- VPS `/risk/status` returned source-aware global XAG metrics with `would_block_now: []`.
+- Runtime 24-hour global XAG volatility was `11.348011` from `stooq-xagusd-csv` with 52 source-specific samples, below the `12.0` threshold.
+- Runtime diagnostics still show non-blocking degraded collector history from Stooq/context failures and missing runs.
