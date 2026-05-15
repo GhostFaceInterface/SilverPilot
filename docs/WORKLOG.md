@@ -304,3 +304,11 @@ Phase 4.2 deterministic risk blocks implemented locally.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, `docker compose config --quiet`, and `git diff --check`.
 - Paper-trading tests now cover volatility, FOMO, loss limits, and expected-gain reason codes.
 - No real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.
+
+Phase 4.2 deterministic risk blocks deployed and smoked on VPS.
+
+- Pushed commit `6499226`, pulled it on the VPS, and rebuilt API/collector with `.env.production` without printing secrets.
+- VPS Compose config passed, Alembic `upgrade head` completed, and `/health` returned production `database: ok` with `real_money_enabled: false`.
+- VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `status: ready`, `phase4_allowed: true`, and execution-critical status `healthy`.
+- VPS paper-trade smoke confirmed optional `expected_exit_price` can block with `EXPECTED_GAIN_BELOW_COST`.
+- The smoke blocked trade left paper cash at `600.000000`; no real-money or bank automation path was introduced.

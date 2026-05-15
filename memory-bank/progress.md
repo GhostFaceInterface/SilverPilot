@@ -157,7 +157,9 @@ Completed:
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, `HOLD_REQUESTED`, and `SPREAD_TOO_HIGH` blocked-trade behavior.
 - Added local Phase 4.2 blocks for global XAG/USD volatility, daily/weekly realized paper-loss limits, FOMO rapid-rise behavior, and optional expected exit checks.
 - Local Phase 4.2 validation passed: backend tests, compileall, Docker Compose config, and diff check.
+- Phase 4.2 was deployed to VPS at commit `6499226`.
+- VPS smoke passed for `/health`, `/collectors/validation-gate`, and `EXPECTED_GAIN_BELOW_COST` blocked-trade behavior with unchanged paper cash.
 
 Next milestone:
 
-- Deploy/smoke Phase 4.2 on VPS, then tune thresholds from runtime data.
+- Tune Phase 4 thresholds from runtime data before adding more policy surface.
