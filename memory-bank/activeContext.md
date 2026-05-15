@@ -66,7 +66,7 @@ Phase 4: risk policy and rule engine in progress.
 - Phase 4.2 deterministic risk blocks are implemented, deployed, and smoke-tested on VPS for volatility, daily/weekly realized loss, FOMO, and optional expected exit checks.
 - Read-only `/risk/status` is implemented, deployed, and smoke-tested on VPS for Phase 4 threshold tuning diagnostics.
 - `/risk/status` reports configured thresholds, runtime metrics, global XAG source/sample diagnostics, market/history `would_block_now` reasons, and recent risk decision counts.
-- VPS `/risk/status` smoke returned `would_block_now: []`; runtime metrics were below configured blocking thresholds.
+- VPS `/risk/status` source-diagnostics smoke returned `would_block_now: []` and showed 24-hour global XAG samples from Stooq plus Gold-API fallback.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.

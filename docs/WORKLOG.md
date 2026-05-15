@@ -336,3 +336,12 @@ Phase 4 risk status source diagnostics implemented locally.
 - No threshold was relaxed yet; this change makes the next tuning decision source-aware.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
 - No real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.
+
+Phase 4 risk status source diagnostics deployed and smoked on VPS.
+
+- Pushed commit `048eb8b`, pulled it on the VPS, and rebuilt API/collector with `.env.production` without printing secrets.
+- VPS Compose config passed and Alembic `upgrade head` completed.
+- VPS `/health` returned production `database: ok` with `real_money_enabled: false`.
+- VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `phase4_allowed: true` and execution-critical status `healthy`.
+- VPS `/risk/status` returned `global_xag_diagnostics` for 24-hour and 7-day windows.
+- Production `/risk/status` smoke returned `would_block_now: []`; 24-hour global XAG diagnostics showed 60 samples, latest source `stooq-xagusd-csv`, min price `76.006000`, max price `85.150000`, and source counts of 53 Stooq rows plus 7 Gold-API rows.
