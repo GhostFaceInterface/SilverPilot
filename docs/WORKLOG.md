@@ -381,3 +381,12 @@ Phase 4 risk threshold headroom diagnostics implemented locally.
 - Risk thresholds and deterministic allow/block behavior were not changed.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests -q`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
 - No real-money execution, bank automation, LLM decisioning, dashboard, or OpenClaw implementation was added.
+
+Phase 4 risk threshold headroom diagnostics deployed and smoked on VPS.
+
+- Pushed commit `dededb9`, pulled it on the VPS, rebuilt API/collector, restarted services, and ran Alembic `upgrade head`.
+- VPS `/health` returned production `database: ok` with `real_money_enabled: false`.
+- VPS `/collectors/validation-gate` returned `phase4_allowed: true` with execution-critical status healthy.
+- VPS `/risk/status` returned `threshold_headroom` and `would_block_now: []`.
+- Runtime headroom now shows the 24-hour source-aware global XAG volatility threshold as near-limit, so the next Phase 4 action is to decide whether this threshold should stay conservative or be tuned.
+- No real-money execution, bank automation, LLM decisioning, dashboard, or OpenClaw implementation was added.

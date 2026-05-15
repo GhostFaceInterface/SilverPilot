@@ -168,10 +168,10 @@ Completed:
 - Deployed `/risk/status` source/sample diagnostics to VPS at commit `048eb8b`.
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, and `/risk/status`; production diagnostics returned 24-hour and 7-day global XAG sample/source summaries.
 - Added and deployed source-aware global XAG volatility/FOMO metrics so fallback/source mixing does not create synthetic risk blocks.
-- Added local read-only `/risk/status` threshold headroom diagnostics for Phase 4 tuning; risk thresholds and allow/block behavior are unchanged.
+- Added and deployed read-only `/risk/status` threshold headroom diagnostics for Phase 4 tuning; risk thresholds and allow/block behavior are unchanged.
 - OpenClaw roadmap alignment completed at documentation level: OpenClaw is mandatory for the future agent orchestration layer, while deterministic backend authority and the Phase 4/Phase 5 order remain unchanged.
 - OpenClaw implementation has not started.
 
 Next milestone:
 
-- Review Phase 4 threshold headroom from `/risk/status` before adding more policy surface or moving to Phase 5 dashboard.
+- Use deployed Phase 4 threshold headroom from `/risk/status` to decide whether current thresholds need tuning before moving to Phase 5 dashboard.

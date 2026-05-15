@@ -68,6 +68,7 @@ Phase 4: risk policy and rule engine in progress.
 - `/risk/status` reports configured thresholds, runtime metrics, threshold headroom, global XAG source/sample diagnostics, market/history `would_block_now` reasons, and recent risk decision counts.
 - VPS `/risk/status` source-diagnostics smoke returned `would_block_now: []` and showed 24-hour global XAG samples from Stooq plus Gold-API fallback.
 - Phase 4 source-aware global XAG volatility/FOMO risk metrics are implemented, deployed, and smoke-tested on VPS.
+- Phase 4 `/risk/status` threshold headroom diagnostics are implemented, deployed, and smoke-tested on VPS.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -115,4 +116,4 @@ Pending:
 
 ## Next Step
 
-Next: review Phase 4 threshold headroom from `/risk/status`, then Phase 5 dashboard. OpenClaw is mandatory but starts later in Phase 6 foundation work after safe boundaries are documented and implemented. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Next: use deployed Phase 4 threshold headroom to decide whether current thresholds need tuning, then Phase 5 dashboard. OpenClaw is mandatory but starts later in Phase 6 foundation work after safe boundaries are documented and implemented. Keep BLS direct disabled for MVP unless explicitly re-approved.
