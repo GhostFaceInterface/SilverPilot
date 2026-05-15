@@ -47,7 +47,9 @@ Phase 3: free/public-source data collectors in progress.
 - Collector quality endpoint exists at `GET /collectors/quality`.
 - Collector validation gate exists at `GET /collectors/validation-gate` to decide when Phase 4 can start.
 - One-shot collector runner commands now fail the process when a collector records failed status, so smoke checks cannot silently pass failed collectors.
-- Collector quality validation window completion was fixed locally so sustained runs do not remain permanently incomplete as the 24-hour query window slides.
+- Collector quality validation window completion was fixed and deployed so sustained runs do not remain permanently incomplete as the 24-hour query window slides.
+- VPS `/collectors/validation-gate` now reports `validation_window_complete: true` and `elapsed_minutes: 1440`.
+- Phase 4 remains blocked by real collector quality issues: Stooq XAG/USD times out from the VPS and recent quality still has collector failures/missing runs.
 - VPS collector profile is running with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs every 900 seconds.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
@@ -84,7 +86,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Deploy and verify the collector quality validation-window fix, then review remaining degraded quality causes.
+- Resolve global XAG/USD source reliability for VPS, then re-check `/collectors/validation-gate`.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.

@@ -248,3 +248,13 @@ Collector validation-window completion bug fixed locally.
 - Added a regression test for sustained history that exceeds the sliding window.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests/test_collectors.py`, `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `.venv/bin/python -m compileall apps/api/app`.
 - Next: deploy the fix to VPS and re-check `/collectors/validation-gate`; remaining degraded causes should represent real collector quality issues.
+
+Collector validation-window fix deployed and verified on VPS.
+
+- Pushed commit `5b92e68` and pulled it on the VPS.
+- Rebuilt and restarted the API and collector with the VPS `.env.production` file without printing secret values.
+- VPS `/health` returned production `database: ok`.
+- VPS `/collectors/validation-gate` now reports `validation_window_complete: true` and `elapsed_minutes: 1440`.
+- Phase 4 remains blocked because quality is still degraded by real collector failures/missing runs, especially Stooq XAG/USD timeout from the VPS.
+- Direct VPS curl checks to Stooq timed out after 20 seconds, confirming this is source/network reliability rather than the validation-window bug.
+- Next: harden or replace the global XAG/USD public source before starting Phase 4.
