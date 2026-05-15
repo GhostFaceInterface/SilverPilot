@@ -569,7 +569,16 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
         .scalars()
         .all()
     )
-    window_started_at = min((_aware(run.started_at) for run in runs), default=None)
+
+    groups: dict[tuple[str, str], list[CollectorRun]] = {}
+    for run in runs:
+        groups.setdefault((run.collector_name, run.source), []).append(run)
+    has_non_manual_group = any(not _is_manual_fallback_group(*key) for key in groups)
+    quality_group_keys = {
+        key for key in groups if not (has_non_manual_group and _is_manual_fallback_group(*key))
+    }
+
+    window_started_at = _quality_window_started_at(db, quality_group_keys)
     elapsed_minutes = (
         min(window_hours * 60, max(0, int((now - window_started_at).total_seconds() / 60)))
         if window_started_at is not None
@@ -580,11 +589,6 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
         expected_runs_so_far = max(1, int(elapsed_minutes / expected_interval_minutes) + 1)
         expected_runs_so_far = min(expected_runs_so_far, expected_runs)
     validation_window_complete = elapsed_minutes >= window_hours * 60
-
-    groups: dict[tuple[str, str], list[CollectorRun]] = {}
-    for run in runs:
-        groups.setdefault((run.collector_name, run.source), []).append(run)
-    has_non_manual_group = any(not _is_manual_fallback_group(*key) for key in groups)
 
     collectors = []
     for (collector_name, source), collector_runs in groups.items():
@@ -724,6 +728,17 @@ def _ignore_inactive_manual_fallback(item: dict, *, bank_price: dict) -> bool:
     if bank_price["bank_price"] != "fresh":
         return False
     return _is_manual_fallback_group(item["collector_name"], item["source"])
+
+
+def _quality_window_started_at(db: Session, quality_group_keys: set[tuple[str, str]]) -> datetime | None:
+    if not quality_group_keys:
+        return None
+
+    runs = db.execute(select(CollectorRun).order_by(CollectorRun.started_at.asc())).scalars()
+    for run in runs:
+        if (run.collector_name, run.source) in quality_group_keys:
+            return _aware(run.started_at)
+    return None
 
 
 def _is_manual_fallback_group(collector_name: str, source: str) -> bool:

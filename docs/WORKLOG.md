@@ -240,3 +240,11 @@ Phase 3.4 audit and smoke guard tightened.
 - Updated one-shot collector runner behavior so failed collector runs exit non-zero for smoke checks.
 - Expanded manual VPS smoke workflow coverage to Fed RSS, FRED macro, collector quality, and validation gate.
 - Updated stale README/architecture references without creating new markdown files.
+
+Collector validation-window completion bug fixed locally.
+
+- Found that `/collectors/quality` could keep `validation_window_complete=false` because it measured elapsed time from the oldest run still inside the sliding query window.
+- Updated quality coverage to use relevant active collector history for elapsed validation coverage while keeping failure and missing-run metrics scoped to the selected recent window.
+- Added a regression test for sustained history that exceeds the sliding window.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests/test_collectors.py`, `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `.venv/bin/python -m compileall apps/api/app`.
+- Next: deploy the fix to VPS and re-check `/collectors/validation-gate`; remaining degraded causes should represent real collector quality issues.

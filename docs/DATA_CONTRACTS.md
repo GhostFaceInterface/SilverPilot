@@ -314,7 +314,7 @@ Output:
 - expected runs per collector.
 - expected runs so far per collector.
 - validation window completion flag.
-- elapsed minutes since the first run in the window.
+- elapsed validation coverage minutes for the relevant active collector groups.
 - per collector/source run count.
 - successful and failed runs.
 - records seen, inserted, and duplicates.
@@ -326,7 +326,8 @@ Output:
 Notes:
 
 - This is a validation metric, not a trading signal.
-- Missing-run ratio is calculated against elapsed runtime, not future time in the selected window.
+- Missing-run ratio is calculated against elapsed validation coverage, not future time in the selected window.
+- `validation_window_complete` uses relevant collector history so a sliding query window does not remain permanently incomplete after older runs age out of the metric window.
 - Inactive manual fallback runs are excluded from quality summaries when public/non-manual collector groups exist.
 - Different collector frequencies may need different review windows before Phase 4.
 - Missing-run ratio is based on the query's expected interval, not provider freshness guarantees.

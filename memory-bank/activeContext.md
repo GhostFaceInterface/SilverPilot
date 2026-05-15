@@ -47,6 +47,7 @@ Phase 3: free/public-source data collectors in progress.
 - Collector quality endpoint exists at `GET /collectors/quality`.
 - Collector validation gate exists at `GET /collectors/validation-gate` to decide when Phase 4 can start.
 - One-shot collector runner commands now fail the process when a collector records failed status, so smoke checks cannot silently pass failed collectors.
+- Collector quality validation window completion was fixed locally so sustained runs do not remain permanently incomplete as the 24-hour query window slides.
 - VPS collector profile is running with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs every 900 seconds.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
@@ -83,7 +84,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Run sustained collector validation with multi-job runner now that the Kuveyt official public finance-portal parser passed VPS smoke.
+- Deploy and verify the collector quality validation-window fix, then review remaining degraded quality causes.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.

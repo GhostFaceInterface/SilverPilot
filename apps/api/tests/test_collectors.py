@@ -297,6 +297,54 @@ def test_collector_quality_does_not_count_future_validation_window_as_missing():
     assert body["collectors"][0]["missing_ratio"] == 0.0
 
 
+def test_collector_quality_completes_after_continuous_history_exceeds_sliding_window():
+    client, testing_session = make_client()
+    now = datetime.now(UTC)
+    db = testing_session()
+    try:
+        db.add(
+            CollectorRun(
+                collector_name="kuveyt_public_silver",
+                source="kuveyt-public-silver-page",
+                status="success",
+                records_seen=1,
+                records_inserted=1,
+                duplicates=0,
+                started_at=now - timedelta(minutes=90),
+                finished_at=now - timedelta(minutes=90),
+                details_json={},
+            )
+        )
+        for minutes_ago in (45, 30, 15, 1):
+            db.add(
+                CollectorRun(
+                    collector_name="kuveyt_public_silver",
+                    source="kuveyt-public-silver-page",
+                    status="success",
+                    records_seen=1,
+                    records_inserted=1,
+                    duplicates=0,
+                    started_at=now - timedelta(minutes=minutes_ago),
+                    finished_at=now - timedelta(minutes=minutes_ago),
+                    details_json={},
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/quality?window_hours=1&expected_interval_minutes=15")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["elapsed_minutes"] == 60
+    assert body["validation_window_complete"] is True
+    assert body["expected_runs_so_far_per_collector"] == 4
+    assert body["collectors"][0]["runs"] == 4
+    assert body["collectors"][0]["missing_runs"] == 0
+
+
 def test_collector_quality_excludes_inactive_manual_fallback_when_public_collector_exists():
     client, testing_session = make_client()
     payload = {
