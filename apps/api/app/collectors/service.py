@@ -6,10 +6,13 @@ from decimal import Decimal
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
 from app.schemas.collectors import ManualPriceIngestRequest
 
 PRICE_QUANT = Decimal("0.000001")
+EXECUTION_CRITICAL_COLLECTORS = {"kuveyt_public_silver", "global_xag_usd", "tcmb_usd_try"}
+CONTEXT_COLLECTORS = {"fed_rss", "fred_macro"}
 
 
 class CollectorError(ValueError):
@@ -531,6 +534,10 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
         )
 
     bank_price = _execution_critical_bank_price_status(db, stale_after_seconds=stale_after_seconds, now=now)
+    global_xag = _execution_critical_global_xag_status(db, stale_after_seconds=stale_after_seconds, now=now)
+    usd_try = _execution_critical_usd_try_status(db, stale_after_seconds=stale_after_seconds, now=now)
+    execution_critical_status = _execution_critical_status(bank_price, global_xag, usd_try)
+    context_status = _context_status(collectors)
     any_problem = any(
         (item["stale"] or item["status"] == "failed")
         and not _ignore_inactive_manual_fallback(item, bank_price=bank_price)
@@ -538,18 +545,32 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
     )
     if not collectors:
         status = "empty"
-    elif bank_price["bank_price"] == "missing":
+    elif execution_critical_status == "blocked":
         status = "blocked"
-    elif bank_price["stale"]:
+    elif execution_critical_status == "stale":
         status = "stale"
-    elif bank_price["manual_fallback"] or any_problem:
+    elif execution_critical_status == "degraded" or any_problem:
         status = "degraded"
     else:
         status = "healthy"
 
     return {
         "status": status,
-        "execution_critical": bank_price,
+        "execution_critical_status": execution_critical_status,
+        "context_status": context_status,
+        "execution_critical": {
+            **bank_price,
+            "global_xag_usd": global_xag["global_xag_usd"],
+            "global_xag_source": global_xag["source"],
+            "selected_global_xag_source": global_xag["source"],
+            "global_xag_age_seconds": global_xag["age_seconds"],
+            "global_xag_stale": global_xag["stale"],
+            "global_xag_manual_fallback": global_xag["manual_fallback"],
+            "usd_try": usd_try["usd_try"],
+            "usd_try_source": usd_try["source"],
+            "usd_try_age_seconds": usd_try["age_seconds"],
+            "usd_try_stale": usd_try["stale"],
+        },
         "stale_after_minutes": stale_after_minutes,
         "collectors": collectors,
     }
@@ -651,38 +672,62 @@ def collector_validation_gate(
     health = collector_health(db, stale_after_minutes=stale_after_minutes)
     quality = collector_quality(db, window_hours=window_hours, expected_interval_minutes=expected_interval_minutes)
 
-    reasons = []
-    if health["status"] != "healthy":
-        reasons.append("COLLECTOR_HEALTH_NOT_HEALTHY")
+    blocking_reasons = []
+    degraded_reasons = []
     if health["execution_critical"]["bank_price"] != "fresh":
-        reasons.append("EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH")
-    if quality["status"] != "ok":
-        reasons.append("QUALITY_STATUS_NOT_OK")
+        blocking_reasons.append("EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH")
+    if health["execution_critical"]["global_xag_usd"] not in {"fresh", "manual_fallback"}:
+        blocking_reasons.append("EXECUTION_CRITICAL_GLOBAL_XAG_NOT_FRESH")
+    if health["execution_critical"]["usd_try"] != "fresh":
+        blocking_reasons.append("EXECUTION_CRITICAL_USD_TRY_NOT_FRESH")
     if not quality["validation_window_complete"]:
-        reasons.append("VALIDATION_WINDOW_INCOMPLETE")
+        blocking_reasons.append("VALIDATION_WINDOW_INCOMPLETE")
+
+    critical_quality_items = [item for item in quality["collectors"] if item["collector_name"] in EXECUTION_CRITICAL_COLLECTORS]
+    context_quality_items = [item for item in quality["collectors"] if item["collector_name"] in CONTEXT_COLLECTORS]
+    if any(item["failed_runs"] > 0 for item in critical_quality_items):
+        blocking_reasons.append("EXECUTION_CRITICAL_COLLECTOR_FAILURES_PRESENT")
+    if any(item["missing_runs"] > 0 for item in critical_quality_items):
+        blocking_reasons.append("EXECUTION_CRITICAL_MISSING_RUNS_PRESENT")
+    if quality["status"] != "ok":
+        degraded_reasons.append("QUALITY_STATUS_NOT_OK")
+    if health["status"] != "healthy":
+        degraded_reasons.append("COLLECTOR_HEALTH_NOT_HEALTHY")
     if any(item["failed_runs"] > 0 for item in quality["collectors"]):
-        reasons.append("COLLECTOR_FAILURES_PRESENT")
+        degraded_reasons.append("COLLECTOR_FAILURES_PRESENT")
     if any(item["missing_runs"] > 0 for item in quality["collectors"]):
-        reasons.append("MISSING_RUNS_PRESENT")
+        degraded_reasons.append("MISSING_RUNS_PRESENT")
+    if any(item["failed_runs"] > 0 for item in context_quality_items):
+        degraded_reasons.append("CONTEXT_COLLECTOR_FAILURES_PRESENT")
+    if any(item["missing_runs"] > 0 for item in context_quality_items):
+        degraded_reasons.append("CONTEXT_MISSING_RUNS_PRESENT")
+
+    source_reliability = _source_reliability_summary(quality["collectors"])
+    stooq_timeout_count = _stooq_timeout_count(db, window_hours=window_hours)
 
     if not health["collectors"] and not quality["collectors"]:
         status = "empty"
-    elif health["status"] in {"blocked", "stale"} or health["execution_critical"]["bank_price"] != "fresh":
+    elif any(reason != "VALIDATION_WINDOW_INCOMPLETE" for reason in blocking_reasons):
         status = "blocked"
-    elif quality["status"] != "ok" or any(reason.endswith("_PRESENT") for reason in reasons):
-        status = "degraded"
-    elif not quality["validation_window_complete"]:
+    elif "VALIDATION_WINDOW_INCOMPLETE" in blocking_reasons:
         status = "warming_up"
     else:
         status = "ready"
-        reasons = ["READY"]
+        blocking_reasons = ["READY"]
 
     return {
         "status": status,
         "phase4_allowed": status == "ready",
-        "reasons": reasons,
+        "reasons": blocking_reasons,
+        "blocking_reasons": blocking_reasons,
+        "degraded_reasons": sorted(set(degraded_reasons)),
         "health_status": health["status"],
         "quality_status": quality["status"],
+        "execution_critical_status": health["execution_critical_status"],
+        "context_status": health["context_status"],
+        "source_reliability": source_reliability,
+        "stooq_xag_usd_timeout_count": stooq_timeout_count,
+        "selected_global_xag_source": health["execution_critical"]["selected_global_xag_source"],
         "window_hours": quality["window_hours"],
         "elapsed_minutes": quality["elapsed_minutes"],
         "validation_window_complete": quality["validation_window_complete"],
@@ -722,6 +767,127 @@ def _execution_critical_bank_price_status(db: Session, *, stale_after_seconds: i
         "stale": stale,
         "manual_fallback": manual_fallback,
     }
+
+
+def _execution_critical_global_xag_status(db: Session, *, stale_after_seconds: int, now: datetime) -> dict:
+    settings = get_settings()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    if asset is None:
+        latest_global_price = None
+    else:
+        latest_global_price = db.execute(
+            select(RawGlobalPrice)
+            .where(RawGlobalPrice.asset_id == asset.id)
+            .order_by(desc(RawGlobalPrice.fetched_at), desc(RawGlobalPrice.observed_at))
+            .limit(1)
+        ).scalar_one_or_none()
+    if latest_global_price is None:
+        return {
+            "global_xag_usd": "missing",
+            "source": None,
+            "age_seconds": None,
+            "stale": True,
+            "manual_fallback": False,
+        }
+
+    reference_time = _aware(latest_global_price.fetched_at or latest_global_price.observed_at)
+    observed_time = _aware(latest_global_price.observed_at)
+    age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
+    observed_age_seconds = int((now - observed_time).total_seconds()) if observed_time is not None else None
+    stale_after = min(stale_after_seconds, settings.global_xag_freshness_minutes * 60)
+    stale = age_seconds is None or age_seconds > stale_after or observed_age_seconds is None or observed_age_seconds > stale_after
+    manual_fallback = latest_global_price.parser_version == "manual-v1" or latest_global_price.source.startswith("manual")
+    if stale:
+        global_xag = "stale"
+    elif manual_fallback:
+        global_xag = "manual_fallback"
+    else:
+        global_xag = "fresh"
+    return {
+        "global_xag_usd": global_xag,
+        "source": latest_global_price.source,
+        "age_seconds": age_seconds,
+        "observed_age_seconds": observed_age_seconds,
+        "stale": stale,
+        "manual_fallback": manual_fallback,
+    }
+
+
+def _execution_critical_usd_try_status(db: Session, *, stale_after_seconds: int, now: datetime) -> dict:
+    latest_fx_rate = db.execute(
+        select(RawFxRate)
+        .where(RawFxRate.base_currency == "USD", RawFxRate.quote_currency == "TRY")
+        .order_by(desc(RawFxRate.fetched_at), desc(RawFxRate.observed_at))
+        .limit(1)
+    ).scalar_one_or_none()
+    if latest_fx_rate is None:
+        return {"usd_try": "missing", "source": None, "age_seconds": None, "stale": True}
+
+    reference_time = _aware(latest_fx_rate.fetched_at or latest_fx_rate.observed_at)
+    age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
+    stale = age_seconds is None or age_seconds > stale_after_seconds
+    return {
+        "usd_try": "stale" if stale else "fresh",
+        "source": latest_fx_rate.source,
+        "age_seconds": age_seconds,
+        "stale": stale,
+    }
+
+
+def _execution_critical_status(bank_price: dict, global_xag: dict, usd_try: dict) -> str:
+    statuses = (bank_price["bank_price"], global_xag["global_xag_usd"], usd_try["usd_try"])
+    if any(status == "missing" for status in statuses):
+        return "blocked"
+    if any(status == "stale" for status in statuses):
+        return "stale"
+    if any(status == "manual_fallback" for status in statuses):
+        return "degraded"
+    return "healthy"
+
+
+def _context_status(collectors: list[dict]) -> str:
+    context_items = [item for item in collectors if item["collector_name"] in CONTEXT_COLLECTORS]
+    if not context_items:
+        return "empty"
+    if any(item["stale"] or item["status"] == "failed" for item in context_items):
+        return "degraded"
+    return "healthy"
+
+
+def _source_reliability_summary(collectors: list[dict]) -> list[dict]:
+    summary = []
+    for item in collectors:
+        runs = item["runs"]
+        successful_runs = item["successful_runs"]
+        reliability_score = _ratio(successful_runs, runs)
+        summary.append(
+            {
+                "collector_name": item["collector_name"],
+                "source": item["source"],
+                "runs": runs,
+                "successful_runs": successful_runs,
+                "failed_runs": item["failed_runs"],
+                "missing_runs": item["missing_runs"],
+                "reliability_score": reliability_score,
+            }
+        )
+    return summary
+
+
+def _stooq_timeout_count(db: Session, *, window_hours: int) -> int:
+    since = datetime.now(UTC) - timedelta(hours=window_hours)
+    runs = db.execute(
+        select(CollectorRun).where(
+            CollectorRun.collector_name == "stooq_xag_usd",
+            CollectorRun.started_at >= since,
+        )
+    ).scalars()
+    count = 0
+    for run in runs:
+        details = run.details_json or {}
+        if details.get("failure_reason_code") == "TIMEOUT":
+            count += 1
+    return count
 
 
 def _ignore_inactive_manual_fallback(item: dict, *, bank_price: dict) -> bool:

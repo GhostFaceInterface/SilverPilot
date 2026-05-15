@@ -117,23 +117,25 @@ The paper-trading engine must not run without a risk decision once Phase 4 exist
 - Türkiye local macro data informs TRY execution, bank spread, local risk, and tax/rule context; it is not a primary global silver direction signal.
 - Kuveyt Türk official public silver page is the primary execution-critical bank silver source when its public browser-loaded finance portal data is available.
 - Manual bank-price fallback is a simulation unblocker only; it is not a production collector and must be visible as degraded/manual source context.
+- Global XAG/USD uses a provider resolver, not a single source. Stooq current CSV is the primary public source; Gold-API free no-auth JSON is an approved fallback; Metals.Dev is an optional free API-key fallback and is disabled without a key.
+- Provider failures record reason codes and never write fake prices or mark the last successful global value as fresh.
 
 ## Data Impact Classes
 
-- Execution-critical: bank silver buy/sell, spread, USD/TRY or bank FX effect, tax/KMV/BSMV rules.
-- Global-market context: XAG/USD, U.S. rates, dollar index, CPI/PPI, Fed RSS.
+- Execution-critical: bank silver buy/sell, global XAG/USD, USD/TRY or bank FX effect, tax/KMV/BSMV rules.
+- Global-market context: U.S. rates, dollar index, CPI/PPI, Fed RSS.
 - Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
 - Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
 
 ## Collector Health States
 
-- `healthy`: fresh official/primary execution-critical bank price exists and collectors are fresh.
-- `degraded`: core simulation can continue, but some collectors failed/stale or manual bank-price fallback is active.
-- `blocked`: execution-critical bank silver buy/sell price is missing.
-- `stale`: the latest execution-critical bank price exists but exceeded the freshness threshold.
+- `healthy`: execution-critical sources are fresh and collectors are fresh.
+- `degraded`: core simulation can continue, but some collectors failed/stale or manual fallback is active.
+- `blocked`: execution-critical bank silver buy/sell, global XAG/USD, or USD/TRY data is missing.
+- `stale`: an execution-critical source exists but exceeded the freshness threshold.
 - `empty`: no collector runs exist yet.
 
-Collector quality review uses `/collectors/quality` to summarize recent run counts, failures, duplicates, and missing-run ratio. Missing runs are measured against elapsed validation coverage so a new 24-hour validation run does not count future intervals as already missing, while a sliding query window does not stay permanently incomplete after older runs age out of the metric window. The collector runner supports `COLLECTOR_JOBS` for comma-separated sustained MVP collector batches without starting separate containers per source; the Compose collector profile defaults to the current MVP source batch.
+Collector quality review uses `/collectors/quality` to summarize recent run counts, failures, duplicates, and missing-run ratio. Missing runs are measured against elapsed validation coverage so a new 24-hour validation run does not count future intervals as already missing, while a sliding query window does not stay permanently incomplete after older runs age out of the metric window. `/collectors/validation-gate` separates execution-critical blockers from context degradation: Kuveyt bank silver, global XAG/USD, and USD/TRY can block Phase 4; Fed RSS and FRED macro failures degrade the output but do not block by themselves. The collector runner supports `COLLECTOR_JOBS` for comma-separated sustained MVP collector batches without starting separate containers per source; the Compose collector profile defaults to the current MVP source batch.
 
 ## LLM Pattern
 
@@ -187,7 +189,7 @@ Deployment target:
 - GitHub Actions runs backend tests, Docker Compose config validation, and API image build on push and pull request.
 - VPS deployment/smoke validation is manual through `workflow_dispatch`.
 - The VPS workflow uses repository secrets for host, user, SSH key, and optional known hosts; secrets must not be committed or written to markdown.
-- Required VPS smoke checks are Compose config, container rebuild, Alembic migration, `/health`, Kuveyt bank silver, Stooq XAG/USD, TCMB USD/TRY, Fed RSS, FRED macro, collector health, collector quality, and collector validation gate.
+- Required VPS smoke checks are Compose config, container rebuild, Alembic migration, `/health`, Kuveyt bank silver, global XAG/USD resolver, TCMB USD/TRY, Fed RSS, FRED macro, collector health, collector quality, and collector validation gate.
 - One-shot collector runner commands must exit non-zero when the collector records a failed run, so CI smoke cannot silently pass a failed public-source parser.
 
 Production hardening is Phase 13, not Phase 1.

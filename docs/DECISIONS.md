@@ -123,3 +123,11 @@ Explicitly excluded for now:
 Status: accepted.
 
 Phase 4 risk engine work will not start until execution-critical bank silver buy/sell pricing is resolved. Kuveyt Türk official public page data is the primary source when public browser-loaded finance portal data can be parsed without login or bypass behavior. Manual bank-price input is allowed only as a visible degraded simulation fallback, not as a production collector.
+
+## D-020: Global XAG/USD Uses Approved Fallbacks
+
+Status: accepted.
+
+Stooq current CSV remains the primary public global XAG/USD source, but Phase 4 readiness must not depend on Stooq alone because VPS network timeouts have been observed. The collector uses a configurable `GlobalSilverPriceProvider` priority list. Gold-API free no-auth JSON is an approved fallback, and Metals.Dev is an optional free API-key fallback disabled when no key is configured. Paid APIs, payment-required tiers, login/captcha/paywall bypass, and fake/stale price reuse remain excluded.
+
+Stooq failure degrades source reliability but does not block Phase 4 when an approved fallback global XAG/USD value is fresh. Missing or stale global XAG/USD still blocks Phase 4.

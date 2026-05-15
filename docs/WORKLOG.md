@@ -258,3 +258,13 @@ Collector validation-window fix deployed and verified on VPS.
 - Phase 4 remains blocked because quality is still degraded by real collector failures/missing runs, especially Stooq XAG/USD timeout from the VPS.
 - Direct VPS curl checks to Stooq timed out after 20 seconds, confirming this is source/network reliability rather than the validation-window bug.
 - Next: harden or replace the global XAG/USD public source before starting Phase 4.
+
+Phase 3.5 global XAG/USD source hardening implemented locally.
+
+- Added configurable global XAG/USD provider priority with Stooq primary, Gold-API free no-auth fallback, and optional Metals.Dev free-key fallback.
+- Added Stooq timeout/retry/backoff settings and failure reason codes without fake price insertion or stale-value reuse.
+- Updated `/collectors/validation-gate` to separate execution-critical blockers from context degradation.
+- Execution-critical sources are Kuveyt bank silver, global XAG/USD, and USD/TRY; Fed RSS and FRED macro are context.
+- Updated CI/VPS smoke to run the global XAG resolver instead of direct Stooq.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `docker compose config --quiet`, and `.venv/bin/python -m compileall apps/api/app`.
+- Secret scan of touched paths found only placeholder/test key names, not secret values.

@@ -129,7 +129,12 @@ Completed:
 - Added `GET /collectors/validation-gate` for machine-readable Phase 4 readiness.
 - Deployed the sustained collector profile on VPS with Kuveyt, Stooq, TCMB, Fed RSS, and FRED jobs at a 900-second interval.
 - Tightened collector smoke validation so one-shot runner commands exit non-zero when a collector records failed status.
+- Fixed collector validation-window completion so sustained runs do not remain permanently incomplete as the 24-hour query window slides.
+- Added Phase 3.5 global XAG/USD provider resolver with Stooq primary, Gold-API free no-auth fallback, and optional Metals.Dev free-key fallback.
+- Added Stooq timeout/retry/backoff settings and provider failure reason codes.
+- Updated Phase 4 validation gate to block on execution-critical bank/global XAG/USD/USDTRY freshness while treating Fed RSS and FRED macro as non-blocking context degradation.
+- Local collector tests passed for Stooq timeout no-fake-data, fallback freshness, execution-critical blocking, context-only non-blocking behavior, and duplicate behavior.
 
 Next milestone:
 
-- Review sustained collector validation results after enough VPS runtime has accumulated.
+- Deploy Phase 3.5 to VPS and re-check `/collectors/validation-gate`.

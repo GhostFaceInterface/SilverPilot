@@ -46,10 +46,11 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 
 - Selector/parser failure blocks fresh decisions and marks the source stale.
 - Last successful prices may be displayed as stale context, but must not be treated as a fresh decision input.
-- Execution-critical bank silver buy/sell price is required before Phase 4 risk decisions can emit trade signals.
-- Collector health `blocked` means no bank silver buy/sell price is available; automated paper-trade signals must not proceed.
-- Collector health `stale` means the latest bank price exists but is too old; automated paper-trade signals must not proceed.
-- Fresh manual bank-price fallback may unblock simulation, but it must be treated as degraded and explicitly manual.
+- Execution-critical bank silver buy/sell, global XAG/USD, and USD/TRY are required before Phase 4 risk decisions can emit trade signals.
+- Collector health `blocked` means at least one execution-critical source is missing; automated paper-trade signals must not proceed.
+- Collector health `stale` means at least one execution-critical source exists but is too old; automated paper-trade signals must not proceed.
+- Fresh manual bank or global XAG fallback may unblock simulation, but it must be treated as degraded and explicitly manual.
+- Stooq failure is not a blocker by itself when an approved global XAG/USD fallback is fresh; the failure remains a degraded source-reliability fact.
 - Official free sources rank above third-party public pages.
 - Paid market-data API sources are disabled during MVP and cannot be required for a risk decision.
 - Tax/BSMV rules stay configurable and are not legal or tax advice.
@@ -60,8 +61,8 @@ This file is the canonical policy for paper-trading safety. Exact thresholds are
 
 ## Impact Classification
 
-- Execution-critical: bank silver buy/sell, spread, TCMB/USDTRY or bank FX effect, tax/KMV/BSMV.
-- Global-market context: XAG/USD, U.S. rates, broad USD strength, CPI/PPI, Fed RSS.
+- Execution-critical: bank silver buy/sell, global XAG/USD, spread, TCMB/USDTRY or bank FX effect, tax/KMV/BSMV.
+- Global-market context: U.S. rates, broad USD strength, CPI/PPI, Fed RSS.
 - Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
 - Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
 

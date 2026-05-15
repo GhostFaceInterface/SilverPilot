@@ -1,5 +1,6 @@
 import csv
 import json
+import time
 from email.utils import parsedate_to_datetime
 import re
 from dataclasses import dataclass
@@ -7,6 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from io import StringIO
+from typing import Protocol
 from urllib.parse import urljoin
 from xml.etree import ElementTree
 
@@ -28,6 +30,8 @@ from app.models import CollectorRun, PriceSnapshot
 
 KUVEYT_PARSER_VERSION = "kuveyt-public-finance-portal-v2"
 STOOQ_PARSER_VERSION = "stooq-xagusd-csv-v1"
+GOLD_API_PARSER_VERSION = "gold-api-xag-usd-v1"
+METALS_DEV_PARSER_VERSION = "metals-dev-silver-spot-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
 FED_RSS_PARSER_VERSION = "fed-rss-v1"
 FRED_OBSERVATIONS_PARSER_VERSION = "fred-observations-v1"
@@ -48,6 +52,47 @@ class ParsedGlobalPrice:
     currency: str
     observed_at: datetime
     payload: dict
+
+
+@dataclass(frozen=True)
+class NormalizedGlobalSilverPrice:
+    source: str
+    symbol: str
+    price: Decimal
+    currency: str
+    unit: str
+    observed_at: datetime
+    fetched_at: datetime
+    raw_payload: str
+    parser_version: str
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+    metadata: dict | None = None
+
+
+class GlobalSilverProviderError(CollectorError):
+    def __init__(self, reason_code: str, message: str, *, details: dict | None = None) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.details = details or {}
+
+
+class GlobalSilverPriceProvider(Protocol):
+    source: str
+    collector_name: str
+    parser_version: str
+
+    def enabled(self, settings: Settings) -> bool:
+        ...
+
+    def fetch(
+        self,
+        *,
+        settings: Settings,
+        fetched_at: datetime,
+        client: httpx.Client | None,
+    ) -> NormalizedGlobalSilverPrice:
+        ...
 
 
 @dataclass(frozen=True)
@@ -128,33 +173,127 @@ def collect_stooq_xag_usd(
 ) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
     settings = settings or get_settings()
     fetched_at = datetime.now(UTC)
+    provider = StooqXagUsdProvider()
     try:
-        raw_payload = _fetch_text(settings.stooq_xag_usd_url, settings=settings, client=client)
-        parsed = parse_stooq_xag_usd_csv(raw_payload)
+        parsed = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
         return ingest_global_price(
             db,
-            source="stooq-xagusd-csv",
+            source=parsed.source,
             asset_symbol="XAG",
-            buy_price=parsed.price,
-            sell_price=parsed.price,
+            buy_price=parsed.ask or parsed.price,
+            sell_price=parsed.bid or parsed.price,
             currency=parsed.currency,
             observed_at=parsed.observed_at,
             fetched_at=fetched_at,
-            payload=parsed.payload,
-            raw_payload=raw_payload,
-            parser_version=STOOQ_PARSER_VERSION,
-            collector_name="stooq_xag_usd",
+            payload=_global_price_payload(parsed),
+            raw_payload=parsed.raw_payload,
+            parser_version=parsed.parser_version,
+            collector_name=provider.collector_name,
         )
+    except GlobalSilverProviderError as exc:
+        db.rollback()
+        run = record_failed_run(
+            db,
+            collector_name=provider.collector_name,
+            source=provider.source,
+            error_message=str(exc),
+            details_json={
+                "parser_version": provider.parser_version,
+                "failure_reason_code": exc.reason_code,
+                **exc.details,
+            },
+        )
+        return run, False, None
     except Exception as exc:
         db.rollback()
         run = record_failed_run(
             db,
-            collector_name="stooq_xag_usd",
-            source="stooq-xagusd-csv",
+            collector_name=provider.collector_name,
+            source=provider.source,
             error_message=str(exc),
-            details_json={"parser_version": STOOQ_PARSER_VERSION},
+            details_json={"parser_version": provider.parser_version, "failure_reason_code": "PARSE_ERROR"},
         )
         return run, False, None
+
+
+def collect_global_xag_usd(
+    db: Session,
+    *,
+    settings: Settings | None = None,
+    client: httpx.Client | None = None,
+) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
+    settings = settings or get_settings()
+    fetched_at = datetime.now(UTC)
+    failures = []
+
+    for provider in _global_xag_providers(settings):
+        if not provider.enabled(settings):
+            failures.append({"source": provider.source, "failure_reason_code": "DISABLED"})
+            continue
+        try:
+            parsed = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
+            run, raw_inserted, snapshot = ingest_global_price(
+                db,
+                source=parsed.source,
+                asset_symbol=parsed.symbol,
+                buy_price=parsed.ask or parsed.price,
+                sell_price=parsed.bid or parsed.price,
+                currency=parsed.currency,
+                observed_at=parsed.observed_at,
+                fetched_at=parsed.fetched_at,
+                payload=_global_price_payload(parsed, selected=True, fallback_failures=failures),
+                raw_payload=parsed.raw_payload,
+                parser_version=parsed.parser_version,
+                collector_name="global_xag_usd",
+            )
+            run.details_json = {
+                **(run.details_json or {}),
+                "selected_global_xag_source": parsed.source,
+                "fallback_failures": failures,
+            }
+            db.commit()
+            db.refresh(run)
+            return run, raw_inserted, snapshot
+        except GlobalSilverProviderError as exc:
+            db.rollback()
+            failure = {
+                "source": provider.source,
+                "collector_name": provider.collector_name,
+                "failure_reason_code": exc.reason_code,
+                **exc.details,
+            }
+            failures.append(failure)
+            record_failed_run(
+                db,
+                collector_name=provider.collector_name,
+                source=provider.source,
+                error_message=str(exc),
+                details_json={"parser_version": provider.parser_version, **failure},
+            )
+        except Exception as exc:
+            db.rollback()
+            failure = {
+                "source": provider.source,
+                "collector_name": provider.collector_name,
+                "failure_reason_code": "PARSE_ERROR",
+            }
+            failures.append(failure)
+            record_failed_run(
+                db,
+                collector_name=provider.collector_name,
+                source=provider.source,
+                error_message=str(exc),
+                details_json={"parser_version": provider.parser_version, **failure},
+            )
+
+    run = record_failed_run(
+        db,
+        collector_name="global_xag_usd",
+        source="global-xag-usd-resolver",
+        error_message="No configured global XAG/USD provider returned fresh data",
+        details_json={"fallback_failures": failures, "failure_reason_code": "NO_PROVIDER_AVAILABLE"},
+    )
+    return run, False, None
 
 
 def collect_tcmb_usd_try(
@@ -304,6 +443,180 @@ def collect_fred_macro(
             details_json={"parser_version": FRED_OBSERVATIONS_PARSER_VERSION, "series_ids": series_ids},
         )
         return run, 0
+
+
+class StooqXagUsdProvider:
+    source = "stooq-xagusd-csv"
+    collector_name = "stooq_xag_usd"
+    parser_version = STOOQ_PARSER_VERSION
+
+    def enabled(self, settings: Settings) -> bool:
+        return bool(settings.stooq_xag_usd_url)
+
+    def fetch(
+        self,
+        *,
+        settings: Settings,
+        fetched_at: datetime,
+        client: httpx.Client | None,
+    ) -> NormalizedGlobalSilverPrice:
+        raw_payload = _fetch_with_retry(
+            settings.stooq_xag_usd_url,
+            settings=settings,
+            client=client,
+            timeout_seconds=settings.stooq_xag_usd_timeout_seconds,
+            retries=settings.stooq_xag_usd_retries,
+            backoff_seconds=settings.stooq_xag_usd_backoff_seconds,
+            source=self.source,
+        )
+        parsed = parse_stooq_xag_usd_csv(raw_payload)
+        _reject_stale_global_quote(parsed.observed_at, fetched_at, settings=settings, source=self.source)
+        return NormalizedGlobalSilverPrice(
+            source=self.source,
+            symbol="XAG",
+            price=parsed.price,
+            currency=parsed.currency,
+            unit="troy_ounce",
+            observed_at=parsed.observed_at,
+            fetched_at=fetched_at,
+            raw_payload=raw_payload,
+            parser_version=self.parser_version,
+            metadata={
+                **parsed.payload,
+                "source_type": "public_csv",
+                "failure_policy": "failed fetch/parse/stale data writes no price",
+                "reliability_tier": "primary_public_page",
+            },
+        )
+
+
+class GoldApiXagUsdProvider:
+    source = "gold-api-xag-usd"
+    collector_name = "gold_api_xag_usd"
+    parser_version = GOLD_API_PARSER_VERSION
+
+    def enabled(self, settings: Settings) -> bool:
+        return settings.gold_api_xag_usd_enabled and bool(settings.gold_api_xag_usd_url)
+
+    def fetch(
+        self,
+        *,
+        settings: Settings,
+        fetched_at: datetime,
+        client: httpx.Client | None,
+    ) -> NormalizedGlobalSilverPrice:
+        raw_payload = _fetch_with_retry(
+            settings.gold_api_xag_usd_url,
+            settings=settings,
+            client=client,
+            timeout_seconds=settings.gold_api_xag_usd_timeout_seconds,
+            retries=1,
+            backoff_seconds=settings.stooq_xag_usd_backoff_seconds,
+            source=self.source,
+        )
+        parsed = parse_gold_api_xag_usd_json(raw_payload, fetched_at=fetched_at)
+        _reject_stale_global_quote(parsed.observed_at, fetched_at, settings=settings, source=self.source)
+        return parsed
+
+
+class MetalsDevSilverProvider:
+    source = "metals-dev-silver-spot"
+    collector_name = "metals_dev_silver_spot"
+    parser_version = METALS_DEV_PARSER_VERSION
+
+    def enabled(self, settings: Settings) -> bool:
+        return bool(settings.metals_dev_api_key)
+
+    def fetch(
+        self,
+        *,
+        settings: Settings,
+        fetched_at: datetime,
+        client: httpx.Client | None,
+    ) -> NormalizedGlobalSilverPrice:
+        raw_payload = _fetch_with_retry(
+            settings.metals_dev_spot_url,
+            settings=settings,
+            client=client,
+            timeout_seconds=settings.metals_dev_timeout_seconds,
+            retries=1,
+            backoff_seconds=settings.stooq_xag_usd_backoff_seconds,
+            source=self.source,
+            params={
+                "api_key": settings.metals_dev_api_key,
+                "metal": "silver",
+                "currency": "USD",
+            },
+        )
+        parsed = parse_metals_dev_silver_spot_json(raw_payload, fetched_at=fetched_at)
+        _reject_stale_global_quote(parsed.observed_at, fetched_at, settings=settings, source=self.source)
+        return parsed
+
+
+def parse_gold_api_xag_usd_json(raw_payload: str, *, fetched_at: datetime) -> NormalizedGlobalSilverPrice:
+    try:
+        body = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise GlobalSilverProviderError("PARSE_ERROR", "Gold-API response is not valid JSON") from exc
+    symbol = str(body.get("symbol") or "").upper()
+    currency = str(body.get("currency") or "USD").upper()
+    if symbol != "XAG" or currency != "USD":
+        raise GlobalSilverProviderError("PARSE_ERROR", "Gold-API response is not XAG/USD")
+    price = _decimal(str(body.get("price") or ""), field_name="Gold-API price")
+    observed_at = _parse_iso_datetime(body.get("updatedAt"), field_name="Gold-API updatedAt")
+    return NormalizedGlobalSilverPrice(
+        source=GoldApiXagUsdProvider.source,
+        symbol="XAG",
+        price=price,
+        currency=currency,
+        unit="troy_ounce",
+        observed_at=observed_at,
+        fetched_at=fetched_at,
+        raw_payload=raw_payload,
+        parser_version=GOLD_API_PARSER_VERSION,
+        metadata={
+            "name": body.get("name"),
+            "updated_at": body.get("updatedAt"),
+            "source_type": "free_no_auth_json_api",
+            "access_tier": "free_no_key",
+            "reliability_tier": "approved_public_fallback",
+        },
+    )
+
+
+def parse_metals_dev_silver_spot_json(raw_payload: str, *, fetched_at: datetime) -> NormalizedGlobalSilverPrice:
+    try:
+        body = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise GlobalSilverProviderError("PARSE_ERROR", "Metals.Dev response is not valid JSON") from exc
+    if body.get("status") not in (None, "success"):
+        raise GlobalSilverProviderError("HTTP_ERROR", "Metals.Dev returned failure status")
+    rate = body.get("rate")
+    if not isinstance(rate, dict):
+        raise GlobalSilverProviderError("PARSE_ERROR", "Metals.Dev spot response is missing rate object")
+    price = _decimal(str(rate.get("price") or ""), field_name="Metals.Dev price")
+    bid = _optional_decimal(rate.get("bid"), field_name="Metals.Dev bid")
+    ask = _optional_decimal(rate.get("ask"), field_name="Metals.Dev ask")
+    observed_at = _parse_iso_datetime(body.get("timestamp"), field_name="Metals.Dev timestamp")
+    return NormalizedGlobalSilverPrice(
+        source=MetalsDevSilverProvider.source,
+        symbol="XAG",
+        price=price,
+        currency=str(body.get("currency") or "USD").upper(),
+        unit=str(body.get("unit") or "toz"),
+        observed_at=observed_at,
+        fetched_at=fetched_at,
+        raw_payload=raw_payload,
+        parser_version=METALS_DEV_PARSER_VERSION,
+        bid=bid,
+        ask=ask,
+        metadata={
+            "metal": body.get("metal"),
+            "source_type": "free_api_key_json_api",
+            "access_tier": "free_api_key_optional",
+            "reliability_tier": "approved_optional_fallback",
+        },
+    )
 
 
 def parse_stooq_xag_usd_csv(raw_payload: str) -> ParsedGlobalPrice:
@@ -550,6 +863,116 @@ def _fetch_text(url: str, *, settings: Settings, client: httpx.Client | None) ->
     return response.text
 
 
+def _fetch_with_retry(
+    url: str,
+    *,
+    settings: Settings,
+    client: httpx.Client | None,
+    timeout_seconds: float,
+    retries: int,
+    backoff_seconds: float,
+    source: str,
+    params: dict | None = None,
+) -> str:
+    headers = {"User-Agent": settings.collector_user_agent, "Accept": "application/json,text/csv,text/plain,*/*"}
+    attempts = retries + 1
+    last_timeout = False
+    for attempt in range(1, attempts + 1):
+        try:
+            if client is None:
+                with httpx.Client(timeout=timeout_seconds, follow_redirects=True, headers=headers) as owned_client:
+                    response = owned_client.get(url, params=params)
+            else:
+                response = client.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=timeout_seconds,
+                    follow_redirects=True,
+                )
+            response.raise_for_status()
+            return response.text
+        except httpx.TimeoutException as exc:
+            last_timeout = True
+            if attempt >= attempts:
+                raise GlobalSilverProviderError(
+                    "TIMEOUT",
+                    f"{source} request timed out",
+                    details={"attempts": attempt, "timeout_seconds": timeout_seconds},
+                ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise GlobalSilverProviderError(
+                "HTTP_ERROR",
+                f"{source} returned HTTP {exc.response.status_code}",
+                details={"status_code": exc.response.status_code, "attempts": attempt},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise GlobalSilverProviderError(
+                "HTTP_ERROR",
+                f"{source} request failed",
+                details={"attempts": attempt},
+            ) from exc
+        if attempt < attempts and backoff_seconds > 0:
+            time.sleep(backoff_seconds * attempt)
+    reason = "TIMEOUT" if last_timeout else "HTTP_ERROR"
+    raise GlobalSilverProviderError(reason, f"{source} request failed", details={"attempts": attempts})
+
+
+def _global_xag_providers(settings: Settings) -> list[GlobalSilverPriceProvider]:
+    available: dict[str, GlobalSilverPriceProvider] = {
+        "stooq": StooqXagUsdProvider(),
+        "stooq-xag-usd": StooqXagUsdProvider(),
+        "gold-api": GoldApiXagUsdProvider(),
+        "goldapi": GoldApiXagUsdProvider(),
+        "metals-dev": MetalsDevSilverProvider(),
+        "metalsdev": MetalsDevSilverProvider(),
+    }
+    providers = []
+    seen = set()
+    for raw_name in settings.global_xag_source_priority.split(","):
+        name = raw_name.strip().lower()
+        provider = available.get(name)
+        if provider is not None and provider.source not in seen:
+            providers.append(provider)
+            seen.add(provider.source)
+    return providers or [StooqXagUsdProvider(), GoldApiXagUsdProvider(), MetalsDevSilverProvider()]
+
+
+def _global_price_payload(
+    parsed: NormalizedGlobalSilverPrice,
+    *,
+    selected: bool = False,
+    fallback_failures: list[dict] | None = None,
+) -> dict:
+    return {
+        "source": parsed.source,
+        "symbol": parsed.symbol,
+        "price": str(parsed.price),
+        "currency": parsed.currency,
+        "unit": parsed.unit,
+        "observed_at": parsed.observed_at.isoformat(),
+        "fetched_at": parsed.fetched_at.isoformat(),
+        "bid": str(parsed.bid) if parsed.bid is not None else None,
+        "ask": str(parsed.ask) if parsed.ask is not None else None,
+        "raw_payload_hash": payload_hash(parsed.raw_payload),
+        "parser_version": parsed.parser_version,
+        "selected_global_xag_source": parsed.source if selected else None,
+        "fallback_failures": fallback_failures or [],
+        "reliability": parsed.metadata or {},
+    }
+
+
+def _reject_stale_global_quote(observed_at: datetime, fetched_at: datetime, *, settings: Settings, source: str) -> None:
+    age_seconds = int((_to_utc(fetched_at) - _to_utc(observed_at)).total_seconds())
+    freshness_seconds = settings.global_xag_freshness_minutes * 60
+    if age_seconds > freshness_seconds:
+        raise GlobalSilverProviderError(
+            "STALE_DATA",
+            f"{source} returned stale XAG/USD data",
+            details={"age_seconds": age_seconds, "freshness_minutes": settings.global_xag_freshness_minutes},
+        )
+
+
 def _fetch_fred_observations(series_id: str, *, settings: Settings, client: httpx.Client | None) -> str:
     url = f"{settings.fred_api_base_url.rstrip('/')}/series/observations"
     params = {
@@ -605,6 +1028,29 @@ def _parse_date(value: str | None, *, field_name: str) -> datetime:
         return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:
         raise CollectorError(f"Unsupported {field_name} format: {value}") from exc
+
+
+def _parse_iso_datetime(value: str | None, *, field_name: str) -> datetime:
+    if not value:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{field_name} is missing")
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"Unsupported {field_name} format: {value}") from exc
+    return _to_utc(parsed)
+
+
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _optional_decimal(value: object, *, field_name: str) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    return _decimal(str(value), field_name=field_name)
 
 
 def _element_text(element: ElementTree.Element, child_name: str) -> str:

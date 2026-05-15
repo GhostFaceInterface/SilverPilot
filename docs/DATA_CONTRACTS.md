@@ -199,7 +199,7 @@ Duplicate guard:
 ### MVP Free Source Candidates
 
 - Bank silver price primary: Kuveyt Türk public live silver page. Parse only public page content or public browser-loaded finance portal JSON; fallback to failed collector if public discovery or GMS parsing breaks.
-- Global XAG/USD primary: Stooq current CSV quote endpoint. Stooq historical CSV requires a manually obtained key and stays optional.
+- Global XAG/USD resolver: Stooq current CSV quote endpoint is primary; Gold-API free no-auth JSON is an approved fallback; Metals.Dev is an optional free API-key fallback when configured. Stooq historical CSV requires a manually obtained key and stays optional.
 - USD/TRY primary: TCMB daily XML. EVDS is optional when a free user key is available.
 - Macro/news primary: official Fed RSS and FRED API. FRED is the preferred no-cost macro-series gateway when `FRED_API_KEY` is configured.
 - Direct BLS API is deferred. Use FRED-hosted BLS-origin CPI/PPI/labor series first; keep `BLS_API_KEY` optional/backlog.
@@ -210,6 +210,8 @@ Duplicate guard:
 
 - Keep optional env names for `FRED_API_KEY`, `BLS_API_KEY`, and `TCMB_EVDS_API_KEY`; keep empty values disabled.
 - FRED requires a free user API key and is enabled only when configured.
+- Metals.Dev requires a free user API key and is disabled when `METALS_DEV_API_KEY` is empty.
+- Gold-API real-time price endpoint requires no API key in the current MVP configuration.
 - Direct BLS stays disabled for MVP even though unregistered and registered no-cost access exist.
 - TCMB EVDS stays disabled/backlog until a free user key is configured and series choices are approved.
 - Never print, log, or commit key values.
@@ -220,6 +222,9 @@ Recommended env documentation for future `.env.example` updates:
 - `BLS_API_KEY` optional/backlog disabled.
 - `TCMB_EVDS_API_KEY` optional/backlog disabled.
 - `FED_RSS_ENABLED` default true.
+- `GLOBAL_XAG_SOURCE_PRIORITY` default `stooq,gold-api,metals-dev`.
+- `GOLD_API_XAG_USD_ENABLED` default true.
+- `METALS_DEV_API_KEY` optional disabled placeholder.
 - `TCMB_DAILY_XML_ENABLED` default true.
 - `TUIK_ENABLED` default false.
 
@@ -266,6 +271,10 @@ Initial series:
 - TCMB EVDS 3 announcement: https://www.tcmb.gov.tr/wps/wcm/connect/tr/tcmb%2Btr/main%2Bmenu/duyurular/basin/2026/duy2026-03
 - TÜİK data portal: https://data.tuik.gov.tr/
 - Federal Reserve RSS feeds: https://www.federalreserve.gov/feeds/
+- Gold-API docs: https://gold-api.com/docs
+- Gold-API pricing: https://gold-api.com/pricing
+- Metals.Dev docs: https://metals.dev/docs
+- Metals.Dev pricing: https://metals.dev/pricing
 
 ### Phase 3.1 Collector Outputs
 
@@ -273,6 +282,30 @@ Initial series:
 - `stooq_xag_usd` writes global XAG/USD using Stooq current CSV `Close` as a zero-spread diagnostic/mid price because bid/ask is not provided.
 - `tcmb_usd_try` writes daily USD/TRY using the midpoint of TCMB `ForexBuying` and `ForexSelling`.
 - All three collectors store raw payload hashes and parser versions.
+
+### Phase 3.5 Global XAG/USD Contract
+
+Provider interface:
+
+- name: `GlobalSilverPriceProvider`
+- normalized output: `source`, `symbol`, `price`, `currency`, `unit`, `observed_at`, `fetched_at`, optional `bid`, optional `ask`, `raw_payload_hash`, `parser_version`, and reliability metadata.
+- source priority: `GLOBAL_XAG_SOURCE_PRIORITY`.
+- freshness: `GLOBAL_XAG_FRESHNESS_MINUTES`; stale provider data fails and writes no price.
+
+Providers:
+
+- `stooq_xag_usd`: source `stooq-xagusd-csv`, parser `stooq-xagusd-csv-v1`, primary public CSV source, configurable timeout/retry/backoff.
+- `global_xag_usd`: resolver collector that records the selected provider in `collector_runs.details_json.selected_global_xag_source`.
+- `gold_api_xag_usd`: source `gold-api-xag-usd`, parser `gold-api-xag-usd-v1`, approved free no-auth JSON fallback.
+- `metals_dev_silver_spot`: source `metals-dev-silver-spot`, parser `metals-dev-silver-spot-v1`, optional free API-key fallback disabled without `METALS_DEV_API_KEY`.
+
+Failure behavior:
+
+- Provider failures use reason codes: `TIMEOUT`, `HTTP_ERROR`, `PARSE_ERROR`, `STALE_DATA`, `DISABLED`, or `NO_PROVIDER_AVAILABLE`.
+- Stooq timeout records a failed `stooq_xag_usd` run, then the resolver may continue to an approved fallback.
+- A provider failure must not insert `raw_global_prices` or `price_snapshots`.
+- The last successful global XAG row is fresh only while both `observed_at` and `fetched_at` remain within the freshness threshold.
+- Manual global XAG can be inserted through `POST /collectors/manual-price` with `source_type=global`, but it is visible as manual fallback and must be fresh to help unblock simulation.
 
 ### Phase 3.4 Bank Price Contract
 
@@ -341,9 +374,21 @@ Purpose: machine-readable Phase 4 readiness check without starting the risk engi
 Output:
 
 - `status`: `empty`, `warming_up`, `ready`, `degraded`, or `blocked`.
-- `phase4_allowed`: true only when collector health is healthy, quality is ok, and the validation window is complete.
-- `reasons`: compact reason codes such as `VALIDATION_WINDOW_INCOMPLETE`, `QUALITY_STATUS_NOT_OK`, or `EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH`.
+- `phase4_allowed`: true only when execution-critical sources are fresh enough and the validation window is complete.
+- `reasons`/`blocking_reasons`: compact reason codes such as `VALIDATION_WINDOW_INCOMPLETE`, `EXECUTION_CRITICAL_GLOBAL_XAG_NOT_FRESH`, or `EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH`.
+- `degraded_reasons`: non-blocking quality/context issues.
+- `execution_critical_status`: aggregate state for Kuveyt bank silver, global XAG/USD, and USD/TRY.
+- `context_status`: aggregate state for Fed RSS and FRED macro.
+- `source_reliability`: recent per-source success/failure/missing summary.
+- `stooq_xag_usd_timeout_count`: recent Stooq timeout count in the selected window.
+- `selected_global_xag_source`: latest fresh global XAG source when available.
 - window and expected-run fields matching `/collectors/quality`.
+
+Policy:
+
+- Missing/stale bank silver, global XAG/USD, or USD/TRY blocks Phase 4.
+- Fed RSS and FRED macro failures degrade readiness but do not block Phase 4 by themselves.
+- Stooq failure does not block Phase 4 when an approved fallback global XAG source is fresh.
 
 ### Phase 3.2 Fed RSS Output
 

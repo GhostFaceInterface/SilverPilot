@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.collectors.public_sources import (
     collect_fed_rss,
     collect_fred_macro,
+    collect_global_xag_usd,
     collect_kuveyt_public_silver,
     collect_stooq_xag_usd,
     collect_tcmb_usd_try,
@@ -52,6 +53,107 @@ def make_client():
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
     return TestClient(app), testing_session
+
+
+def seed_fresh_global_xag_and_usd_try(testing_session, *, now: datetime | None = None) -> None:
+    now = now or datetime.now(UTC)
+    db = testing_session()
+    try:
+        asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+        global_run = CollectorRun(
+            collector_name="global_xag_usd",
+            source="gold-api-xag-usd",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            duplicates=0,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        fx_run = CollectorRun(
+            collector_name="tcmb_usd_try",
+            source="tcmb-today-xml",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            duplicates=0,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        db.add_all([global_run, fx_run])
+        db.flush()
+        db.add(
+            RawGlobalPrice(
+                collector_run_id=global_run.id,
+                asset_id=asset.id,
+                source="gold-api-xag-usd",
+                buy_price=Decimal("78.00"),
+                sell_price=Decimal("78.00"),
+                currency="USD",
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test-global",
+                parser_version="gold-api-xag-usd-v1",
+                payload_json={},
+            )
+        )
+        db.add(
+            RawFxRate(
+                collector_run_id=fx_run.id,
+                source="tcmb-today-xml",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("38.75"),
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test-fx",
+                parser_version="tcmb-today-xml-v1",
+                payload_json={},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def seed_fresh_bank_price(testing_session, *, now: datetime | None = None) -> None:
+    now = now or datetime.now(UTC)
+    db = testing_session()
+    try:
+        asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+        run = CollectorRun(
+            collector_name="kuveyt_public_silver",
+            source="kuveyt-public-silver-page",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            duplicates=0,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        db.add(run)
+        db.flush()
+        db.add(
+            RawBankPrice(
+                collector_run_id=run.id,
+                asset_id=asset.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("130.00"),
+                sell_price=Decimal("126.00"),
+                currency="TRY",
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test-bank",
+                parser_version="kuveyt-public-finance-portal-v2",
+                payload_json={},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_manual_bank_price_ingest_writes_raw_and_normalized_rows():
@@ -147,22 +249,19 @@ def test_collector_health_reports_empty_without_runs():
     response = client.get("/collectors/health")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "empty",
-        "execution_critical": {
-            "bank_price": "missing",
-            "source": None,
-            "age_seconds": None,
-            "stale": True,
-            "manual_fallback": False,
-        },
-        "stale_after_minutes": 60,
-        "collectors": [],
-    }
+    body = response.json()
+    assert body["status"] == "empty"
+    assert body["execution_critical_status"] == "blocked"
+    assert body["context_status"] == "empty"
+    assert body["execution_critical"]["bank_price"] == "missing"
+    assert body["execution_critical"]["global_xag_usd"] == "missing"
+    assert body["execution_critical"]["usd_try"] == "missing"
+    assert body["collectors"] == []
 
 
 def test_collector_health_reports_manual_bank_price_as_degraded_fallback():
-    client, _ = make_client()
+    client, testing_session = make_client()
+    seed_fresh_global_xag_and_usd_try(testing_session)
     client.post(
         "/collectors/manual-price",
         json={
@@ -181,6 +280,7 @@ def test_collector_health_reports_manual_bank_price_as_degraded_fallback():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "degraded"
+    assert body["execution_critical_status"] == "degraded"
     assert body["execution_critical"]["bank_price"] == "manual_fallback"
     assert body["execution_critical"]["manual_fallback"] is True
     assert body["collectors"][0]["collector_name"] == "manual_bank_price"
@@ -190,6 +290,7 @@ def test_collector_health_reports_manual_bank_price_as_degraded_fallback():
 
 def test_collector_health_ignores_stale_manual_when_official_bank_price_is_fresh():
     client, testing_session = make_client()
+    seed_fresh_global_xag_and_usd_try(testing_session)
     client.post(
         "/collectors/manual-price",
         json={
@@ -230,6 +331,7 @@ def test_collector_health_ignores_stale_manual_when_official_bank_price_is_fresh
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "healthy"
+    assert body["execution_critical_status"] == "healthy"
     assert body["execution_critical"]["bank_price"] == "fresh"
     assert body["execution_critical"]["source"] == "kuveyt-public-silver-page"
 
@@ -401,12 +503,15 @@ def test_collector_validation_gate_reports_empty_without_runs():
     body = response.json()
     assert body["status"] == "empty"
     assert body["phase4_allowed"] is False
-    assert "COLLECTOR_HEALTH_NOT_HEALTHY" in body["reasons"]
+    assert "EXECUTION_CRITICAL_BANK_PRICE_NOT_FRESH" in body["blocking_reasons"]
+    assert "EXECUTION_CRITICAL_GLOBAL_XAG_NOT_FRESH" in body["blocking_reasons"]
+    assert "EXECUTION_CRITICAL_USD_TRY_NOT_FRESH" in body["blocking_reasons"]
 
 
 def test_collector_validation_gate_reports_warming_up_before_window_completes():
     client, testing_session = make_client()
     now = datetime.now(UTC)
+    seed_fresh_global_xag_and_usd_try(testing_session, now=now)
     db = testing_session()
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
     run = CollectorRun(
@@ -487,6 +592,9 @@ def test_runner_reports_failed_collector_job(monkeypatch):
 
 def test_stooq_xag_usd_collector_writes_global_price_and_snapshot():
     _, testing_session = make_client()
+    observed_at = datetime.now(UTC) - timedelta(minutes=1)
+    date_value = observed_at.strftime("%Y-%m-%d")
+    time_value = observed_at.strftime("%H:%M:%S")
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["user-agent"].startswith("SilverPilot/")
@@ -494,7 +602,7 @@ def test_stooq_xag_usd_collector_writes_global_price_and_snapshot():
             200,
             text=(
                 "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
-                "XAGUSD,2026-05-13,11:47:16,86.619,87.799,85.697,86.595,\n"
+                f"XAGUSD,{date_value},{time_value},86.619,87.799,85.697,86.595,\n"
             ),
         )
 
@@ -514,6 +622,174 @@ def test_stooq_xag_usd_collector_writes_global_price_and_snapshot():
     finally:
         client.close()
         db.close()
+
+
+def test_stooq_timeout_does_not_write_fake_global_price():
+    _, testing_session = make_client()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        run, raw_inserted, snapshot = collect_stooq_xag_usd(
+            db,
+            settings=Settings(stooq_xag_usd_retries=0, stooq_xag_usd_backoff_seconds=0),
+            client=client,
+        )
+
+        assert run.status == "failed"
+        assert raw_inserted is False
+        assert snapshot is None
+        assert run.details_json["failure_reason_code"] == "TIMEOUT"
+        assert db.query(RawGlobalPrice).count() == 0
+        assert db.query(PriceSnapshot).count() == 0
+    finally:
+        client.close()
+        db.close()
+
+
+def test_global_xag_fallback_uses_gold_api_when_stooq_times_out():
+    _, testing_session = make_client()
+    observed_at = datetime.now(UTC) - timedelta(minutes=1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "stooq.com" in str(request.url):
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "currency": "USD",
+                "name": "Silver",
+                "price": 78.386002,
+                "symbol": "XAG",
+                "updatedAt": observed_at.isoformat().replace("+00:00", "Z"),
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        run, raw_inserted, snapshot = collect_global_xag_usd(
+            db,
+            settings=Settings(
+                global_xag_source_priority="stooq,gold-api",
+                stooq_xag_usd_retries=0,
+                stooq_xag_usd_backoff_seconds=0,
+            ),
+            client=client,
+        )
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert run.details_json["selected_global_xag_source"] == "gold-api-xag-usd"
+        assert db.query(RawGlobalPrice).one().source == "gold-api-xag-usd"
+        failed_stooq = db.execute(select(CollectorRun).where(CollectorRun.collector_name == "stooq_xag_usd")).scalar_one()
+        assert failed_stooq.status == "failed"
+        assert failed_stooq.details_json["failure_reason_code"] == "TIMEOUT"
+    finally:
+        client.close()
+        db.close()
+
+
+def test_validation_gate_blocks_when_global_xag_is_missing():
+    client, testing_session = make_client()
+    seed_fresh_bank_price(testing_session)
+    db = testing_session()
+    try:
+        now = datetime.now(UTC)
+        run = CollectorRun(
+            collector_name="tcmb_usd_try",
+            source="tcmb-today-xml",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            duplicates=0,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        db.add(run)
+        db.flush()
+        db.add(
+            RawFxRate(
+                collector_run_id=run.id,
+                source="tcmb-today-xml",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("38.75"),
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test-fx",
+                parser_version="tcmb-today-xml-v1",
+                payload_json={},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/validation-gate?window_hours=1&expected_interval_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["phase4_allowed"] is False
+    assert body["status"] == "blocked"
+    assert "EXECUTION_CRITICAL_GLOBAL_XAG_NOT_FRESH" in body["blocking_reasons"]
+
+
+def test_context_failure_does_not_block_phase4_when_critical_sources_are_ready():
+    client, testing_session = make_client()
+    now = datetime.now(UTC)
+    seed_fresh_bank_price(testing_session, now=now)
+    seed_fresh_global_xag_and_usd_try(testing_session, now=now)
+    db = testing_session()
+    try:
+        for collector_name, source in (
+            ("kuveyt_public_silver", "kuveyt-public-silver-page"),
+            ("global_xag_usd", "gold-api-xag-usd"),
+            ("tcmb_usd_try", "tcmb-today-xml"),
+        ):
+            db.add(
+                CollectorRun(
+                    collector_name=collector_name,
+                    source=source,
+                    status="success",
+                    records_seen=1,
+                    records_inserted=1,
+                    duplicates=0,
+                    started_at=now - timedelta(minutes=61),
+                    finished_at=now - timedelta(minutes=61),
+                    details_json={},
+                )
+            )
+        db.add(
+            CollectorRun(
+                collector_name="fed_rss",
+                source="federal-reserve-rss",
+                status="failed",
+                records_seen=0,
+                records_inserted=0,
+                duplicates=0,
+                started_at=now - timedelta(minutes=10),
+                finished_at=now - timedelta(minutes=10),
+                error_message="transient context failure",
+                details_json={},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/validation-gate?window_hours=1&expected_interval_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["phase4_allowed"] is True
+    assert body["status"] == "ready"
+    assert "CONTEXT_COLLECTOR_FAILURES_PRESENT" in body["degraded_reasons"]
 
 
 def test_tcmb_usd_try_collector_writes_fx_rate():

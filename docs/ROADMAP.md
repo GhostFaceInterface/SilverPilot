@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 3.4: execution-critical bank silver pricing is resolved for the current MVP path. Kuveyt Türk official public page parsing uses public browser-loaded finance portal data and has passed VPS smoke validation. Manual bank-price fallback remains a simulation unblocker, not a production-grade source. Sustained VPS collector operation is running through multi-job runner support; next is data-quality review after enough runtime accumulates.
+SilverPilot is in Phase 3.5: global XAG/USD source hardening. The 24-hour validation-window bug is fixed, and the remaining blocker is global XAG/USD source reliability after Stooq timed out from the VPS. Stooq is no longer the only global source path; the collector now has a configurable primary/fallback resolver while Phase 4 remains blocked until execution-critical collector health is verified again.
 
 ## Non-Negotiable Rules
 
@@ -170,7 +170,7 @@ MVP free-source order:
 
 1. Kuveyt Türk public silver page POC.
 2. TCMB daily USD/TRY XML.
-3. Stooq XAG/USD current CSV.
+3. Global XAG/USD resolver: Stooq current CSV primary, Gold-API free no-auth JSON approved fallback, optional Metals.Dev free API-key fallback when configured.
 4. Collector health and raw payload audit.
 5. Fed official RSS feeds.
 6. FRED macro series when `FRED_API_KEY` is configured.
@@ -228,6 +228,29 @@ Validation gate:
 - VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
 - One-shot collector smoke commands must fail the process when a collector records failed status.
 
+### Phase 3.5: Global XAG/USD Source Hardening
+
+Goal: remove single-source dependence on Stooq before Phase 4.
+
+Provider policy:
+
+- `GlobalSilverPriceProvider` normalizes source, symbol, price, currency, unit, observed/fetched timestamps, optional bid/ask, raw payload hash, parser version, and reliability metadata.
+- `GLOBAL_XAG_SOURCE_PRIORITY` controls provider order.
+- `stooq_xag_usd` remains the public CSV primary but has configurable timeout, retry, and backoff.
+- `gold-api-xag-usd` is an approved free no-auth JSON fallback.
+- `metals-dev-silver-spot` is optional and disabled unless `METALS_DEV_API_KEY` is configured for a no-cost tier.
+- Failed providers record failed collector runs with reason codes such as `TIMEOUT`, `HTTP_ERROR`, `PARSE_ERROR`, and `STALE_DATA`.
+- Failed or stale providers must not write fake prices or reuse the last successful value as fresh.
+
+Gate policy:
+
+- Execution-critical sources are Kuveyt bank silver buy/sell, global XAG/USD, and USD/TRY.
+- Context sources are Fed RSS and FRED macro series.
+- Missing/stale execution-critical data blocks Phase 4.
+- Context failures degrade readiness output but do not block Phase 4 by themselves.
+- Stooq failure does not block Phase 4 when an approved global XAG fallback is fresh.
+- Manual global XAG fallback is allowed only as a visible simulation unblocker and must be fresh.
+
 ### Phase 3.4: Bank Silver Price Resolution
 
 Goal: resolve execution-critical bank silver buy/sell data before the risk engine.
@@ -258,7 +281,7 @@ Phase 4 gate:
 
 - Official Kuveyt collector has passed VPS smoke validation.
 - Multi-job collector runner exists for sustained validation.
-- CI/VPS smoke must cover Kuveyt, Stooq, TCMB, Fed RSS, FRED macro, collector health, collector quality, and validation-gate endpoints.
+- CI/VPS smoke must cover Kuveyt, global XAG resolver, TCMB, Fed RSS, FRED macro, collector health, collector quality, and validation-gate endpoints.
 - Do not start Phase 4 until sustained collector validation confirms freshness, duplicate behavior, and missing-data ratio are acceptable.
 
 ## Phase 4: Risk Policy and Rule Engine

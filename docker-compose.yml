@@ -12,7 +12,18 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://silverpilot:change_me@postgres:5432/silverpilot}
       COLLECTOR_USER_AGENT: ${COLLECTOR_USER_AGENT:-SilverPilot/0.1 public-source paper-trading collector}
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}
+      GLOBAL_XAG_SOURCE_PRIORITY: ${GLOBAL_XAG_SOURCE_PRIORITY:-stooq,gold-api,metals-dev}
+      GLOBAL_XAG_FRESHNESS_MINUTES: ${GLOBAL_XAG_FRESHNESS_MINUTES:-90}
       STOOQ_XAG_USD_URL: ${STOOQ_XAG_USD_URL:-https://stooq.com/q/l/?s=xagusd&f=sd2t2ohlcv&h&e=csv}
+      STOOQ_XAG_USD_TIMEOUT_SECONDS: ${STOOQ_XAG_USD_TIMEOUT_SECONDS:-10}
+      STOOQ_XAG_USD_RETRIES: ${STOOQ_XAG_USD_RETRIES:-2}
+      STOOQ_XAG_USD_BACKOFF_SECONDS: ${STOOQ_XAG_USD_BACKOFF_SECONDS:-1}
+      GOLD_API_XAG_USD_ENABLED: ${GOLD_API_XAG_USD_ENABLED:-true}
+      GOLD_API_XAG_USD_URL: ${GOLD_API_XAG_USD_URL:-https://api.gold-api.com/price/XAG}
+      GOLD_API_XAG_USD_TIMEOUT_SECONDS: ${GOLD_API_XAG_USD_TIMEOUT_SECONDS:-10}
+      METALS_DEV_API_KEY: ${METALS_DEV_API_KEY:-}
+      METALS_DEV_SPOT_URL: ${METALS_DEV_SPOT_URL:-https://api.metals.dev/v1/metal/spot}
+      METALS_DEV_TIMEOUT_SECONDS: ${METALS_DEV_TIMEOUT_SECONDS:-10}
       TCMB_TODAY_XML_URL: ${TCMB_TODAY_XML_URL:-https://www.tcmb.gov.tr/kurlar/today.xml}
       FED_RSS_ENABLED: ${FED_RSS_ENABLED:-true}
       FED_RSS_URL: ${FED_RSS_URL:-https://www.federalreserve.gov/feeds/press_monetary.xml}
@@ -42,10 +53,21 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://silverpilot:change_me@postgres:5432/silverpilot}
       COLLECTOR_INTERVAL_SECONDS: ${COLLECTOR_INTERVAL_SECONDS:-900}
       COLLECTOR_JOB: ${COLLECTOR_JOB:-kuveyt-silver}
-      COLLECTOR_JOBS: ${COLLECTOR_JOBS:-kuveyt-silver,stooq-xag-usd,tcmb-usd-try,fed-rss,fred-macro}
+      COLLECTOR_JOBS: ${COLLECTOR_JOBS:-kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss,fred-macro}
       COLLECTOR_USER_AGENT: ${COLLECTOR_USER_AGENT:-SilverPilot/0.1 public-source paper-trading collector}
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}
+      GLOBAL_XAG_SOURCE_PRIORITY: ${GLOBAL_XAG_SOURCE_PRIORITY:-stooq,gold-api,metals-dev}
+      GLOBAL_XAG_FRESHNESS_MINUTES: ${GLOBAL_XAG_FRESHNESS_MINUTES:-90}
       STOOQ_XAG_USD_URL: ${STOOQ_XAG_USD_URL:-https://stooq.com/q/l/?s=xagusd&f=sd2t2ohlcv&h&e=csv}
+      STOOQ_XAG_USD_TIMEOUT_SECONDS: ${STOOQ_XAG_USD_TIMEOUT_SECONDS:-10}
+      STOOQ_XAG_USD_RETRIES: ${STOOQ_XAG_USD_RETRIES:-2}
+      STOOQ_XAG_USD_BACKOFF_SECONDS: ${STOOQ_XAG_USD_BACKOFF_SECONDS:-1}
+      GOLD_API_XAG_USD_ENABLED: ${GOLD_API_XAG_USD_ENABLED:-true}
+      GOLD_API_XAG_USD_URL: ${GOLD_API_XAG_USD_URL:-https://api.gold-api.com/price/XAG}
+      GOLD_API_XAG_USD_TIMEOUT_SECONDS: ${GOLD_API_XAG_USD_TIMEOUT_SECONDS:-10}
+      METALS_DEV_API_KEY: ${METALS_DEV_API_KEY:-}
+      METALS_DEV_SPOT_URL: ${METALS_DEV_SPOT_URL:-https://api.metals.dev/v1/metal/spot}
+      METALS_DEV_TIMEOUT_SECONDS: ${METALS_DEV_TIMEOUT_SECONDS:-10}
       TCMB_TODAY_XML_URL: ${TCMB_TODAY_XML_URL:-https://www.tcmb.gov.tr/kurlar/today.xml}
       FED_RSS_ENABLED: ${FED_RSS_ENABLED:-true}
       FED_RSS_URL: ${FED_RSS_URL:-https://www.federalreserve.gov/feeds/press_monetary.xml}

@@ -83,10 +83,22 @@ class ExecutionCriticalHealth(BaseModel):
     age_seconds: int | None
     stale: bool
     manual_fallback: bool
+    global_xag_usd: Literal["missing", "fresh", "manual_fallback", "stale"]
+    global_xag_source: str | None
+    selected_global_xag_source: str | None
+    global_xag_age_seconds: int | None
+    global_xag_stale: bool
+    global_xag_manual_fallback: bool
+    usd_try: Literal["missing", "fresh", "stale"]
+    usd_try_source: str | None
+    usd_try_age_seconds: int | None
+    usd_try_stale: bool
 
 
 class CollectorHealthResponse(BaseModel):
     status: Literal["empty", "healthy", "degraded", "blocked", "stale"]
+    execution_critical_status: Literal["healthy", "degraded", "blocked", "stale"]
+    context_status: Literal["empty", "healthy", "degraded"]
     execution_critical: ExecutionCriticalHealth
     stale_after_minutes: int
     collectors: list[CollectorHealthItem]
@@ -125,8 +137,15 @@ class CollectorValidationGateResponse(BaseModel):
     status: Literal["empty", "warming_up", "ready", "degraded", "blocked"]
     phase4_allowed: bool
     reasons: list[str]
+    blocking_reasons: list[str]
+    degraded_reasons: list[str]
     health_status: Literal["empty", "healthy", "degraded", "blocked", "stale"]
     quality_status: Literal["empty", "ok", "degraded"]
+    execution_critical_status: Literal["healthy", "degraded", "blocked", "stale"]
+    context_status: Literal["empty", "healthy", "degraded"]
+    source_reliability: list[dict]
+    stooq_xag_usd_timeout_count: int
+    selected_global_xag_source: str | None
     window_hours: int
     elapsed_minutes: int
     validation_window_complete: bool
