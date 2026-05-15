@@ -128,6 +128,7 @@ Allowed actions:
 
 - `id`
 - `agent_name`
+- `orchestrator` such as `openclaw`
 - `model`
 - `status`
 - `trace_id`
@@ -136,6 +137,8 @@ Allowed actions:
 - `cost_estimate`
 - `started_at`
 - `finished_at`
+
+OpenClaw-backed agent runs must be logged, traceable, and auditable. They may store structured outputs and sanitized context references, but must not store production secrets, SSH details, bank credentials, raw payload dumps, or direct production database credentials.
 
 ## Collector Tables
 
@@ -424,12 +427,14 @@ Response:
 - `thresholds`: current deterministic risk thresholds from configuration.
 - `current_metrics`: runtime source-aware 24-hour/7-day global XAG/USD volatility, source/sample metadata, FOMO rise, and realized paper loss metrics.
 - `would_block_now`: market/history-based block diagnostics such as `VOLATILITY_TOO_HIGH`, `FOMO_RISK`, `DAILY_LOSS_LIMIT_REACHED`, or `WEEKLY_LOSS_LIMIT_REACHED`; source-aware global XAG blocks include the source and sample count used for the metric.
+- `threshold_headroom`: read-only per-threshold tuning diagnostics with metric name, reason code, risk level, metric, threshold, remaining distance to block, used percent, status, and optional source/window/sample metadata.
 - `recent_decisions`: 24-hour grouped risk decision counts by `decision` and `reason_code`.
 - `global_xag_diagnostics`: 24-hour and 7-day global XAG sample counts, latest source/price, combined min/max/range, and per-source sample/range summaries used to explain volatility tuning.
 
 Policy:
 
 - This endpoint is observational only; it does not create trades or override risk policy.
+- `threshold_headroom` is diagnostic only; it must not relax or tighten the configured risk thresholds by itself.
 - Request-specific checks such as spread, expected exit, cash, and position remain enforced by `POST /paper-trades`.
 - Global XAG diagnostics are tuning metadata only; they do not select sources or override the collector validation gate.
 - Source-aware risk metrics prevent fallback/source-mix price differences from creating synthetic volatility or FOMO blocks.
@@ -523,3 +528,7 @@ Validation rules:
 - Raw rows are not deleted during normal operation.
 - Public pages must have a configured minimum polling interval.
 - Parallel or aggressive requests to the same public page are forbidden.
+- OpenClaw agents read memory through approved backend memory query services.
+- OpenClaw agents write memory only through approved backend memory write services.
+- OpenClaw memory records must be compact, structured, and auditable.
+- OpenClaw must not write arbitrary raw memory, full traces, raw news dumps, secrets, SSH details, API keys, or bank details.

@@ -12,6 +12,8 @@ No bank automation.
 No live buy/sell path.
 ```
 
+OpenClaw is mandatory from the agent phase onward, but it is not part of the deterministic trading core. The backend remains authoritative for collectors, risk policy, paper trading, accounting, and persistence. Backend APIs and approved backend services are the boundary between OpenClaw and the core system.
+
 ## Memory Model
 
 Use one canonical memory bank plus short agent-specific spec files.
@@ -59,15 +61,37 @@ Langfuse is the home for LLM traces, cost, latency, and prompt observability. Ma
 
 ## Runtime Layers
 
-```text
-API layer
--> services
--> repositories / database
--> collectors
--> risk policy
--> paper trading
--> reports
-```
+1. Deterministic Core
+
+- FastAPI.
+- PostgreSQL.
+- collectors.
+- risk engine.
+- paper trading.
+
+2. Visibility Layer
+
+- dashboard.
+- health/status endpoints.
+
+3. LLM/Observability Layer
+
+- OpenRouter.
+- Langfuse.
+- structured outputs.
+- budget guard.
+
+4. Runtime Memory Layer
+
+- PostgreSQL memory tables.
+- memory query service.
+
+5. OpenClaw Agent Orchestration Layer
+
+- OpenClaw Gateway/workspace.
+- project-local SilverPilot skills.
+- agent task routing.
+- research/report/critique/audit workflows.
 
 Later layers:
 
@@ -75,6 +99,7 @@ Later layers:
 LLM gateway
 -> structured agent outputs
 -> Langfuse traces
+-> OpenClaw orchestration
 -> ML dataset automation
 -> backtests
 -> model registry
@@ -89,7 +114,7 @@ raw data
 -> rule engine
 -> risk engine
 -> paper trade decision
--> agent explanation
+-> OpenClaw agent explanation/critique/report
 ```
 
 The paper-trading engine must not run without a risk decision now that Phase 4 has started. `POST /paper-trades` evaluates deterministic risk before mutating the paper portfolio. Allowed actions update virtual balances, while policy-blocked buy/sell attempts create a `blocked` paper-trade audit row with `risk_decision_id` and do not mutate cash or position. Hold and user-blocked records also receive explicit risk decisions.
@@ -141,7 +166,7 @@ Collector quality review uses `/collectors/quality` to summarize recent run coun
 
 Phase 4 uses a deterministic backend risk service before paper-trade persistence. It checks the current execution-critical collector state, request spread, paper cash, paper position, realized loss limits, source-aware global XAG/USD volatility, source-aware rapid-rise FOMO risk, and optional expected exit price. Missing/stale Kuveyt bank silver, global XAG/USD, or USD/TRY blocks buy/sell decisions; context collectors do not block by themselves. Configurable thresholds include `RISK_DATA_STALE_AFTER_MINUTES`, `RISK_MAX_SPREAD_PERCENT`, `RISK_MAX_24H_VOLATILITY_PERCENT`, `RISK_MAX_7D_VOLATILITY_PERCENT`, `RISK_FOMO_LOOKBACK_MINUTES`, `RISK_FOMO_RISE_PERCENT`, `RISK_MAX_DAILY_LOSS_USD`, `RISK_MAX_WEEKLY_LOSS_USD`, and `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`.
 
-`GET /risk/status` exposes the current threshold configuration, runtime metrics used for tuning, deterministic `would_block_now` diagnostics, recent 24-hour risk decision counts, and global XAG source/sample/range diagnostics for the 24-hour and 7-day windows. This endpoint is read-only and does not create trades, override policy, or relax execution-critical data requirements. Cross-source range is diagnostic only; block metrics are computed per source and use the highest source-specific range/rise.
+`GET /risk/status` exposes the current threshold configuration, runtime metrics used for tuning, per-threshold headroom diagnostics, deterministic `would_block_now` diagnostics, recent 24-hour risk decision counts, and global XAG source/sample/range diagnostics for the 24-hour and 7-day windows. This endpoint is read-only and does not create trades, override policy, or relax execution-critical data requirements. Cross-source range is diagnostic only; block metrics are computed per source and use the highest source-specific range/rise.
 
 ## LLM Pattern
 
@@ -152,6 +177,12 @@ Phase 4 uses a deterministic backend risk service before paper-trade persistence
 - Free-form LLM output must not drive system decisions.
 - Budget guards must block calls after configured limits.
 - Core backend behavior must work when LLM providers are down.
+- OpenClaw is the mandatory agent orchestration layer after the LLM gateway and safety boundaries exist.
+- OpenClaw must use least-privilege tool access.
+- OpenClaw must use project-local SilverPilot skills first.
+- Third-party OpenClaw/ClawHub skills require explicit review before use.
+- OpenClaw can consume sanitized backend summaries and approved API/service outputs, not production secrets or raw privileged access.
+- OpenClaw cannot directly mutate production database state; write operations must go through approved backend APIs or services when such workflows are explicitly implemented.
 
 Initial budget guard targets:
 
@@ -167,11 +198,14 @@ Phase 6.5 adds a lightweight PostgreSQL runtime memory layer before external gra
 - `memory-bank/*.md`: development memory for coding agents.
 - PostgreSQL raw tables: runtime market/source data and raw payload hashes.
 - PostgreSQL runtime memory tables: compressed operational memory for agents.
+- backend memory query service: approved context source for OpenClaw agents.
 - Langfuse: LLM trace, cost, latency, and prompt observability.
 - Optional future `pgvector`: semantic retrieval inside PostgreSQL only if compact structured queries are not enough.
 - Graph memory frameworks: not part of MVP.
 
 Zep/Graphiti are excluded for now because cloud cost and self-host operations are not justified on the current 4 vCPU / 6 GB VPS. Mem0 OSS, Cognee, LightRAG, and Letta remain research-only.
+
+OpenClaw agents may read runtime memory only through approved backend memory query services and may write memory only through approved backend memory write services. They must not write arbitrary raw memory, raw payloads, full news dumps, full traces, secrets, SSH details, API keys, or bank details.
 
 ## Deployment Shape
 

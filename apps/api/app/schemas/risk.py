@@ -41,6 +41,21 @@ class RiskWouldBlockPayload(BaseModel):
     sample_count: int | None = None
 
 
+class RiskThresholdHeadroomPayload(BaseModel):
+    metric_name: str
+    reason_code: str
+    risk_level: str
+    metric: str | None
+    threshold: str
+    remaining_to_block: str | None
+    used_percent: str | None
+    status: str
+    window_hours: int | None = None
+    lookback_minutes: int | None = None
+    source: str | None = None
+    sample_count: int | None = None
+
+
 class RecentRiskDecisionCountPayload(BaseModel):
     decision: str
     reason_code: str
@@ -76,5 +91,6 @@ class RiskPolicyStatusResponse(BaseModel):
     thresholds: RiskThresholdsPayload
     current_metrics: RiskCurrentMetricsPayload
     would_block_now: list[RiskWouldBlockPayload]
+    threshold_headroom: list[RiskThresholdHeadroomPayload]
     recent_decisions: list[RecentRiskDecisionCountPayload]
     global_xag_diagnostics: list[GlobalXagWindowDiagnosticsPayload]

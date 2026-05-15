@@ -9,6 +9,8 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 - Paper trades must go through the risk engine once implemented.
 - Missing required data blocks automated paper-trade decisions.
 - LLM output cannot override a deterministic block.
+- OpenClaw output cannot override a deterministic block.
+- OpenClaw cannot own risk decisions, execute real-money operations, perform bank automation, or bypass backend risk policy.
 
 ## Initial Risk Inputs
 
@@ -80,7 +82,7 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 - Global XAG volatility and FOMO metrics are evaluated per source, then the highest source-specific risk metric is used; cross-source price jumps are shown in diagnostics but do not create synthetic blocks by themselves.
 - Buy/sell requests are blocked when realized paper loss reaches `RISK_MAX_DAILY_LOSS_USD`, default `30.0`, or `RISK_MAX_WEEKLY_LOSS_USD`, default `60.0`.
 - Paper-buy requests with `expected_exit_price` are blocked with `EXPECTED_GAIN_BELOW_COST` when expected net gain does not exceed `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`, default `0.0`.
-- `GET /risk/status` reports the configured thresholds, current runtime metrics, market/history-based `would_block_now` diagnostics, recent risk decision counts, and global XAG source/sample diagnostics for threshold tuning.
+- `GET /risk/status` reports the configured thresholds, current runtime metrics, per-threshold headroom diagnostics, market/history-based `would_block_now` diagnostics, recent risk decision counts, and global XAG source/sample diagnostics for threshold tuning.
 
 ## Impact Classification
 
@@ -93,6 +95,7 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 
 - The deterministic risk policy remains the decision owner.
 - Runtime memory provides historical context only; it cannot override the risk engine.
+- OpenClaw agents may use runtime memory only as context through approved backend memory services; memory context cannot override the risk engine.
 - Memory records can inform source trust score, stale source warnings, repeated collector failure detection, repeated agent overconfidence warnings, and postmortem-informed warnings.
 - Risk decisions may write compact memory events, but raw price/news payloads and full LLM traces must stay out of memory tables.
 - If memory lookup returns no relevant records, risk evaluation must still work.
@@ -122,4 +125,4 @@ Allowed decisions:
 - Every paper trade references a risk decision.
 - Stale or missing data blocks action.
 - Tests cover spread, stale data, missing data, insufficient cash, volatility, realized-loss limits, FOMO, expected-gain checks, and risk-decision references.
-- Tests cover the read-only risk status endpoint and its threshold, metric, blocking diagnostic, and recent decision count output.
+- Tests cover the read-only risk status endpoint and its threshold, metric, threshold headroom, blocking diagnostic, and recent decision count output.

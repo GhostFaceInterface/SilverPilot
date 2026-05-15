@@ -531,6 +531,11 @@ def test_risk_status_reports_thresholds_and_current_metrics():
     assert payload["thresholds"]["max_24h_volatility_percent"] == "12.0"
     assert payload["current_metrics"]["daily_realized_loss_usd"] == "0.000000"
     assert payload["current_metrics"]["global_xag_volatility_24h_percent"] is not None
+    headroom = {item["metric_name"]: item for item in payload["threshold_headroom"]}
+    assert headroom["daily_realized_loss_usd"]["status"] == "ok"
+    assert headroom["daily_realized_loss_usd"]["remaining_to_block"] == "30.000000"
+    assert headroom["global_xag_volatility_24h_percent"]["source"] == "gold-api-xag-usd"
+    assert headroom["fomo_rise_percent"]["status"] == "ok"
     assert payload["global_xag_diagnostics"][0]["window_hours"] == 24
     assert payload["global_xag_diagnostics"][0]["sample_count"] == 3
     assert payload["global_xag_diagnostics"][0]["latest_source"] == "gold-api-xag-usd"
@@ -633,9 +638,13 @@ def test_risk_status_reports_runtime_blocking_thresholds():
     response = client.get("/risk/status")
 
     assert response.status_code == 200
-    reason_codes = {item["reason_code"] for item in response.json()["would_block_now"]}
+    payload = response.json()
+    reason_codes = {item["reason_code"] for item in payload["would_block_now"]}
     assert "DAILY_LOSS_LIMIT_REACHED" in reason_codes
     assert "VOLATILITY_TOO_HIGH" in reason_codes
+    headroom = {item["metric_name"]: item for item in payload["threshold_headroom"]}
+    assert headroom["daily_realized_loss_usd"]["status"] == "blocked"
+    assert headroom["global_xag_volatility_24h_percent"]["status"] == "blocked"
 
 
 def test_risk_status_returns_recent_decision_counts():

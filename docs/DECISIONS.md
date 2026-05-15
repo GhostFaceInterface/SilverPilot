@@ -143,3 +143,26 @@ Phase 4 starts by making paper trading depend on the backend risk engine. Every 
 Status: accepted.
 
 Phase 4 global XAG/USD volatility and FOMO checks compute risk metrics per source and use the highest source-specific metric for blocking. Combined cross-source min/max/range remains visible in `/risk/status` diagnostics, but source switching between Stooq, Gold-API, and optional Metals.Dev must not create synthetic volatility or FOMO blocks by itself.
+
+## D-023: Make OpenClaw Mandatory For The Agent Orchestration Layer
+
+Status: accepted.
+
+SilverPilot will use OpenClaw as the mandatory agent orchestration layer once the deterministic core, dashboard, LLM gateway, and runtime memory boundaries are ready.
+
+Rationale:
+
+The original project vision included OpenClaw as the multi-agent finance assistant layer. The current backend-first architecture remains correct, but OpenClaw must be explicitly integrated into the roadmap instead of treated as optional.
+
+Consequences:
+
+- Backend remains deterministic and authoritative.
+- OpenClaw becomes the required runtime for higher-level agents.
+- OpenClaw is introduced only after safe boundaries exist.
+- Project-local skills are preferred over third-party skills.
+- OpenClaw receives sanitized context from backend APIs and memory services.
+- OpenClaw cannot execute trades, access bank systems, or bypass risk rules.
+
+Supersedes:
+
+- Any previous decision or planning note that marked OpenClaw as optional, implicit, or backlog-only.

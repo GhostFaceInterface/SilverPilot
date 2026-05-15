@@ -365,3 +365,19 @@ Phase 4 source-aware global XAG risk metrics deployed and smoked on VPS.
 - VPS `/risk/status` returned source-aware global XAG metrics with `would_block_now: []`.
 - Runtime 24-hour global XAG volatility was `11.348011` from `stooq-xagusd-csv` with 52 source-specific samples, below the `12.0` threshold.
 - Runtime diagnostics still show non-blocking degraded collector history from Stooq/context failures and missing runs.
+
+OpenClaw roadmap role corrected.
+
+- OpenClaw role was corrected from optional/backlog to mandatory agent orchestration layer.
+- Deterministic backend remains authoritative for collectors, risk policy, paper trading, and accounting.
+- OpenClaw will be introduced after safe foundations: dashboard, LLM gateway, and runtime memory boundaries.
+- Immediate next work remains Phase 4 threshold tuning and then Phase 5 dashboard.
+- No code implementation was performed.
+
+Phase 4 risk threshold headroom diagnostics implemented locally.
+
+- Added read-only `threshold_headroom` to `/risk/status` for daily loss, weekly loss, 24-hour volatility, 7-day volatility, and FOMO thresholds.
+- Headroom reports remaining distance to block, used percent, status, and source/window/sample metadata where relevant.
+- Risk thresholds and deterministic allow/block behavior were not changed.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests -q`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
+- No real-money execution, bank automation, LLM decisioning, dashboard, or OpenClaw implementation was added.

@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Real-money trading, bank automation, LLM decisions, dashboard work, and ML remain out of scope.
+SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Immediate next work remains Phase 4 threshold tuning and then Phase 5 dashboard. OpenClaw is mandatory for the future agent orchestration layer, but implementation starts later in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, dashboard work, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -13,6 +13,11 @@ SilverPilot is in Phase 4: risk policy and rule engine. Phase 3.5 is verified: t
 - No automatic live buy/sell execution.
 - Backend policy owns paper-trading decisions.
 - LLM agents explain, classify, critique, or report; they do not execute trades.
+- OpenClaw is mandatory for the agent orchestration layer.
+- OpenClaw never owns deterministic trading, risk, or accounting decisions.
+- OpenClaw agents may only operate on sanitized backend summaries, approved APIs, and project-local skills.
+- OpenClaw cannot access production secrets, bank credentials, SSH private keys, or real-money systems.
+- Random third-party OpenClaw/ClawHub skills are forbidden unless explicitly reviewed and approved.
 - ML starts only after reliable data, risk policy, paper trading, and backtesting exist.
 - Each durable fact has one canonical documentation home.
 
@@ -301,7 +306,7 @@ Current Phase 4 implementation:
 - Insufficient paper cash blocks with `INSUFFICIENT_CASH` and records a blocked paper-trade audit row.
 - Insufficient paper position blocks with `POSITION_LIMIT_REACHED`.
 - `POST /paper-trades` response includes the deterministic risk decision.
-- `GET /risk/status` exposes threshold configuration, runtime metrics, `would_block_now` diagnostics, recent risk decision counts, and global XAG source/sample/range diagnostics for threshold tuning.
+- `GET /risk/status` exposes threshold configuration, runtime metrics, threshold headroom diagnostics, `would_block_now` diagnostics, recent risk decision counts, and global XAG source/sample/range diagnostics for threshold tuning.
 
 Initial rules:
 
@@ -332,7 +337,7 @@ Validation gate:
 
 Pending Phase 4.x:
 
-- Review `/risk/status` global XAG diagnostics against runtime collector and paper-trade history, then tune thresholds if production data shows source-aware metrics are too loose or too strict.
+- Review `/risk/status` threshold headroom and global XAG diagnostics against runtime collector and paper-trade history, then tune thresholds if production data shows source-aware metrics are too loose or too strict.
 - Add richer strategy target inputs if expected-return checks need more than `expected_exit_price`.
 
 ## Phase 5: Dashboard
@@ -366,9 +371,9 @@ Validation gate:
 - Portfolio values match trade records.
 - No admin-only secrets are exposed.
 
-## Phase 6: LLM Gateway and Observability
+## Phase 6: LLM Gateway, Observability, and OpenClaw Foundation
 
-Goal: add controlled LLM access without uncontrolled cost or unstructured output.
+Goal: add controlled LLM access without uncontrolled cost or unstructured output, and prepare OpenClaw as the mandatory future agent orchestration layer without giving it access to deterministic core authority.
 
 Components:
 
@@ -379,6 +384,27 @@ Components:
 - Prompt registry.
 - Structured output parser.
 - Retry and timeout policy.
+- OpenClaw Gateway/workspace configuration.
+- Project-local SilverPilot skill root.
+- OpenClaw tool allowlist/denylist policy.
+- OpenClaw sandbox policy.
+- OpenClaw model/provider routing policy.
+- OpenClaw trace/log integration plan with Langfuse or backend audit tables.
+- OpenClaw secrets boundary.
+- OpenClaw agent invocation policy.
+
+Deliverables:
+
+- OpenClaw installation decision and runtime target.
+- OpenClaw workspace layout.
+- OpenClaw gateway/config documentation.
+- Project-local SilverPilot skill root.
+- OpenClaw tool allowlist/denylist policy.
+- OpenClaw sandbox policy.
+- OpenClaw model/provider routing policy.
+- OpenClaw trace/log integration plan with Langfuse or backend audit tables.
+- OpenClaw secrets boundary.
+- OpenClaw agent invocation policy.
 
 Rules:
 
@@ -389,6 +415,9 @@ Rules:
 - Every agent has a daily budget limit.
 - Agent output must validate against a schema.
 - Core backend behavior must work if LLM providers are unavailable.
+- OpenClaw cannot read production secrets, bank credentials, SSH private keys, or real-money systems.
+- OpenClaw must use approved tools, sanitized backend summaries, and project-local SilverPilot skills.
+- OpenClaw cannot directly mutate the production database.
 
 Initial budget targets:
 
@@ -403,6 +432,14 @@ Validation gate:
 - Invalid structured output is rejected or retried.
 - Budget limits can block calls.
 - LLM outage test passes for core backend workflows.
+- OpenClaw can run a safe no-op project task.
+- OpenClaw can call/read only approved project surfaces.
+- OpenClaw cannot access `.env.production`.
+- OpenClaw cannot access SSH private keys.
+- OpenClaw cannot directly mutate production database.
+- OpenClaw outputs are schema-validated before backend use.
+- Budget guard applies to OpenClaw-triggered LLM calls where applicable.
+- All OpenClaw actions are logged or traceable.
 
 ## Phase 6.5: Lightweight Runtime Memory Layer
 
@@ -422,6 +459,7 @@ Deliverables:
 - memory query service.
 - Risk Agent context builder.
 - Report Agent memory summary builder.
+- OpenClaw memory context adapter.
 - memory retention policy.
 - memory redaction/safety policy.
 
@@ -460,17 +498,28 @@ Validation gate:
 - Memory records are timestamped and auditable.
 - A Risk Agent can query recent relevant memory before generating explanation.
 - A Report Agent can summarize source reliability and recurring issues.
+- Runtime memory provides compact operational context to OpenClaw agents.
+- OpenClaw agents read memory through the approved backend memory query service.
+- OpenClaw agents do not write arbitrary raw memory.
+- Memory write operations must use the approved backend memory write service.
 - System still works if memory query returns no results.
 
-## Phase 7: First Agents
+## Phase 7: First OpenClaw-Backed Agents
 
-Goal: add the minimum useful LLM agents after deterministic records exist.
+Goal: add the minimum useful OpenClaw-backed agents after deterministic records, dashboard visibility, LLM gateway boundaries, and runtime memory boundaries exist.
 
 Agents:
 
-- News Agent.
-- Report Agent.
-- Risk Explanation Agent.
+- OpenClaw News Agent.
+- OpenClaw Report Agent.
+- OpenClaw Risk Explanation Agent.
+
+Deliverables:
+
+- Proposed project-local skill: `skills/silverpilot-news-analysis/SKILL.md`.
+- Proposed project-local skill: `skills/silverpilot-risk-explanation/SKILL.md`.
+- Proposed project-local skill: `skills/silverpilot-reporting/SKILL.md`.
+- Proposed project-local skill: `skills/silverpilot-source-reliability/SKILL.md`.
 
 News output:
 
@@ -499,9 +548,12 @@ Report output:
 Validation gate:
 
 - Agents do not trade.
+- Agents do not mutate DB directly.
+- Agents use project-local SilverPilot skills.
 - Agent output is schema-valid.
 - Agent failure does not crash the backend.
 - Reports cite internal records where possible.
+- OpenClaw task logs are auditable.
 
 ## Phase 8: Backtesting
 
@@ -637,18 +689,20 @@ Validation gate:
 - A challenger that fails validation is rejected.
 - Active model version is visible.
 
-## Phase 12: Advanced Multi-Agent Analysis
+## Phase 12: Advanced OpenClaw Multi-Agent Analysis
 
-Goal: expand analysis without giving LLMs execution authority.
+Goal: expand OpenClaw as the mandatory advanced agent orchestration layer without giving LLMs or agents execution authority.
 
 Agents:
 
-- Market Research Agent.
-- News Agent.
-- Risk Officer Agent.
-- ML Analyst Agent.
-- Report Agent.
-- Auditor Agent.
+- OpenClaw Market Research Agent.
+- OpenClaw News Agent.
+- OpenClaw Risk Officer Agent.
+- OpenClaw ML Analyst Agent.
+- OpenClaw Report Agent.
+- OpenClaw Auditor Agent.
+- OpenClaw Source Reliability Analyst.
+- OpenClaw Postmortem Agent.
 
 Decision flow remains deterministic:
 
@@ -659,14 +713,18 @@ data
 -> forecast/model
 -> risk engine
 -> paper trade decision
--> agent explanation
+-> OpenClaw agent explanation/critique/report
 ```
 
 Validation gate:
 
-- LLMs cannot bypass risk engine.
-- Disagreements are logged.
+- OpenClaw cannot bypass risk engine.
+- OpenClaw cannot perform real trading.
+- OpenClaw cannot access bank credentials.
+- OpenClaw disagreements are logged.
 - Strong models are used only for high-risk reviews or audits.
+- Agent recommendations are advisory unless backend policy validates them.
+- Multi-agent outputs are summarized into structured backend records.
 
 Backlog research:
 
@@ -714,4 +772,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Run the MVP collectors long enough to review freshness, duplicate behavior, missing-data ratio, and `/collectors/validation-gate`. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Immediate next remains Phase 4 threshold tuning from `/risk/status` and then Phase 5 dashboard visibility. OpenClaw is mandatory for the agent layer, but implementation starts later in Phase 6 foundation work after dashboard and LLM gateway boundaries are ready. After dashboard and LLM gateway foundation, OpenClaw workspace, project-local skills, sandbox policy, secrets boundaries, and auditability will be implemented. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.

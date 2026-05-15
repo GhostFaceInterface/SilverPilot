@@ -4,13 +4,8 @@
 
 Agents should read only the minimum required context:
 
-- `memory-bank/projectbrief.md`
-- `memory-bank/activeContext.md`
-- `memory-bank/progress.md`
-- `memory-bank/agentRules.md`
-- `docs/ARCHITECTURE.md`
-- last relevant section of `docs/WORKLOG.md`
-- relevant files under `docs/` or `agents/` only when needed
+- `memory-bank/projectbrief.md`, `memory-bank/activeContext.md`, `memory-bank/progress.md`, `memory-bank/agentRules.md`.
+- `docs/ARCHITECTURE.md`, last relevant `docs/WORKLOG.md` section, and relevant `docs/` or `agents/` files only when needed.
 
 Do not read the whole repository by default. Search first, then open the smallest relevant file range.
 
@@ -28,46 +23,17 @@ Do not read the whole repository by default. Search first, then open the smalles
 
 ## Task Protocol
 
-Every implementation task should state:
-
-- scope.
-- files likely to change.
-- explicit exclusions.
-- definition of done.
-- validation command or manual validation.
-
-Example scope:
-
-```text
-Phase 1: add FastAPI app, PostgreSQL config, and /health.
-Exclude paper trading, LLM, dashboard, and ML.
-Done when tests pass and /health returns 200.
-```
+Every implementation task should state scope, likely changed files, explicit exclusions, definition of done, and validation command or manual validation.
 
 ## Markdown Creation Rule
 
 Creating new markdown files is forbidden unless the user explicitly asks or the existing canonical files cannot hold the information.
 
-Use the canonical homes:
-
-- roadmap: `docs/ROADMAP.md`
-- architecture: `docs/ARCHITECTURE.md`
-- decisions: `docs/DECISIONS.md`
-- data shapes: `docs/DATA_CONTRACTS.md`
-- risk behavior: `docs/RISK_POLICY.md`
-- work log: `docs/WORKLOG.md`
-- active state: `memory-bank/activeContext.md`
-- agent roles: `agents/*.md`
+Use canonical homes: roadmap in `docs/ROADMAP.md`, architecture in `docs/ARCHITECTURE.md`, decisions in `docs/DECISIONS.md`, data shapes in `docs/DATA_CONTRACTS.md`, risk behavior in `docs/RISK_POLICY.md`, work log in `docs/WORKLOG.md`, active state in `memory-bank/activeContext.md`, and agent roles in `agents/*.md`.
 
 ## Definition of Done
 
-A task is not complete until:
-
-- relevant tests or validation are run.
-- secret scan is considered for touched files.
-- no real-money or bank automation path is introduced.
-- canonical docs are updated when behavior changes.
-- `docs/WORKLOG.md` records the verified outcome.
+A task is not complete until relevant tests or validation run, secret scan is considered for touched files, no real-money or bank automation path is introduced, canonical docs are updated when behavior changes, and `docs/WORKLOG.md` records the verified outcome.
 
 ## VPS Rules
 
@@ -85,6 +51,16 @@ A task is not complete until:
 - Do not put VPS host, user, SSH key, known hosts, API keys, or `.env.production` values in workflow files.
 - VPS smoke/deploy jobs must stay manually triggered unless the user explicitly approves automatic deployment.
 - If tests or collector commands change, update CI in the same task.
+
+## OpenClaw Rules
+
+- OpenClaw is mandatory for the agent layer once that phase starts.
+- OpenClaw agents must obey backend-first architecture.
+- OpenClaw agents cannot read `.env.production`, request or expose secrets, perform bank automation, or execute real-money operations.
+- OpenClaw agents cannot install random ClawHub/community skills without explicit review.
+- OpenClaw agents must use project-local SilverPilot skills.
+- OpenClaw outputs must be structured where they feed backend workflows.
+- OpenClaw agent activity must be auditable.
 
 ## Hard Rules
 
@@ -114,3 +90,5 @@ A task is not complete until:
 24. Use Phase 6.5 PostgreSQL runtime memory as the approved memory path when that phase starts.
 25. Do not use Zep, Graphiti, Neo4j/FalkorDB, Cognee, LightRAG, Letta, or Mem0 as production memory without a new explicit decision.
 26. Do not write secrets, raw payloads, full news dumps, full LLM traces, SSH details, API keys, or bank details into memory tables.
+27. Use OpenClaw as the mandatory agent orchestration layer after its foundation phase starts, but never let it bypass deterministic backend risk, trading, or accounting decisions.
+28. Do not allow OpenClaw to access production secrets, bank credentials, SSH private keys, real-money systems, or unreviewed third-party OpenClaw/ClawHub skills.

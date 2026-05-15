@@ -13,6 +13,7 @@ from app.schemas.paper_trading import PaperTradeRequest
 
 CONFIDENCE = Decimal("1.0000")
 PERCENT_QUANT = Decimal("0.000001")
+NEAR_LIMIT_USED_PERCENT = Decimal("80.000000")
 
 
 @dataclass(frozen=True)
@@ -253,6 +254,58 @@ def risk_policy_status(
             }
         )
 
+    threshold_headroom = [
+        _threshold_headroom_item(
+            metric_name="daily_realized_loss_usd",
+            reason_code="DAILY_LOSS_LIMIT_REACHED",
+            risk_level="high",
+            metric=daily_loss,
+            threshold=settings.risk_max_daily_loss_usd,
+            blocks_at_or_above=True,
+        ),
+        _threshold_headroom_item(
+            metric_name="weekly_realized_loss_usd",
+            reason_code="WEEKLY_LOSS_LIMIT_REACHED",
+            risk_level="high",
+            metric=weekly_loss,
+            threshold=settings.risk_max_weekly_loss_usd,
+            blocks_at_or_above=True,
+        ),
+        _threshold_headroom_item(
+            metric_name="global_xag_volatility_24h_percent",
+            reason_code="VOLATILITY_TOO_HIGH",
+            risk_level="high",
+            metric=volatility_24h,
+            threshold=settings.risk_max_24h_volatility_percent,
+            blocks_at_or_above=False,
+            window_hours=24,
+            source=volatility_24h_metric.source if volatility_24h_metric else None,
+            sample_count=volatility_24h_metric.sample_count if volatility_24h_metric else None,
+        ),
+        _threshold_headroom_item(
+            metric_name="global_xag_volatility_7d_percent",
+            reason_code="VOLATILITY_TOO_HIGH",
+            risk_level="high",
+            metric=volatility_7d,
+            threshold=settings.risk_max_7d_volatility_percent,
+            blocks_at_or_above=False,
+            window_hours=24 * 7,
+            source=volatility_7d_metric.source if volatility_7d_metric else None,
+            sample_count=volatility_7d_metric.sample_count if volatility_7d_metric else None,
+        ),
+        _threshold_headroom_item(
+            metric_name="fomo_rise_percent",
+            reason_code="FOMO_RISK",
+            risk_level="medium",
+            metric=fomo_rise,
+            threshold=settings.risk_fomo_rise_percent,
+            blocks_at_or_above=False,
+            lookback_minutes=settings.risk_fomo_lookback_minutes,
+            source=fomo_rise_metric.source if fomo_rise_metric else None,
+            sample_count=fomo_rise_metric.sample_count if fomo_rise_metric else None,
+        ),
+    ]
+
     return {
         "portfolio_name": portfolio.name,
         "asset_symbol": asset.symbol,
@@ -283,6 +336,7 @@ def risk_policy_status(
             "weekly_realized_loss_usd": weekly_loss,
         },
         "would_block_now": would_block_now,
+        "threshold_headroom": threshold_headroom,
         "recent_decisions": _recent_risk_decision_counts(db, since=now - timedelta(hours=24)),
         "global_xag_diagnostics": [
             _global_price_window_summary(db, asset_id=asset.id, since=now - timedelta(hours=24), window_hours=24),
@@ -463,6 +517,55 @@ def _expected_gain_block(
             "min_expected_net_gain_percent": str(min_expected_net_gain_percent),
         },
     )
+
+
+def _threshold_headroom_item(
+    *,
+    metric_name: str,
+    reason_code: str,
+    risk_level: str,
+    metric: Decimal | None,
+    threshold: Decimal,
+    blocks_at_or_above: bool,
+    window_hours: int | None = None,
+    lookback_minutes: int | None = None,
+    source: str | None = None,
+    sample_count: int | None = None,
+) -> dict:
+    if metric is None:
+        return {
+            "metric_name": metric_name,
+            "reason_code": reason_code,
+            "risk_level": risk_level,
+            "metric": None,
+            "threshold": str(threshold),
+            "remaining_to_block": None,
+            "used_percent": None,
+            "status": "insufficient_data",
+            "window_hours": window_hours,
+            "lookback_minutes": lookback_minutes,
+            "source": source,
+            "sample_count": sample_count,
+        }
+
+    used_percent = ((metric / threshold) * Decimal("100")).quantize(PERCENT_QUANT)
+    remaining = max(threshold - metric, Decimal("0")).quantize(PERCENT_QUANT)
+    blocked = metric >= threshold if blocks_at_or_above else metric > threshold
+    status = "blocked" if blocked else "near_limit" if used_percent >= NEAR_LIMIT_USED_PERCENT else "ok"
+    return {
+        "metric_name": metric_name,
+        "reason_code": reason_code,
+        "risk_level": risk_level,
+        "metric": str(metric),
+        "threshold": str(threshold),
+        "remaining_to_block": str(remaining),
+        "used_percent": str(used_percent),
+        "status": status,
+        "window_hours": window_hours,
+        "lookback_minutes": lookback_minutes,
+        "source": source,
+        "sample_count": sample_count,
+    }
 
 
 def _global_price_range_metric(db: Session, *, asset_id: int, since: datetime) -> GlobalPriceRangeMetric | None:

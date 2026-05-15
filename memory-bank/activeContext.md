@@ -65,7 +65,7 @@ Phase 4: risk policy and rule engine in progress.
 - VPS Phase 4.1 smoke passed: `/health` is ok, `/collectors/validation-gate` is ready with `phase4_allowed: true`, hold returns `HOLD_REQUESTED`, and excessive spread returns `SPREAD_TOO_HIGH` without changing paper cash.
 - Phase 4.2 deterministic risk blocks are implemented, deployed, and smoke-tested on VPS for volatility, daily/weekly realized loss, FOMO, and optional expected exit checks.
 - Read-only `/risk/status` is implemented, deployed, and smoke-tested on VPS for Phase 4 threshold tuning diagnostics.
-- `/risk/status` reports configured thresholds, runtime metrics, global XAG source/sample diagnostics, market/history `would_block_now` reasons, and recent risk decision counts.
+- `/risk/status` reports configured thresholds, runtime metrics, threshold headroom, global XAG source/sample diagnostics, market/history `would_block_now` reasons, and recent risk decision counts.
 - VPS `/risk/status` source-diagnostics smoke returned `would_block_now: []` and showed 24-hour global XAG samples from Stooq plus Gold-API fallback.
 - Phase 4 source-aware global XAG volatility/FOMO risk metrics are implemented, deployed, and smoke-tested on VPS.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
@@ -73,6 +73,8 @@ Phase 4: risk policy and rule engine in progress.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
 - Türkiye local data is classified as execution/risk context for TRY execution, bank spread analysis, and local macro context, not as global silver direction.
 - Phase 6.5 lightweight PostgreSQL runtime memory is approved for later roadmap work.
+- OpenClaw is mandatory for the future agent layer, after dashboard, LLM gateway, and runtime memory boundaries are ready.
+- OpenClaw will be an orchestration layer above the deterministic backend, not a replacement for collectors, risk engine, paper trading, or accounting.
 - Zep/Graphiti are not used; no external memory service is required.
 - GitHub Actions CI/CD workflow exists locally for backend tests, Compose validation, API image build, and manual VPS smoke/deploy validation.
 - VPS runner one-shot validation passed.
@@ -102,8 +104,9 @@ Phase 4: risk policy and rule engine in progress.
 Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
-- Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Review `/risk/status` runtime threshold and global XAG source/sample diagnostics before adding more policy surface.
+- Review `/risk/status` threshold headroom and global XAG source/sample diagnostics before adding more policy surface.
+- Build Phase 5 dashboard after Phase 4 threshold tuning.
+- Keep OpenClaw implementation for Phase 6 foundation; do not move it ahead of Phase 4 tuning or Phase 5 dashboard.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
@@ -112,4 +115,4 @@ Pending:
 
 ## Next Step
 
-Next: continue Phase 4 threshold tuning from `/risk/status` runtime diagnostics; current deployed source-aware metrics do not require threshold relaxation yet. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Next: review Phase 4 threshold headroom from `/risk/status`, then Phase 5 dashboard. OpenClaw is mandatory but starts later in Phase 6 foundation work after safe boundaries are documented and implemented. Keep BLS direct disabled for MVP unless explicitly re-approved.

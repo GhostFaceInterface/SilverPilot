@@ -35,6 +35,9 @@
 - LiteLLM later if routing, fallback, or budget proxying is needed.
 - Langfuse before production agent usage.
 - Instructor/Pydantic for structured output validation.
+- OpenClaw is a roadmap-required future dependency for agent orchestration; it is not a current backend dependency.
+- Phase 6 must define OpenClaw runtime target, workspace layout, provider routing, sandbox policy, tool allowlist/denylist, and secrets boundary before implementation.
+- Research needed: OpenClaw Node/runtime requirements, local workspace security, browser/web research controls, project-local skill packaging, and audit/log integration.
 - Current code does not read Langfuse settings yet; `.env.example` uses `LANGFUSE_HOST`, while the LLM gateway phase must choose and document the final env name before implementation.
 
 ## Runtime Memory Strategy
