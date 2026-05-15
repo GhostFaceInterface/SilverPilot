@@ -63,6 +63,7 @@ Phase 4: risk policy and rule engine in progress.
 - Policy-blocked buy/sell attempts are stored as `paper_trades.action=blocked` without mutating paper balances.
 - Local Phase 4.1 validation passed: backend tests, compileall, and Docker Compose config.
 - VPS Phase 4.1 smoke passed: `/health` is ok, `/collectors/validation-gate` is ready with `phase4_allowed: true`, hold returns `HOLD_REQUESTED`, and excessive spread returns `SPREAD_TOO_HIGH` without changing paper cash.
+- Phase 4.2 deterministic risk blocks are implemented locally for volatility, daily/weekly realized loss, FOMO, and optional expected exit checks.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -98,7 +99,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Phase 4.1 is deployed on VPS; continue Phase 4.x locally before the next deploy.
+- Phase 4.2 is implemented and locally validated; deploy/smoke on VPS next.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
@@ -107,4 +108,4 @@ Pending:
 
 ## Next Step
 
-Phase 4.1 is deployed and smoked on VPS. Next: continue Phase 4.x with volatility, loss-limit, FOMO, and expected-return rules. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Phase 4.2 is implemented and locally validated. Next: deploy/smoke on VPS, then tune Phase 4 thresholds from runtime data. Keep BLS direct disabled for MVP unless explicitly re-approved.

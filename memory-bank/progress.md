@@ -155,7 +155,9 @@ Completed:
 - Local validation passed: backend tests, compileall, and Docker Compose config.
 - Phase 4.1 was deployed to VPS at commit `f7612d9`.
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, `HOLD_REQUESTED`, and `SPREAD_TOO_HIGH` blocked-trade behavior.
+- Added local Phase 4.2 blocks for global XAG/USD volatility, daily/weekly realized paper-loss limits, FOMO rapid-rise behavior, and optional expected exit checks.
+- Local Phase 4.2 validation passed: backend tests, compileall, Docker Compose config, and diff check.
 
 Next milestone:
 
-- Add remaining Phase 4.x volatility, loss-limit, FOMO, and expected-return rules.
+- Deploy/smoke Phase 4.2 on VPS, then tune thresholds from runtime data.

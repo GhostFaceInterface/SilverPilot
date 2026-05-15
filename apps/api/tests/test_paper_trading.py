@@ -131,6 +131,95 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
         db.close()
 
 
+def seed_global_price_history(testing_session, *, prices: list[Decimal], observed_at: datetime | None = None):
+    observed_at = observed_at or datetime.now(UTC)
+    db = testing_session()
+    try:
+        asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
+        for index, price in enumerate(prices):
+            point_time = observed_at - timedelta(minutes=len(prices) - index)
+            run = CollectorRun(
+                collector_name="global_xag_usd",
+                source="gold-api-xag-usd",
+                status="success",
+                records_seen=1,
+                records_inserted=1,
+                started_at=point_time,
+                finished_at=point_time,
+                details_json={"selected_global_xag_source": "gold-api-xag-usd"},
+            )
+            db.add(run)
+            db.flush()
+            db.add(
+                RawGlobalPrice(
+                    collector_run_id=run.id,
+                    asset_id=asset.id,
+                    source="gold-api-xag-usd",
+                    buy_price=price,
+                    sell_price=price,
+                    currency="USD",
+                    observed_at=point_time,
+                    fetched_at=point_time,
+                    raw_payload_hash=f"global-history-{index}",
+                    parser_version="gold-api-xag-usd-v1",
+                    payload_json={},
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
+def seed_realized_loss(testing_session, *, loss: Decimal, sell_created_at: datetime):
+    db = testing_session()
+    try:
+        asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "default-paper").one()
+        decision = RiskDecision(
+            decision="allow",
+            reason_code="RISK_CHECK_PASSED",
+            risk_level="low",
+            confidence=Decimal("1.0000"),
+            details_json={},
+        )
+        db.add(decision)
+        db.flush()
+        buy_created_at = sell_created_at - timedelta(minutes=5)
+        db.add_all(
+            [
+                PaperTrade(
+                    portfolio_id=portfolio.id,
+                    asset_id=asset.id,
+                    action="paper_buy",
+                    quantity=Decimal("10.000000"),
+                    price=Decimal("10.000000"),
+                    gross_amount=Decimal("100.000000"),
+                    fees=Decimal("0.000000"),
+                    taxes=Decimal("0.000000"),
+                    net_amount=Decimal("100.000000"),
+                    risk_decision_id=decision.id,
+                    created_at=buy_created_at,
+                ),
+                PaperTrade(
+                    portfolio_id=portfolio.id,
+                    asset_id=asset.id,
+                    action="paper_sell",
+                    quantity=Decimal("10.000000"),
+                    price=(Decimal("100.000000") - loss) / Decimal("10.000000"),
+                    gross_amount=Decimal("100.000000") - loss,
+                    fees=Decimal("0.000000"),
+                    taxes=Decimal("0.000000"),
+                    net_amount=Decimal("100.000000") - loss,
+                    risk_decision_id=decision.id,
+                    created_at=sell_created_at,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     client, testing_session = make_client()
     seed_execution_critical_data(testing_session)
@@ -305,3 +394,118 @@ def test_high_spread_blocks_trade_before_balance_changes():
         assert portfolio.cash_balance == Decimal("600.000000")
     finally:
         db.close()
+
+
+def test_high_24h_volatility_blocks_trade():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_global_price_history(testing_session, prices=[Decimal("30.000000"), Decimal("39.000000")])
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "VOLATILITY_TOO_HIGH"
+    assert response.json()["risk_decision"]["details"]["window_hours"] == 24
+
+
+def test_fomo_risk_blocks_after_rapid_global_price_rise():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_global_price_history(
+        testing_session,
+        prices=[Decimal("32.000000"), Decimal("34.100000")],
+        observed_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "FOMO_RISK"
+
+
+def test_daily_loss_limit_blocks_trade():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_realized_loss(testing_session, loss=Decimal("35.000000"), sell_created_at=datetime.now(UTC) - timedelta(hours=1))
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "DAILY_LOSS_LIMIT_REACHED"
+
+
+def test_weekly_loss_limit_blocks_when_daily_limit_is_not_reached():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_realized_loss(testing_session, loss=Decimal("65.000000"), sell_created_at=datetime.now(UTC) - timedelta(days=2))
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "WEEKLY_LOSS_LIMIT_REACHED"
+
+
+def test_expected_exit_price_below_entry_cost_blocks_trade():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "expected_exit_price": "9.90",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "EXPECTED_GAIN_BELOW_COST"

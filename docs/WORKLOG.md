@@ -294,3 +294,13 @@ Phase 4.1 deterministic paper-trade risk gate deployed and smoked on VPS.
 - VPS paper-trade smoke confirmed `hold` writes a `risk_decision` with `HOLD_REQUESTED`.
 - VPS blocked-trade smoke confirmed high spread writes `paper_trades.action=blocked` with `SPREAD_TOO_HIGH` and leaves paper cash at `600.000000`.
 - Remaining non-blocking degraded reasons are collector history/quality artifacts; Phase 4.x can continue with additional deterministic risk rules.
+
+Phase 4.2 deterministic risk blocks implemented locally.
+
+- Added configurable 24-hour and 7-day global XAG/USD volatility blocks.
+- Added daily and weekly realized paper-loss limits.
+- Added FOMO rapid-rise detection for paper buys.
+- Added optional `expected_exit_price` expected-gain block for paper buys.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, `docker compose config --quiet`, and `git diff --check`.
+- Paper-trading tests now cover volatility, FOMO, loss limits, and expected-gain reason codes.
+- No real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.

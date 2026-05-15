@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     real_money_enabled: bool = False
     risk_data_stale_after_minutes: int = Field(default=60, ge=1)
     risk_max_spread_percent: Decimal = Field(default=Decimal("5.0"), gt=0)
+    risk_max_24h_volatility_percent: Decimal = Field(default=Decimal("12.0"), gt=0)
+    risk_max_7d_volatility_percent: Decimal = Field(default=Decimal("25.0"), gt=0)
+    risk_fomo_lookback_minutes: int = Field(default=180, ge=1)
+    risk_fomo_rise_percent: Decimal = Field(default=Decimal("6.0"), gt=0)
+    risk_max_daily_loss_usd: Decimal = Field(default=Decimal("30.0"), gt=0)
+    risk_max_weekly_loss_usd: Decimal = Field(default=Decimal("60.0"), gt=0)
+    risk_min_expected_net_gain_percent: Decimal = Field(default=Decimal("0.0"), ge=0)
 
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"

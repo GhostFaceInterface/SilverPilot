@@ -139,7 +139,7 @@ Collector quality review uses `/collectors/quality` to summarize recent run coun
 
 ## Risk Engine
 
-Phase 4.1 uses a deterministic backend risk service before paper-trade persistence. It checks the current execution-critical collector state, request spread, paper cash, and paper position. Missing/stale Kuveyt bank silver, global XAG/USD, or USD/TRY blocks buy/sell decisions; context collectors do not block by themselves. The first configurable thresholds are `RISK_DATA_STALE_AFTER_MINUTES` and `RISK_MAX_SPREAD_PERCENT`.
+Phase 4 uses a deterministic backend risk service before paper-trade persistence. It checks the current execution-critical collector state, request spread, paper cash, paper position, realized loss limits, global XAG/USD volatility, rapid-rise FOMO risk, and optional expected exit price. Missing/stale Kuveyt bank silver, global XAG/USD, or USD/TRY blocks buy/sell decisions; context collectors do not block by themselves. Configurable thresholds include `RISK_DATA_STALE_AFTER_MINUTES`, `RISK_MAX_SPREAD_PERCENT`, `RISK_MAX_24H_VOLATILITY_PERCENT`, `RISK_MAX_7D_VOLATILITY_PERCENT`, `RISK_FOMO_LOOKBACK_MINUTES`, `RISK_FOMO_RISE_PERCENT`, `RISK_MAX_DAILY_LOSS_USD`, `RISK_MAX_WEEKLY_LOSS_USD`, and `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`.
 
 ## LLM Pattern
 

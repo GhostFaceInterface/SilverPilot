@@ -15,6 +15,7 @@ class PaperTradeRequest(BaseModel):
     cash_amount: Decimal | None = Field(default=None, gt=Decimal("0"))
     buy_price: Decimal = Field(ge=Decimal("0"))
     sell_price: Decimal = Field(ge=Decimal("0"))
+    expected_exit_price: Decimal | None = Field(default=None, gt=Decimal("0"))
     fees: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
     taxes: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
 

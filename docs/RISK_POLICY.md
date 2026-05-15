@@ -1,6 +1,6 @@
 # Risk Policy
 
-This file is the canonical policy for paper-trading safety. Phase 4 has started with deterministic paper-trade risk decisions; exact volatility, loss-limit, and strategy-return thresholds remain pending until enough runtime data exists.
+This file is the canonical policy for paper-trading safety. Phase 4 has started with deterministic paper-trade risk decisions. Volatility, realized-loss, FOMO, and optional expected-gain blocks are configurable MVP safeguards and can be tuned after runtime data accumulates.
 
 ## Hard Safety Rules
 
@@ -72,6 +72,14 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 - Policy-blocked buy/sell requests create `paper_trades.action=blocked`, attach `risk_decision_id`, and do not mutate paper balances.
 - Hold and user-blocked audit records receive deterministic risk decisions but do not require fresh market data.
 
+## Implemented Phase 4.2 Rules
+
+- Buy/sell requests are blocked when global XAG/USD 24-hour range exceeds `RISK_MAX_24H_VOLATILITY_PERCENT`, default `12.0`.
+- Buy/sell requests are blocked when global XAG/USD 7-day range exceeds `RISK_MAX_7D_VOLATILITY_PERCENT`, default `25.0`.
+- Buy requests are blocked with `FOMO_RISK` when global XAG/USD rises more than `RISK_FOMO_RISE_PERCENT`, default `6.0`, over `RISK_FOMO_LOOKBACK_MINUTES`, default `180`.
+- Buy/sell requests are blocked when realized paper loss reaches `RISK_MAX_DAILY_LOSS_USD`, default `30.0`, or `RISK_MAX_WEEKLY_LOSS_USD`, default `60.0`.
+- Paper-buy requests with `expected_exit_price` are blocked with `EXPECTED_GAIN_BELOW_COST` when expected net gain does not exceed `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`, default `0.0`.
+
 ## Impact Classification
 
 - Execution-critical: bank silver buy/sell, global XAG/USD, spread, TCMB/USDTRY or bank FX effect, tax/KMV/BSMV.
@@ -111,5 +119,4 @@ Allowed decisions:
 - Every block is persisted with a reason code.
 - Every paper trade references a risk decision.
 - Stale or missing data blocks action.
-- Tests cover spread, stale data, missing data, insufficient cash, and risk-decision references.
-- Loss-limit, volatility, FOMO, and expected-return blocks are pending Phase 4.x rules.
+- Tests cover spread, stale data, missing data, insufficient cash, volatility, realized-loss limits, FOMO, expected-gain checks, and risk-decision references.

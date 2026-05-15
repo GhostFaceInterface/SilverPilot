@@ -288,12 +288,16 @@ Phase 4 gate:
 
 Goal: prevent obviously bad or invalid paper-trading actions.
 
-Current Phase 4.1 implementation:
+Current Phase 4 implementation:
 
 - Paper-trading now creates a persisted `risk_decisions` row for every accepted trade record.
 - `paper_trades.risk_decision_id` is populated for allowed, hold, user-blocked, and policy-blocked paper records.
 - Missing or stale execution-critical data blocks buy/sell actions with `MISSING_DATA` or `STALE_DATA`.
 - Spread above `RISK_MAX_SPREAD_PERCENT` blocks with `SPREAD_TOO_HIGH`.
+- 24-hour and 7-day global XAG/USD volatility above configured thresholds blocks with `VOLATILITY_TOO_HIGH`.
+- Daily and weekly realized paper-loss limits block with `DAILY_LOSS_LIMIT_REACHED` or `WEEKLY_LOSS_LIMIT_REACHED`.
+- Rapid global XAG/USD rises block paper buys with `FOMO_RISK`.
+- Optional `expected_exit_price` can block paper buys with `EXPECTED_GAIN_BELOW_COST`.
 - Insufficient paper cash blocks with `INSUFFICIENT_CASH` and records a blocked paper-trade audit row.
 - Insufficient paper position blocks with `POSITION_LIMIT_REACHED`.
 - `POST /paper-trades` response includes the deterministic risk decision.
@@ -327,10 +331,8 @@ Validation gate:
 
 Pending Phase 4.x:
 
-- 24-hour and 7-day volatility blocks.
-- Daily and weekly realized-loss limits.
-- FOMO behavior detection.
-- Expected net gain versus cost once strategy targets exist.
+- Tune thresholds against runtime collector and paper-trade history.
+- Add richer strategy target inputs if expected-return checks need more than `expected_exit_price`.
 
 ## Phase 5: Dashboard
 
