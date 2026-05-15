@@ -319,3 +319,11 @@ Phase 4 risk status diagnostics implemented locally.
 - Fixed realized-loss metric consumption so sold quantity/cost basis is consumed when computing loss-limit diagnostics.
 - Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
 - No risk threshold was relaxed, and no real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.
+
+Phase 4 risk status diagnostics deployed and smoked on VPS.
+
+- Pushed commit `835caf7`, pulled it on the VPS, and rebuilt API/collector with `.env.production` without printing secrets.
+- VPS Compose config passed, Alembic `upgrade head` completed, and `/health` returned production `database: ok` with `real_money_enabled: false`.
+- VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `phase4_allowed: true` and execution-critical status `healthy`.
+- VPS `/risk/status` returned configured thresholds, runtime metrics, `would_block_now: []`, and recent risk decision counts.
+- Runtime metrics at smoke time were below blocking thresholds: 24h global XAG volatility `11.502771`, 7d volatility `13.869986`, FOMO rise `0.028355`, and daily/weekly realized loss `0.000000`.

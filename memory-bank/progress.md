@@ -161,7 +161,9 @@ Completed:
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, and `EXPECTED_GAIN_BELOW_COST` blocked-trade behavior with unchanged paper cash.
 - Added local read-only `/risk/status` diagnostics for current thresholds, runtime metrics, market/history `would_block_now` reasons, and recent risk decision counts.
 - Local validation passed for `/risk/status`: backend tests, compileall, and Docker Compose config.
+- Deployed `/risk/status` to VPS at commit `835caf7`.
+- VPS smoke passed for `/health`, `/collectors/validation-gate`, and `/risk/status`; runtime diagnostics returned `would_block_now: []`.
 
 Next milestone:
 
-- Deploy and smoke `/risk/status`, then tune Phase 4 thresholds from runtime data before adding more policy surface.
+- Tune Phase 4 thresholds from `/risk/status` runtime data before adding more policy surface.
