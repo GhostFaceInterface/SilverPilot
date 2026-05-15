@@ -159,7 +159,9 @@ Completed:
 - Local Phase 4.2 validation passed: backend tests, compileall, Docker Compose config, and diff check.
 - Phase 4.2 was deployed to VPS at commit `6499226`.
 - VPS smoke passed for `/health`, `/collectors/validation-gate`, and `EXPECTED_GAIN_BELOW_COST` blocked-trade behavior with unchanged paper cash.
+- Added local read-only `/risk/status` diagnostics for current thresholds, runtime metrics, market/history `would_block_now` reasons, and recent risk decision counts.
+- Local validation passed for `/risk/status`: backend tests, compileall, and Docker Compose config.
 
 Next milestone:
 
-- Tune Phase 4 thresholds from runtime data before adding more policy surface.
+- Deploy and smoke `/risk/status`, then tune Phase 4 thresholds from runtime data before adding more policy surface.

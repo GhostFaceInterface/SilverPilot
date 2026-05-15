@@ -509,3 +509,59 @@ def test_expected_exit_price_below_entry_cost_blocks_trade():
     assert response.status_code == 200
     assert response.json()["trade"]["action"] == "blocked"
     assert response.json()["risk_decision"]["reason_code"] == "EXPECTED_GAIN_BELOW_COST"
+
+
+def test_risk_status_reports_thresholds_and_current_metrics():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_global_price_history(testing_session, prices=[Decimal("32.000000"), Decimal("33.000000")])
+
+    response = client.get("/risk/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["portfolio_name"] == "default-paper"
+    assert payload["asset_symbol"] == "XAG"
+    assert payload["thresholds"]["max_24h_volatility_percent"] == "12.0"
+    assert payload["current_metrics"]["daily_realized_loss_usd"] == "0.000000"
+    assert payload["current_metrics"]["global_xag_volatility_24h_percent"] is not None
+    assert payload["would_block_now"] == []
+
+
+def test_risk_status_reports_runtime_blocking_thresholds():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_global_price_history(testing_session, prices=[Decimal("30.000000"), Decimal("39.000000")])
+    seed_realized_loss(testing_session, loss=Decimal("35.000000"), sell_created_at=datetime.now(UTC) - timedelta(hours=1))
+
+    response = client.get("/risk/status")
+
+    assert response.status_code == 200
+    reason_codes = {item["reason_code"] for item in response.json()["would_block_now"]}
+    assert "DAILY_LOSS_LIMIT_REACHED" in reason_codes
+    assert "VOLATILITY_TOO_HIGH" in reason_codes
+
+
+def test_risk_status_returns_recent_decision_counts():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+
+    trade_response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+    assert trade_response.status_code == 200
+
+    response = client.get("/risk/status")
+
+    assert response.status_code == 200
+    assert response.json()["recent_decisions"] == [
+        {"decision": "allow", "reason_code": "RISK_CHECK_PASSED", "count": 1}
+    ]

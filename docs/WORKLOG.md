@@ -312,3 +312,10 @@ Phase 4.2 deterministic risk blocks deployed and smoked on VPS.
 - VPS `/collectors/validation-gate?window_hours=24&expected_interval_minutes=15` returned `status: ready`, `phase4_allowed: true`, and execution-critical status `healthy`.
 - VPS paper-trade smoke confirmed optional `expected_exit_price` can block with `EXPECTED_GAIN_BELOW_COST`.
 - The smoke blocked trade left paper cash at `600.000000`; no real-money or bank automation path was introduced.
+
+Phase 4 risk status diagnostics implemented locally.
+
+- Added read-only `GET /risk/status` for current thresholds, runtime risk metrics, deterministic `would_block_now` diagnostics, and recent 24-hour risk decision counts.
+- Fixed realized-loss metric consumption so sold quantity/cost basis is consumed when computing loss-limit diagnostics.
+- Local validation passed: `.venv/bin/python -m pytest apps/api/tests`, `.venv/bin/python -m compileall apps/api/app`, and `docker compose config --quiet`.
+- No risk threshold was relaxed, and no real-money execution, bank automation, LLM decisioning, dashboard, or ML behavior was added.

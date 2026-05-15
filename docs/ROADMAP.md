@@ -301,6 +301,7 @@ Current Phase 4 implementation:
 - Insufficient paper cash blocks with `INSUFFICIENT_CASH` and records a blocked paper-trade audit row.
 - Insufficient paper position blocks with `POSITION_LIMIT_REACHED`.
 - `POST /paper-trades` response includes the deterministic risk decision.
+- `GET /risk/status` exposes threshold configuration, runtime metrics, `would_block_now` diagnostics, and recent risk decision counts for threshold tuning.
 
 Initial rules:
 
@@ -331,7 +332,7 @@ Validation gate:
 
 Pending Phase 4.x:
 
-- Tune thresholds against runtime collector and paper-trade history.
+- Review `/risk/status` against runtime collector and paper-trade history, then tune thresholds if production data shows they are too loose or too strict.
 - Add richer strategy target inputs if expected-return checks need more than `expected_exit_price`.
 
 ## Phase 5: Dashboard

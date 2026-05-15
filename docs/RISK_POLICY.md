@@ -79,6 +79,7 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 - Buy requests are blocked with `FOMO_RISK` when global XAG/USD rises more than `RISK_FOMO_RISE_PERCENT`, default `6.0`, over `RISK_FOMO_LOOKBACK_MINUTES`, default `180`.
 - Buy/sell requests are blocked when realized paper loss reaches `RISK_MAX_DAILY_LOSS_USD`, default `30.0`, or `RISK_MAX_WEEKLY_LOSS_USD`, default `60.0`.
 - Paper-buy requests with `expected_exit_price` are blocked with `EXPECTED_GAIN_BELOW_COST` when expected net gain does not exceed `RISK_MIN_EXPECTED_NET_GAIN_PERCENT`, default `0.0`.
+- `GET /risk/status` reports the configured thresholds, current runtime metrics, market/history-based `would_block_now` diagnostics, and recent risk decision counts for threshold tuning.
 
 ## Impact Classification
 
@@ -120,3 +121,4 @@ Allowed decisions:
 - Every paper trade references a risk decision.
 - Stale or missing data blocks action.
 - Tests cover spread, stale data, missing data, insufficient cash, volatility, realized-loss limits, FOMO, expected-gain checks, and risk-decision references.
+- Tests cover the read-only risk status endpoint and its threshold, metric, blocking diagnostic, and recent decision count output.

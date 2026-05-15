@@ -64,6 +64,8 @@ Phase 4: risk policy and rule engine in progress.
 - Local Phase 4.1 validation passed: backend tests, compileall, and Docker Compose config.
 - VPS Phase 4.1 smoke passed: `/health` is ok, `/collectors/validation-gate` is ready with `phase4_allowed: true`, hold returns `HOLD_REQUESTED`, and excessive spread returns `SPREAD_TOO_HIGH` without changing paper cash.
 - Phase 4.2 deterministic risk blocks are implemented, deployed, and smoke-tested on VPS for volatility, daily/weekly realized loss, FOMO, and optional expected exit checks.
+- Read-only `/risk/status` is implemented locally for Phase 4 threshold tuning diagnostics.
+- `/risk/status` reports configured thresholds, runtime metrics, market/history `would_block_now` reasons, and recent risk decision counts.
 - VPS FRED macro smoke test passed; 6 configured FRED observations were inserted.
 - FRED API key is available in local development env and FRED is the preferred no-cost macro-series gateway for MVP.
 - Direct BLS API registration is deferred; BLS-origin CPI/PPI/labor series should be pulled through FRED first when available.
@@ -99,7 +101,7 @@ Pending:
 
 - Configure GitHub repository secrets before running manual VPS smoke workflow.
 - Run MVP collectors long enough to review freshness and missing-data ratio; keep direct BLS, TCMB EVDS, and TÜİK automation in optional/backlog unless explicitly enabled.
-- Phase 4.2 is deployed on VPS; tune thresholds from runtime data before adding more policy surface.
+- Deploy and smoke `/risk/status`, then review runtime threshold diagnostics before adding more policy surface.
 - Keep CI/VPS smoke aligned with all MVP collector jobs and `/collectors/validation-gate`.
 - Keep Phase 6.5 runtime memory behind the current collector deployment/Fed RSS/FRED sequence.
 - Run collector long enough to measure freshness and missing data.
@@ -108,4 +110,4 @@ Pending:
 
 ## Next Step
 
-Phase 4.2 is deployed and smoked on VPS. Next: tune Phase 4 thresholds from runtime data before adding more policy surface. Keep BLS direct disabled for MVP unless explicitly re-approved.
+Next: deploy and smoke `/risk/status`, then use its runtime diagnostics to tune Phase 4 thresholds. Keep BLS direct disabled for MVP unless explicitly re-approved.

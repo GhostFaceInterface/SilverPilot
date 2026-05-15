@@ -415,6 +415,22 @@ Policy:
 - Volatility, realized-loss, FOMO, and optional expected-gain blocks use compact `risk_decision.details` and do not require LLM output.
 - Hold and user-blocked audit records do not require market data freshness but still receive a risk decision.
 
+Endpoint: `GET /risk/status`
+
+Purpose: read-only threshold tuning and policy diagnostics for Phase 4.
+
+Response:
+
+- `thresholds`: current deterministic risk thresholds from configuration.
+- `current_metrics`: runtime 24-hour/7-day global XAG/USD volatility, FOMO rise, and realized paper loss metrics.
+- `would_block_now`: market/history-based block diagnostics such as `VOLATILITY_TOO_HIGH`, `FOMO_RISK`, `DAILY_LOSS_LIMIT_REACHED`, or `WEEKLY_LOSS_LIMIT_REACHED`.
+- `recent_decisions`: 24-hour grouped risk decision counts by `decision` and `reason_code`.
+
+Policy:
+
+- This endpoint is observational only; it does not create trades or override risk policy.
+- Request-specific checks such as spread, expected exit, cash, and position remain enforced by `POST /paper-trades`.
+
 ### Phase 3.2 Fed RSS Output
 
 - `fed_rss` reads the official Federal Reserve monetary policy RSS feed by default.

@@ -20,6 +20,7 @@ from app.collectors.service import (
 )
 from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
+from app.risk.service import RiskStatusError, risk_policy_status
 from app.schemas.collectors import (
     CollectorHealthResponse,
     CollectorQualityResponse,
@@ -31,6 +32,7 @@ from app.schemas.collectors import (
 )
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
+from app.schemas.risk import RiskPolicyStatusResponse
 
 router = APIRouter()
 
@@ -135,6 +137,20 @@ def get_paper_position(portfolio_name: str = "default-paper", asset_symbol: str 
         "average_buy_cost": str(position.average_buy_cost),
         "cash_balance": str(portfolio.cash_balance),
     }
+
+
+@router.get("/risk/status", response_model=RiskPolicyStatusResponse)
+def get_risk_status(
+    portfolio_name: str = "default-paper",
+    asset_symbol: str = "XAG",
+    db: Session = Depends(get_db),
+) -> RiskPolicyStatusResponse:
+    try:
+        return RiskPolicyStatusResponse.model_validate(
+            risk_policy_status(db, portfolio_name=portfolio_name, asset_symbol=asset_symbol)
+        )
+    except RiskStatusError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/prices/latest")

@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.collectors.service import collector_health
@@ -25,6 +25,10 @@ class TradeAmounts:
 
 class PositionLike(Protocol):
     quantity: Decimal
+
+
+class RiskStatusError(Exception):
+    pass
 
 
 def evaluate_paper_trade_risk(
@@ -147,6 +151,107 @@ def evaluate_paper_trade_risk(
     )
 
 
+def risk_policy_status(
+    db: Session,
+    *,
+    portfolio_name: str = "default-paper",
+    asset_symbol: str = "XAG",
+) -> dict:
+    settings = get_settings()
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == portfolio_name)).scalar_one_or_none()
+    if portfolio is None:
+        raise RiskStatusError("Portfolio not found")
+    asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
+    if asset is None:
+        raise RiskStatusError("Asset not found")
+
+    now = datetime.now(UTC)
+    daily_loss = _realized_loss_since(db, portfolio_id=portfolio.id, asset_id=asset.id, since=now - timedelta(days=1))
+    weekly_loss = _realized_loss_since(db, portfolio_id=portfolio.id, asset_id=asset.id, since=now - timedelta(days=7))
+    volatility_24h = _global_price_range_percent(db, asset_id=asset.id, since=now - timedelta(hours=24))
+    volatility_7d = _global_price_range_percent(db, asset_id=asset.id, since=now - timedelta(days=7))
+    fomo_rise = _global_price_rise_percent(
+        db,
+        asset_id=asset.id,
+        since=now - timedelta(minutes=settings.risk_fomo_lookback_minutes),
+    )
+
+    would_block_now = []
+    if daily_loss >= settings.risk_max_daily_loss_usd:
+        would_block_now.append(
+            {
+                "reason_code": "DAILY_LOSS_LIMIT_REACHED",
+                "risk_level": "high",
+                "metric": str(daily_loss),
+                "threshold": str(settings.risk_max_daily_loss_usd),
+            }
+        )
+    if weekly_loss >= settings.risk_max_weekly_loss_usd:
+        would_block_now.append(
+            {
+                "reason_code": "WEEKLY_LOSS_LIMIT_REACHED",
+                "risk_level": "high",
+                "metric": str(weekly_loss),
+                "threshold": str(settings.risk_max_weekly_loss_usd),
+            }
+        )
+    if volatility_24h is not None and volatility_24h > settings.risk_max_24h_volatility_percent:
+        would_block_now.append(
+            {
+                "reason_code": "VOLATILITY_TOO_HIGH",
+                "risk_level": "high",
+                "metric": str(volatility_24h),
+                "threshold": str(settings.risk_max_24h_volatility_percent),
+                "window_hours": 24,
+            }
+        )
+    if volatility_7d is not None and volatility_7d > settings.risk_max_7d_volatility_percent:
+        would_block_now.append(
+            {
+                "reason_code": "VOLATILITY_TOO_HIGH",
+                "risk_level": "high",
+                "metric": str(volatility_7d),
+                "threshold": str(settings.risk_max_7d_volatility_percent),
+                "window_hours": 168,
+            }
+        )
+    if fomo_rise is not None and fomo_rise > settings.risk_fomo_rise_percent:
+        would_block_now.append(
+            {
+                "reason_code": "FOMO_RISK",
+                "risk_level": "medium",
+                "metric": str(fomo_rise),
+                "threshold": str(settings.risk_fomo_rise_percent),
+                "lookback_minutes": settings.risk_fomo_lookback_minutes,
+            }
+        )
+
+    return {
+        "portfolio_name": portfolio.name,
+        "asset_symbol": asset.symbol,
+        "thresholds": {
+            "data_stale_after_minutes": settings.risk_data_stale_after_minutes,
+            "max_spread_percent": settings.risk_max_spread_percent,
+            "max_24h_volatility_percent": settings.risk_max_24h_volatility_percent,
+            "max_7d_volatility_percent": settings.risk_max_7d_volatility_percent,
+            "fomo_lookback_minutes": settings.risk_fomo_lookback_minutes,
+            "fomo_rise_percent": settings.risk_fomo_rise_percent,
+            "max_daily_loss_usd": settings.risk_max_daily_loss_usd,
+            "max_weekly_loss_usd": settings.risk_max_weekly_loss_usd,
+            "min_expected_net_gain_percent": settings.risk_min_expected_net_gain_percent,
+        },
+        "current_metrics": {
+            "global_xag_volatility_24h_percent": volatility_24h,
+            "global_xag_volatility_7d_percent": volatility_7d,
+            "fomo_rise_percent": fomo_rise,
+            "daily_realized_loss_usd": daily_loss,
+            "weekly_realized_loss_usd": weekly_loss,
+        },
+        "would_block_now": would_block_now,
+        "recent_decisions": _recent_risk_decision_counts(db, since=now - timedelta(hours=24)),
+    }
+
+
 def _spread_block(db: Session, *, request: PaperTradeRequest, max_spread_percent: Decimal) -> RiskDecision | None:
     if request.buy_price <= 0 or request.sell_price <= 0:
         return None
@@ -266,16 +371,15 @@ def _fomo_block(
     if request.action != "paper_buy":
         return None
 
-    prices = _global_mid_prices_since(db, asset_id=asset_id, since=datetime.now(UTC) - timedelta(minutes=lookback_minutes))
-    if len(prices) < 2:
+    since = datetime.now(UTC) - timedelta(minutes=lookback_minutes)
+    prices = _global_mid_prices_since(db, asset_id=asset_id, since=since)
+    rise_percent = _price_rise_percent(prices)
+    if rise_percent is None:
+        return None
+    if rise_percent <= max_rise_percent:
         return None
     first_price = prices[0]
     latest_price = prices[-1]
-    if first_price <= 0:
-        return None
-    rise_percent = ((latest_price - first_price) / first_price) * Decimal("100")
-    if rise_percent <= max_rise_percent:
-        return None
     return _decision(
         db,
         decision="blocked",
@@ -333,6 +437,21 @@ def _global_price_range_percent(db: Session, *, asset_id: int, since: datetime) 
     return (((high_price - low_price) / mid_price) * Decimal("100")).quantize(PERCENT_QUANT)
 
 
+def _global_price_rise_percent(db: Session, *, asset_id: int, since: datetime) -> Decimal | None:
+    prices = _global_mid_prices_since(db, asset_id=asset_id, since=since)
+    return _price_rise_percent(prices)
+
+
+def _price_rise_percent(prices: list[Decimal]) -> Decimal | None:
+    if len(prices) < 2:
+        return None
+    first_price = prices[0]
+    latest_price = prices[-1]
+    if first_price <= 0:
+        return None
+    return (((latest_price - first_price) / first_price) * Decimal("100")).quantize(PERCENT_QUANT)
+
+
 def _global_mid_prices_since(db: Session, *, asset_id: int, since: datetime) -> list[Decimal]:
     rows = db.execute(
         select(RawGlobalPrice)
@@ -364,12 +483,33 @@ def _realized_loss_since(db: Session, *, portfolio_id: int, asset_id: int, since
         if trade.action != "paper_sell" or buy_quantity <= 0:
             continue
 
+        sell_quantity = min(trade.quantity, buy_quantity)
         average_buy_cost = buy_net_amount / buy_quantity
-        pnl = trade.net_amount - (average_buy_cost * trade.quantity)
+        sell_net_amount = trade.net_amount * (sell_quantity / trade.quantity)
+        pnl = sell_net_amount - (average_buy_cost * sell_quantity)
         if _as_utc(trade.created_at) >= since and pnl < 0:
             realized_loss += abs(pnl)
+        buy_quantity -= sell_quantity
+        buy_net_amount -= average_buy_cost * sell_quantity
 
     return realized_loss.quantize(Decimal("0.000001"))
+
+
+def _recent_risk_decision_counts(db: Session, *, since: datetime) -> list[dict]:
+    rows = db.execute(
+        select(RiskDecision.decision, RiskDecision.reason_code, func.count(RiskDecision.id))
+        .where(RiskDecision.created_at >= since)
+        .group_by(RiskDecision.decision, RiskDecision.reason_code)
+        .order_by(func.count(RiskDecision.id).desc(), RiskDecision.reason_code.asc())
+    ).all()
+    return [
+        {
+            "decision": decision,
+            "reason_code": reason_code,
+            "count": count,
+        }
+        for decision, reason_code, count in rows
+    ]
 
 
 def _as_utc(value: datetime) -> datetime:

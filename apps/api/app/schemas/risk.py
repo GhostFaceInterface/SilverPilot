@@ -1,0 +1,47 @@
+from decimal import Decimal
+
+from pydantic import BaseModel
+
+
+class RiskThresholdsPayload(BaseModel):
+    data_stale_after_minutes: int
+    max_spread_percent: Decimal
+    max_24h_volatility_percent: Decimal
+    max_7d_volatility_percent: Decimal
+    fomo_lookback_minutes: int
+    fomo_rise_percent: Decimal
+    max_daily_loss_usd: Decimal
+    max_weekly_loss_usd: Decimal
+    min_expected_net_gain_percent: Decimal
+
+
+class RiskCurrentMetricsPayload(BaseModel):
+    global_xag_volatility_24h_percent: Decimal | None
+    global_xag_volatility_7d_percent: Decimal | None
+    fomo_rise_percent: Decimal | None
+    daily_realized_loss_usd: Decimal
+    weekly_realized_loss_usd: Decimal
+
+
+class RiskWouldBlockPayload(BaseModel):
+    reason_code: str
+    risk_level: str
+    metric: str
+    threshold: str
+    window_hours: int | None = None
+    lookback_minutes: int | None = None
+
+
+class RecentRiskDecisionCountPayload(BaseModel):
+    decision: str
+    reason_code: str
+    count: int
+
+
+class RiskPolicyStatusResponse(BaseModel):
+    portfolio_name: str
+    asset_symbol: str
+    thresholds: RiskThresholdsPayload
+    current_metrics: RiskCurrentMetricsPayload
+    would_block_now: list[RiskWouldBlockPayload]
+    recent_decisions: list[RecentRiskDecisionCountPayload]
