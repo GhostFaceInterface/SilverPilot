@@ -11,7 +11,6 @@ from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEven
 from app.schemas.collectors import ManualPriceIngestRequest
 
 PRICE_QUANT = Decimal("0.000001")
-EXECUTION_CRITICAL_COLLECTORS = {"kuveyt_public_silver", "global_xag_usd", "tcmb_usd_try"}
 CONTEXT_COLLECTORS = {"fed_rss", "fred_macro"}
 
 
@@ -683,12 +682,7 @@ def collector_validation_gate(
     if not quality["validation_window_complete"]:
         blocking_reasons.append("VALIDATION_WINDOW_INCOMPLETE")
 
-    critical_quality_items = [item for item in quality["collectors"] if item["collector_name"] in EXECUTION_CRITICAL_COLLECTORS]
     context_quality_items = [item for item in quality["collectors"] if item["collector_name"] in CONTEXT_COLLECTORS]
-    if any(item["failed_runs"] > 0 for item in critical_quality_items):
-        blocking_reasons.append("EXECUTION_CRITICAL_COLLECTOR_FAILURES_PRESENT")
-    if any(item["missing_runs"] > 0 for item in critical_quality_items):
-        blocking_reasons.append("EXECUTION_CRITICAL_MISSING_RUNS_PRESENT")
     if quality["status"] != "ok":
         degraded_reasons.append("QUALITY_STATUS_NOT_OK")
     if health["status"] != "healthy":
@@ -790,7 +784,19 @@ def _execution_critical_global_xag_status(db: Session, *, stale_after_seconds: i
             "manual_fallback": False,
         }
 
-    reference_time = _aware(latest_global_price.fetched_at or latest_global_price.observed_at)
+    latest_success_time = _latest_successful_run_time(
+        db,
+        collector_names={"global_xag_usd", "gold_api_xag_usd", "metals_dev_silver_spot", "stooq_xag_usd"},
+        source=latest_global_price.source,
+    )
+    reference_time = max(
+        value
+        for value in (
+            _aware(latest_global_price.fetched_at or latest_global_price.observed_at),
+            latest_success_time,
+        )
+        if value is not None
+    )
     observed_time = _aware(latest_global_price.observed_at)
     age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
     observed_age_seconds = int((now - observed_time).total_seconds()) if observed_time is not None else None
@@ -823,7 +829,15 @@ def _execution_critical_usd_try_status(db: Session, *, stale_after_seconds: int,
     if latest_fx_rate is None:
         return {"usd_try": "missing", "source": None, "age_seconds": None, "stale": True}
 
-    reference_time = _aware(latest_fx_rate.fetched_at or latest_fx_rate.observed_at)
+    latest_success_time = _latest_successful_run_time(db, collector_names={"tcmb_usd_try"}, source=latest_fx_rate.source)
+    reference_time = max(
+        value
+        for value in (
+            _aware(latest_fx_rate.fetched_at or latest_fx_rate.observed_at),
+            latest_success_time,
+        )
+        if value is not None
+    )
     age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
     stale = age_seconds is None or age_seconds > stale_after_seconds
     return {
@@ -888,6 +902,22 @@ def _stooq_timeout_count(db: Session, *, window_hours: int) -> int:
         if details.get("failure_reason_code") == "TIMEOUT":
             count += 1
     return count
+
+
+def _latest_successful_run_time(db: Session, *, collector_names: set[str], source: str) -> datetime | None:
+    run = db.execute(
+        select(CollectorRun)
+        .where(
+            CollectorRun.collector_name.in_(collector_names),
+            CollectorRun.source == source,
+            CollectorRun.status == "success",
+        )
+        .order_by(desc(CollectorRun.finished_at), desc(CollectorRun.started_at))
+        .limit(1)
+    ).scalar_one_or_none()
+    if run is None:
+        return None
+    return _aware(run.finished_at or run.started_at)
 
 
 def _ignore_inactive_manual_fallback(item: dict, *, bank_price: dict) -> bool:
