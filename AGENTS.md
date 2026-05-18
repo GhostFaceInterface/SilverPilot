@@ -1,24 +1,47 @@
-# Agent Operating Rules
+# AI Coding Agent Framework (AGENTS.md)
 
-Before changing code or docs:
+Bu dosya, SilverPilot projesinde kod geliştirme ve planlama aşamalarında kullanılan **AI Coding Agent Framework** yapısının ana index noktasıdır.
 
-1. Read `memory-bank/projectbrief.md`.
-2. Read `memory-bank/activeContext.md`.
-3. Read `memory-bank/progress.md`.
-4. Read `memory-bank/agentRules.md`.
-5. Check the relevant docs before creating new markdown files.
+> [!WARNING]
+> **Kritik Mimari Ayrımı:** 
+> Bu dizin yapısı, projenin kendi runtime (çalışma zamanı) finansal/veri ajanları ile (`agents/` klasörü altındaki `news-agent.md`, `risk-agent.md` vb.) **kesinlikle karıştırılmamalıdır.** 
+> Bu yapı, yalnızca geliştiriciye (AI kodlama asistanına) güvenli, planlı ve yüksek standartlarda kod yazması için kılavuzluk eder.
 
-Hard rules:
+---
 
-1. Do not create real-money trading behavior.
-2. Do not create bank automation.
-3. Do not write or log secrets.
-4. Keep changes small and verifiable.
-5. Use existing canonical files instead of creating duplicate docs.
-6. Update `docs/WORKLOG.md` after meaningful verified changes.
-7. Keep `memory-bank/activeContext.md` current and short.
-8. Use structured outputs for LLM features when they are added.
-9. Keep roadmap details in `docs/ROADMAP.md`.
-10. Keep data shapes in `docs/DATA_CONTRACTS.md`.
-11. Keep risk behavior in `docs/RISK_POLICY.md`.
-12. Keep durable architecture decisions in `docs/DECISIONS.md`.
+## 📂 Framework Yapısı
+
+### 1. Global Davranış Kuralları (Governance)
+- **[.agent/GEMINI.md](file:///Users/boe747/SilverPilot/.agent/GEMINI.md)**
+  - AI asistanının projedeki temel TIER 0 anayasasıdır. Kod yazmaya başlamadan önce aşılması gereken **Socratic Gate** (Anlamadan kod yazmama), araç kullanımı ve değişiklik güvenliği kurallarını belirler.
+
+### 2. Uzman Kodlama Ajanları (Coding Agents)
+Yeni bir kodlama görevinde asistan önce uygun ajan kimliğini yüklemelidir:
+- **[project-planner.md](file:///Users/boe747/SilverPilot/.agent/agents/project-planner.md):** Kod yazmaz. Görevleri zorunlu olarak küçük, uygulanabilir Fazlara (Phases) böler.
+- **[scout-agent.md](file:///Users/boe747/SilverPilot/.agent/agents/scout-agent.md):** Okuma-amaçlı keşif ajanı. Kod tabanını tarar ve etki alanı/bağımlılık haritası çıkarır.
+- **[backend-architect.md](file:///Users/boe747/SilverPilot/.agent/agents/backend-architect.md):** Python, FastAPI, SQLAlchemy ve database tasarımı uzmanıdır.
+- **[data-engineer.md](file:///Users/boe747/SilverPilot/.agent/agents/data-engineer.md):** Veri toplayıcılar (collectors), pipeline akışları ve risk simülasyon hesaplamaları uzmanıdır.
+- **[debugger-agent.md](file:///Users/boe747/SilverPilot/.agent/agents/debugger-agent.md):** Sistematik hata ayıklayıcı. 5 Neden analizi yaparak kök neden tespiti yapar.
+- **[security-auditor.md](file:///Users/boe747/SilverPilot/.agent/agents/security-auditor.md):** OWASP 2025 güvenlik denetçisi. Sızıntı testi ve API güvenlik uzmanı.
+- **[archaeologist-agent.md](file:///Users/boe747/SilverPilot/.agent/agents/archaeologist-agent.md):** Refactor uzmanı. Kodu bozmadan "Strangler Fig" ile eski yapıları yeniler.
+- **[frontend-architect.md](file:///Users/boe747/SilverPilot/.agent/agents/frontend-architect.md):** Streamlit ve Python tabanlı modern dashboard / UI/UX mimarıdır.
+- **[quality-engineer.md](file:///Users/boe747/SilverPilot/.agent/agents/quality-engineer.md):** Pytest testleri, Docker Compose ve CI/CD doğrulaması uzmanıdır.
+
+### 3. Teknik Beceriler & Standartlar (Skills)
+Ajanların uymak zorunda olduğu teknik kurallar:
+- **[general-coding.md](file:///Users/boe747/SilverPilot/.agent/skills/general-coding.md):** Python clean code, SOLID, DRY ve sır güvenliği.
+- **[fastapi.md](file:///Users/boe747/SilverPilot/.agent/skills/fastapi.md):** FastAPI router yapısı, DI, Pydantic şemaları.
+- **[sqlalchemy-alembic.md](file:///Users/boe747/SilverPilot/.agent/skills/sqlalchemy-alembic.md):** N+1 sorgu engelleme, index tasarımı ve Alembic kuralları.
+- **[security-rules.md](file:///Users/boe747/SilverPilot/.agent/skills/security-rules.md):** API güvenliği, yetkilendirme, OWASP 2025 ve zero-trust.
+
+### 4. İş Akışları & Orkestrasyon (Workflows)
+- **[orchestrate.md](file:///Users/boe747/SilverPilot/.agent/workflows/orchestrate.md)**
+  - Büyük ve çok dosyalı iş geliştirme adımlarında ajanların sequential (sıralı) olarak nasıl orkestre edileceğini tanımlar.
+
+---
+
+## 🚀 Yeni Görev Protokolü
+Yeni bir geliştirme talebi geldiğinde AI asistanı:
+1. Talebin kapsamını analiz eder ve [GEMINI.md](file:///Users/boe747/SilverPilot/.agent/GEMINI.md) kuralını yükler.
+2. Göreve en uygun uzman ajanları belirler ve yönlendirme yapar.
+3. Planlama gerekiyorsa `project-planner` ile `PLAN.md` çıkarıp kullanıcı onayı almadan kod yazmaya başlamaz.

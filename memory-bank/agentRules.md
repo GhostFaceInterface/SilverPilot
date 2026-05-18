@@ -16,7 +16,7 @@ Do not read the whole repository by default. Search first, then open the smalles
 - Prefer editing canonical docs over creating new markdown files.
 - Keep `activeContext.md` under 120 lines.
 - Keep `progress.md` under 200 lines.
-- Keep each `agents/*.md` file under 100 lines.
+- **Agent Dosyası Satır Kuralı:** Ajan dosyaları görevlerini doğru yapacak seviyede detaylı kurgulanabilir; yapay bir 100 satır sınırı yoktur, ancak gereksiz uzunluklardan kaçınılmalıdır.
 - Keep `WORKLOG.md` entries compact.
 - Keep one task scoped to a small deliverable.
 - Do not combine backend, LLM, dashboard, and ML work in one task.
@@ -24,6 +24,9 @@ Do not read the whole repository by default. Search first, then open the smalles
 ## Task Protocol
 
 Every implementation task should state scope, likely changed files, explicit exclusions, definition of done, and validation command or manual validation.
+- **Sokratik Sorgulama:** Kod yazmadan önce mutlaka görevin anlaşıldığı doğrulanmalı, belirsiz durumlarda soru sorulmalı ve mimari kararlar varsayımla geçilmemelidir.
+- **Dosya Analizi:** Mevcut proje kodları okunup analiz edilmeden hiçbir değişiklik yapılmamalıdır.
+- **Orkestrasyon Akışı:** Büyük ve çoklu dosya içeren işlerde `.agent/workflows/orchestrate.md` orkestrasyon planı zorunlu olarak kurgulanmalıdır.
 
 ## Markdown Creation Rule
 
