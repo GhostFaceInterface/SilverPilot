@@ -17,6 +17,6 @@ SilverPilot is a backend-first, silver paper-trading intelligence system designe
 
 ## 3. Decision Ownership & Data Flow
 - The backend core holds absolute authority over trade executions and risk decisions.
-- LLM/OpenClaw agents can summarize, explain, classify, or critique, but they do NOT execute or modify trades.
+- LLM agents (Hermes/OpenClaw) can summarize, explain, classify, or critique, but they do NOT execute or modify trades.
 - Data Flow:
   `collectors` -> `raw data` -> `normalized snapshots` -> `risk engine` -> `paper trading engine` -> `reports`

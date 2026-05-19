@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is entering Phase 5: dashboard visibility. Phase 3.5 is verified: the 24-hour validation-window bug is fixed, global XAG/USD no longer depends on Stooq alone, and `/collectors/validation-gate` has reported `phase4_allowed=true`. Phase 4 has deterministic paper-trade risk decisions, and Phase 4.2 is deployed and smoke-tested on the VPS. Phase 4 threshold policy is accepted as conservative by default; near-limit diagnostics alone are not a reason to relax volatility thresholds. Initial Phase 5 work is a read-only Streamlit dashboard over existing backend endpoints. OpenClaw is mandatory for the future agent orchestration layer, but implementation starts later in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
+SilverPilot is in Phase 5: dashboard visibility. Initial Phase 5 work is a read-only Streamlit dashboard over existing backend endpoints. Phase 4 has deterministic paper-trade risk decisions deployed. After dashboard review, the immediate next steps are retrofitting the data collectors (Phase 3.6, 3.7, 3.8) to replace unreliable global sources with Yahoo Finance SI=F and add multi-layer anomaly controls for Kuveyt Türk. Agent orchestration via Hermes (primary) or OpenClaw (optional) will start in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -13,11 +13,11 @@ SilverPilot is entering Phase 5: dashboard visibility. Phase 3.5 is verified: th
 - No automatic live buy/sell execution.
 - Backend policy owns paper-trading decisions.
 - LLM agents explain, classify, critique, or report; they do not execute trades.
-- OpenClaw is mandatory for the agent orchestration layer.
-- OpenClaw never owns deterministic trading, risk, or accounting decisions.
-- OpenClaw agents may only operate on sanitized backend summaries, approved APIs, and project-local skills.
-- OpenClaw cannot access production secrets, bank credentials, SSH private keys, or real-money systems.
-- Random third-party OpenClaw/ClawHub skills are forbidden unless explicitly reviewed and approved.
+- Agent orchestration layer (Hermes primary, OpenClaw optional) is required.
+- Agents never own deterministic trading, risk, or accounting decisions.
+- Agents may only operate on sanitized backend summaries, approved APIs, and project-local skills.
+- Agents cannot access production secrets, bank credentials, SSH private keys, or real-money systems.
+- Random third-party skills are forbidden unless explicitly reviewed and approved.
 - ML starts only after reliable data, risk policy, paper trading, and backtesting exist.
 - Each durable fact has one canonical documentation home.
 
@@ -164,7 +164,7 @@ Goal: collect data that is useful immediately and ML-ready later.
 Collectors:
 
 - BankSilverPriceCollector.
-- GlobalSilverPriceCollector.
+- YahooFinanceCollector (SI=F and USDTRY=X).
 - FxRateCollector.
 - GoldSilverRatioCollector.
 - NewsCollector.
@@ -173,12 +173,13 @@ Collectors:
 
 MVP free-source order:
 
-1. Kuveyt Türk public silver page POC.
-2. TCMB daily USD/TRY XML.
-3. Global XAG/USD resolver: Stooq current CSV primary, Gold-API free no-auth JSON approved fallback, optional Metals.Dev free API-key fallback when configured.
-4. Collector health and raw payload audit.
-5. Fed official RSS feeds.
-6. FRED macro series when `FRED_API_KEY` is configured.
+1. Kuveyt Türk public silver page POC (PRIMARY bank).
+2. Yahoo Finance SI=F (PRIMARY technical analysis).
+3. Yahoo Finance USDTRY=X (Intraday USD/TRY).
+4. TCMB daily USD/TRY XML (Official reference).
+5. Collector health and raw payload audit.
+6. Fed official RSS feeds.
+7. FRED macro series when `FRED_API_KEY` is configured.
 
 Initial FRED macro series:
 
@@ -199,12 +200,13 @@ Deferred Phase 3.x sources:
 Tables:
 
 - `raw_bank_prices`
-- `raw_global_prices`
+- `raw_global_prices` (Used for SI=F data, source="yahoo-si-f")
 - `raw_fx_rates`
 - `raw_news`
 - `raw_events`
 - `price_snapshots`
 - `collector_runs`
+- `technical_indicators`
 
 Rules:
 
@@ -233,28 +235,47 @@ Validation gate:
 - VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
 - One-shot collector smoke commands must fail the process when a collector records failed status.
 
-### Phase 3.5: Global XAG/USD Source Hardening
+### Phase 3.6: Technical Indicator Engine
 
-Goal: remove single-source dependence on Stooq before Phase 4.
+Goal: Automatically calculate critical technical indicators from OHLCV price data.
 
-Provider policy:
+Primary data source: Yahoo Finance SI=F (Silver Futures COMEX)
+- Free, no API key required, 5m/1h/daily resolution.
+- 2 years of daily OHLCV, 5 days intraday.
 
-- `GlobalSilverPriceProvider` normalizes source, symbol, price, currency, unit, observed/fetched timestamps, optional bid/ask, raw payload hash, parser version, and reliability metadata.
-- `GLOBAL_XAG_SOURCE_PRIORITY` controls provider order.
-- `stooq_xag_usd` remains the public CSV primary but has configurable timeout, retry, and backoff.
-- `gold-api-xag-usd` is an approved free no-auth JSON fallback.
-- `metals-dev-silver-spot` is optional and disabled unless `METALS_DEV_API_KEY` is configured for a no-cost tier.
-- Failed providers record failed collector runs with reason codes such as `TIMEOUT`, `HTTP_ERROR`, `PARSE_ERROR`, and `STALE_DATA`.
-- Failed or stale providers must not write fake prices or reuse the last successful value as fresh.
+Indicators and periods to calculate:
+- RSI(14): Relative Strength Index
+- MACD(12,26,9): Moving Average Convergence Divergence
+- Bollinger Bands(20,2): Volatility bands
+- SMA(20), SMA(50), SMA(200): Simple moving averages
+- ATR(14): Average True Range (stop-loss calculation)
+- XAU/XAG Ratio: Gold/Silver ratio (GC=F / SI=F)
 
-Gate policy:
+New table: `technical_indicators`
+New collector: `YahooFinanceCollector` (5m OHLCV for SI=F)
+Library: `pandas-ta` or `ta-lib`
 
-- Execution-critical sources are Kuveyt bank silver buy/sell, global XAG/USD, and USD/TRY.
-- Context sources are Fed RSS and FRED macro series.
-- Missing/stale execution-critical data blocks Phase 4.
-- Context failures degrade readiness output but do not block Phase 4 by themselves.
-- Stooq failure does not block Phase 4 when an approved global XAG fallback is fresh.
-- Manual global XAG fallback is allowed only as a visible simulation unblocker and must be fresh.
+### Phase 3.7: USD/TRY Gün İçi Takip
+
+Goal: Add intraday USD/TRY tracking alongside the daily TCMB rate.
+
+Primary: Yahoo Finance USDTRY=X (1-hour OHLCV, free, no API key)
+Reference: TCMB daily XML (existing, preserved)
+Cross-control: If Yahoo USD/TRY deviates from TCMB by ±%2, trigger a warning.
+
+### Phase 3.8: Kuveyt Türk Veri Sağlamlaştırma
+
+Goal: Harden the bank data collection chain against errors and swap anomalies.
+
+Anomaly controls:
+1. `buy_price > sell_price` check (if false -> BLOCK + ALERT, scraper swapped values).
+2. Spread between %2 and %25? (if false -> BLOCK + ALERT).
+3. Is the price within ±10% of the last 5 records? (if false -> DEGRADED).
+4. Cross-control: SI=F × USDTRY=X ≈ bank price ±%5 (if false -> ALERT).
+
+Fallback mechanism:
+- If Kuveyt Türk scraping fails -> Calculate theoretical TRY/gram using Yahoo SI=F × TCMB USD/TRY -> Run in DEGRADED mode.
+- Manual price entry is only a last resort and must always be marked as "manual".
 
 ### Phase 3.4: Bank Silver Price Resolution
 
@@ -270,6 +291,7 @@ Primary path:
 
 Fallback path:
 
+- Fallback to Yahoo SI=F × TCMB USD/TRY theoretical calculation.
 - Existing `POST /collectors/manual-price` can insert manual bank prices into `raw_bank_prices`.
 - Manual fallback is allowed only to unblock simulation and validation.
 - Manual fallback must be visible as manual/degraded in health and reports.
@@ -284,9 +306,9 @@ Third-party candidates:
 
 Phase 4 gate:
 
-- Official Kuveyt collector has passed VPS smoke validation.
+- Official Kuveyt collector has passed VPS smoke validation and anomaly controls.
 - Multi-job collector runner exists for sustained validation.
-- CI/VPS smoke must cover Kuveyt, global XAG resolver, TCMB, Fed RSS, FRED macro, collector health, collector quality, and validation-gate endpoints.
+- CI/VPS smoke must cover Kuveyt, Yahoo SI=F, TCMB, Fed RSS, FRED macro, collector health, collector quality, and validation-gate endpoints.
 - Do not start Phase 4 until sustained collector validation confirms freshness, duplicate behavior, and missing-data ratio are acceptable.
 
 ## Phase 4: Risk Policy and Rule Engine
@@ -389,9 +411,9 @@ Validation gate:
 - No admin-only secrets are exposed.
 - Dashboard is read-only and does not create trades, mutate balances, or change risk policy.
 
-## Phase 6: LLM Gateway, Observability, and OpenClaw Foundation
+## Phase 6: LLM Gateway, Observability, and Agent Foundation
 
-Goal: add controlled LLM access without uncontrolled cost or unstructured output, and prepare OpenClaw as the mandatory future agent orchestration layer without giving it access to deterministic core authority.
+Goal: add controlled LLM access without uncontrolled cost or unstructured output, and prepare Agent orchestration via Hermes (primary) or OpenClaw (optional) without giving it access to deterministic core authority.
 
 Components:
 
@@ -402,27 +424,27 @@ Components:
 - Prompt registry.
 - Structured output parser.
 - Retry and timeout policy.
-- OpenClaw Gateway/workspace configuration.
+- Agent workspace (Hermes skills).
 - Project-local SilverPilot skill root.
-- OpenClaw tool allowlist/denylist policy.
-- OpenClaw sandbox policy.
-- OpenClaw model/provider routing policy.
-- OpenClaw trace/log integration plan with Langfuse or backend audit tables.
-- OpenClaw secrets boundary.
-- OpenClaw agent invocation policy.
+- Tool allowlist/denylist policy.
+- Sandbox policy.
+- Model/provider routing policy.
+- Trace/log integration plan with Langfuse or backend audit tables.
+- Secrets boundary.
+- Agent invocation policy.
 
 Deliverables:
 
-- OpenClaw installation decision and runtime target.
-- OpenClaw workspace layout.
-- OpenClaw gateway/config documentation.
+- Agent installation decision and runtime target.
+- Agent workspace layout.
+- Gateway/config documentation.
 - Project-local SilverPilot skill root.
-- OpenClaw tool allowlist/denylist policy.
-- OpenClaw sandbox policy.
-- OpenClaw model/provider routing policy.
-- OpenClaw trace/log integration plan with Langfuse or backend audit tables.
-- OpenClaw secrets boundary.
-- OpenClaw agent invocation policy.
+- Tool allowlist/denylist policy.
+- Sandbox policy.
+- Model/provider routing policy.
+- Trace/log integration plan with Langfuse or backend audit tables.
+- Secrets boundary.
+- Agent invocation policy.
 
 Rules:
 
@@ -433,16 +455,17 @@ Rules:
 - Every agent has a daily budget limit.
 - Agent output must validate against a schema.
 - Core backend behavior must work if LLM providers are unavailable.
-- OpenClaw cannot read production secrets, bank credentials, SSH private keys, or real-money systems.
-- OpenClaw must use approved tools, sanitized backend summaries, and project-local SilverPilot skills.
-- OpenClaw cannot directly mutate the production database.
+- Agents cannot read production secrets, bank credentials, SSH private keys, or real-money systems.
+- Agents must use approved tools, sanitized backend summaries, and project-local SilverPilot skills.
+- Agents cannot directly mutate the production database.
 
 Initial budget targets:
 
-- News Agent: daily max 0.20 USD.
-- Report Agent: daily max 0.10 USD.
-- Risk Agent: daily max 0.30 USD.
+- News Agent: daily max 0.05 USD.
+- Report Agent: daily max 0.03 USD.
+- Risk Agent: daily max 0.10 USD.
 - Audit Agent: weekly max 1.00 USD.
+(Costs are reduced via Hermes).
 
 Validation gate:
 
@@ -450,16 +473,16 @@ Validation gate:
 - Invalid structured output is rejected or retried.
 - Budget limits can block calls.
 - LLM outage test passes for core backend workflows.
-- OpenClaw can run a safe no-op project task.
-- OpenClaw can call/read only approved project surfaces.
-- OpenClaw cannot access `.env.production`.
-- OpenClaw cannot access SSH private keys.
-- OpenClaw cannot directly mutate production database.
-- OpenClaw outputs are schema-validated before backend use.
-- Budget guard applies to OpenClaw-triggered LLM calls where applicable.
-- All OpenClaw actions are logged or traceable.
+- Agent can run a safe no-op project task.
+- Agent can call/read only approved project surfaces.
+- Agent cannot access `.env.production`.
+- Agent cannot access SSH private keys.
+- Agent cannot directly mutate production database.
+- Outputs are schema-validated before backend use.
+- Budget guard applies to LLM calls.
+- All actions are logged or traceable.
 
-## Phase 6.5: Lightweight Runtime Memory Layer
+## Phase 6.5: Simplified Runtime Memory Layer
 
 Goal: give agents compact operational memory before or alongside the first agents, without adding external memory infrastructure.
 
@@ -470,14 +493,10 @@ Deliverables:
 - `agent_memory_events` table.
 - `source_reliability_daily` table.
 - `decision_memory` table.
-- optional `memory_facts` table.
-- optional `memory_relations` table.
-- `postmortems` table.
-- memory write service.
-- memory query service.
+- basic FastAPI endpoint for memory queries.
 - Risk Agent context builder.
 - Report Agent memory summary builder.
-- OpenClaw memory context adapter.
+- Agent memory context adapter.
 - memory retention policy.
 - memory redaction/safety policy.
 
@@ -491,7 +510,7 @@ Initial event types:
 - `risk_policy_override`
 - `agent_disagreement`
 - `news_market_link`
-- `postmortem`
+- `postmortem` (merged into decision_memory)
 - `model_or_strategy_note`
 
 Out of scope:
@@ -505,39 +524,40 @@ Out of scope:
 - SSH details.
 - bank information.
 - collector raw data.
+- memory_facts and memory_relations (moved to backlog).
 
 Validation gate:
 
 - Memory layer works without external services.
-- Memory layer does not require Zep, Graphiti, Neo4j, FalkorDB, Cognee, Letta, LightRAG, or Mem0.
+- Memory layer does not require external tools (Zep, etc).
 - No raw price/news payloads are written into memory tables.
 - No secrets are written into memory tables.
 - Agent context builders retrieve compact summaries, not full logs.
 - Memory records are timestamped and auditable.
 - A Risk Agent can query recent relevant memory before generating explanation.
 - A Report Agent can summarize source reliability and recurring issues.
-- Runtime memory provides compact operational context to OpenClaw agents.
-- OpenClaw agents read memory through the approved backend memory query service.
-- OpenClaw agents do not write arbitrary raw memory.
+- Runtime memory provides compact operational context to agents.
+- Agents read memory through the basic FastAPI endpoint.
+- Agents do not write arbitrary raw memory.
 - Memory write operations must use the approved backend memory write service.
 - System still works if memory query returns no results.
 
-## Phase 7: First OpenClaw-Backed Agents
+## Phase 7: First Agents
 
-Goal: add the minimum useful OpenClaw-backed agents after deterministic records, dashboard visibility, LLM gateway boundaries, and runtime memory boundaries exist.
+Goal: add the minimum useful Hermes-backed agents after deterministic records, dashboard visibility, LLM gateway boundaries, and runtime memory boundaries exist.
 
 Agents:
 
-- OpenClaw News Agent.
-- OpenClaw Report Agent.
-- OpenClaw Risk Explanation Agent.
+- SilverPilot News Agent (Hermes).
+- SilverPilot Report Agent (Hermes).
+- SilverPilot Risk Agent (Hermes).
 
 Deliverables:
 
-- Proposed project-local skill: `skills/silverpilot-news-analysis/SKILL.md`.
-- Proposed project-local skill: `skills/silverpilot-risk-explanation/SKILL.md`.
-- Proposed project-local skill: `skills/silverpilot-reporting/SKILL.md`.
-- Proposed project-local skill: `skills/silverpilot-source-reliability/SKILL.md`.
+- Project-local skill: `~/.hermes/skills/silverpilot/news-analysis/SKILL.md`.
+- Project-local skill: `~/.hermes/skills/silverpilot/risk-explanation/SKILL.md`.
+- Project-local skill: `~/.hermes/skills/silverpilot/reporting/SKILL.md`.
+- Project-local skill: `~/.hermes/skills/silverpilot/source-reliability/SKILL.md`.
 
 News output:
 
@@ -571,7 +591,7 @@ Validation gate:
 - Agent output is schema-valid.
 - Agent failure does not crash the backend.
 - Reports cite internal records where possible.
-- OpenClaw task logs are auditable.
+- Agent task logs are auditable.
 
 ## Phase 8: Backtesting
 
@@ -707,20 +727,20 @@ Validation gate:
 - A challenger that fails validation is rejected.
 - Active model version is visible.
 
-## Phase 12: Advanced OpenClaw Multi-Agent Analysis
+## Phase 12: Advanced Multi-Agent Analysis
 
-Goal: expand OpenClaw as the mandatory advanced agent orchestration layer without giving LLMs or agents execution authority.
+Goal: expand the Agent orchestration layer without giving LLMs or agents execution authority.
 
 Agents:
 
-- OpenClaw Market Research Agent.
-- OpenClaw News Agent.
-- OpenClaw Risk Officer Agent.
-- OpenClaw ML Analyst Agent.
-- OpenClaw Report Agent.
-- OpenClaw Auditor Agent.
-- OpenClaw Source Reliability Analyst.
-- OpenClaw Postmortem Agent.
+- Agent Market Research.
+- Agent News.
+- Agent Risk Officer.
+- Agent ML Analyst.
+- Agent Report.
+- Agent Auditor.
+- Agent Source Reliability Analyst.
+- Agent Postmortem.
 
 Decision flow remains deterministic:
 
@@ -731,15 +751,15 @@ data
 -> forecast/model
 -> risk engine
 -> paper trade decision
--> OpenClaw agent explanation/critique/report
+-> Agent explanation/critique/report
 ```
 
 Validation gate:
 
-- OpenClaw cannot bypass risk engine.
-- OpenClaw cannot perform real trading.
-- OpenClaw cannot access bank credentials.
-- OpenClaw disagreements are logged.
+- Agents cannot bypass risk engine.
+- Agents cannot perform real trading.
+- Agents cannot access bank credentials.
+- Agent disagreements are logged.
 - Strong models are used only for high-risk reviews or audits.
 - Agent recommendations are advisory unless backend policy validates them.
 - Multi-agent outputs are summarized into structured backend records.
@@ -790,4 +810,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Immediate next is Phase 5 dashboard visibility. Phase 4 threshold policy keeps conservative volatility defaults; `near_limit` output is monitored but does not trigger automatic tuning. Threshold tuning is deferred until dashboard visibility and more runtime evidence exist unless there is a critical bug or clearly incorrect blocking behavior. OpenClaw is mandatory for the agent layer, but implementation starts later in Phase 6 foundation work after dashboard and LLM gateway boundaries are ready. After dashboard and LLM gateway foundation, OpenClaw workspace, project-local skills, sandbox policy, secrets boundaries, and auditability will be implemented. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Immediate next is retrofitting the data collectors (Phase 3.6, 3.7, 3.8). We will introduce the Yahoo Finance collector for SI=F and USDTRY=X, implement the Technical Indicator Engine, and harden the Kuveyt Türk collection with 4-layer anomaly controls. Once the data pipeline is fully hardened, we will implement Phase 6 Hermes integration and Phase 6.5 Simplified Runtime Memory before building the first Agents. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
