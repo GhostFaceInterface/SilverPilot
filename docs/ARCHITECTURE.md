@@ -19,8 +19,8 @@ OpenClaw is mandatory from the agent phase onward, but it is not part of the det
 Use one canonical memory bank plus short agent-specific spec files.
 
 ```text
-memory-bank/ = shared project brain
-agents/ = small agent role boundaries
+.agent/memory/ = shared development memory
+.agent/agents/ = small agent role boundaries
 docs/ = durable roadmap, architecture, decisions, contracts, policies, and worklog
 ```
 
@@ -30,9 +30,9 @@ Separate large memory banks per agent are rejected because they create synchroni
 
 Development memory is for code-writing agents:
 
-- `memory-bank/`
+- `.agent/memory/`
 - `docs/`
-- `agents/`
+- `.agent/agents/`
 
 Runtime market/source data belongs in PostgreSQL raw and normalized tables:
 
@@ -196,7 +196,7 @@ Initial budget guard targets:
 
 Phase 6.5 adds a lightweight PostgreSQL runtime memory layer before external graph memory is considered.
 
-- `memory-bank/*.md`: development memory for coding agents.
+- `.agent/memory/*.md`: development memory for coding agents.
 - PostgreSQL raw tables: runtime market/source data and raw payload hashes.
 - PostgreSQL runtime memory tables: compressed operational memory for agents.
 - backend memory query service: approved context source for OpenClaw agents.

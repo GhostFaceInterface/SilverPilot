@@ -51,9 +51,9 @@ Files:
 - `.env.example`
 - `.gitignore`
 - `docker-compose.yml`
-- `memory-bank/*`
+- `.agent/memory/*`
 - `docs/*`
-- `agents/*`
+- `.agent/agents/*`
 - `apps/api/*`
 - `apps/dashboard/*`
 - `scripts/*`

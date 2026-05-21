@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-19
+updated: 2026-05-21
 ---
 
 # Technical Stack & Architectural Decisions
@@ -25,3 +25,9 @@ updated: 2026-05-19
 ## 4. Infrastructure & Access
 - VPS runs Ubuntu with Docker. Alias: `silverpilot-vps` (uses `ssh silverpilot-vps`). Path: `/opt/silverpilot/SilverPilot`.
 - GitHub Actions CI/CD (`.github/workflows/ci.yml`) runs API backend tests, Compose configuration validation, and API Docker image building.
+
+## 5. Data Hardening & Validation (Phase 3.8 - May 2026)
+- **Resolved Source Audit Trail:** Added `resolved_source` (VARCHAR(128)) and `is_degraded` (BOOLEAN) fields to `PriceSnapshot` and `RawBankPrice` tables. This enables robust audit trails regarding whether a price was derived from primary scraper or fallback Yahoo proxy.
+- **Kuveyt Scraper Retry & Resilience:** Added a 3-retry attempt loop with a 5s delay on connection/timeout issues before resorting to Yahoo Finance fallback proxy (`yahoo_si_f`).
+- **Hard Block Anomalies:** Structured parser/value errors (`CollectorError`) and critical value anomalies (Inverted spread, spread out-of-safe-range) strictly bypass Yahoo fallback and immediately trigger failed runs to preserve data integrity.
+- **Global Cross-Control Validation:** Real-time mid price divergence validation comparing scraped bank silver price against Yahoo `SI=F` global prices. If mid price deviates by > 5%, a warning is recorded in the run log and `details_json` without aborting the collector pipeline.

@@ -4,7 +4,7 @@
 
 Status: accepted.
 
-Use one canonical memory bank and short `agents/*.md` files. Separate large memory banks per agent are rejected because they create synchronization and duplication risk.
+Use one canonical development memory (`.agent/memory/`) and short `.agent/agents/*.md` files. Separate large memory banks per agent are rejected because they create synchronization and duplication risk.
 
 ## D-002: Backend Owns Decisions
 
@@ -185,6 +185,6 @@ Rationale:
 Consequences:
 
 - `/risk/status` `threshold_headroom` stays diagnostic.
-- `near_limit` can be monitored in `docs/WORKLOG.md` and `memory-bank/activeContext.md`, but it does not trigger automatic tuning.
+- `near_limit` can be monitored in `docs/WORKLOG.md` and `.agent/memory/project-history.md`, but it does not trigger automatic tuning.
 - Threshold tuning during Phase 4 is reserved for critical bugs or clearly incorrect blocking behavior.
 - Phase 5 dashboard must make risk status, threshold headroom, block reasons, collector freshness, and global XAG source diagnostics visible before broader tuning.

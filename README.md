@@ -15,15 +15,14 @@ Phase 3.4 sustained collector validation is running on the VPS. Execution-critic
 
 ## Canonical Sources
 
-- Project purpose: `memory-bank/projectbrief.md`
-- Current state: `memory-bank/activeContext.md`
-- Milestones: `memory-bank/progress.md`
+- Project purpose: `.agent/memory/project-conventions.md`
+- Current state & Milestones: `.agent/memory/project-history.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - Decisions: `docs/DECISIONS.md`
 - Data contracts: `docs/DATA_CONTRACTS.md`
 - Risk rules: `docs/RISK_POLICY.md`
 - Work log: `docs/WORKLOG.md`
-- Agent boundaries: `memory-bank/agentRules.md` and `agents/*.md`
+- Agent boundaries: `AGENTS.md` and `.agent/` instructions.
 
 ## First Validation Rules
 

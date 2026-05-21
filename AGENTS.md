@@ -26,6 +26,8 @@ Yeni bir kodlama görevinde asistan önce uygun ajan kimliğini yüklemelidir:
 - **[archaeologist-agent.md](file:///Users/boe747/SilverPilot/.agent/agents/archaeologist-agent.md):** Refactor uzmanı. Kodu bozmadan "Strangler Fig" ile eski yapıları yeniler.
 - **[frontend-architect.md](file:///Users/boe747/SilverPilot/.agent/agents/frontend-architect.md):** Streamlit ve Python tabanlı modern dashboard / UI/UX mimarıdır.
 - **[quality-engineer.md](file:///Users/boe747/SilverPilot/.agent/agents/quality-engineer.md):** Pytest testleri, Docker Compose ve CI/CD doğrulaması uzmanıdır.
+- **[safety-gatekeeper.md](file:///Users/boe747/SilverPilot/.agent/agents/safety-gatekeeper.md):** Güvenlik geçidi ve regresyon koruyucu. Kodlar çalıştırılmadan önce derin statik analiz ve test gerçekçiliği denetimi yapar.
+
 
 ### 3. Teknik Beceriler & Standartlar (Skills)
 Ajanların uymak zorunda olduğu teknik kurallar:
@@ -37,6 +39,10 @@ Ajanların uymak zorunda olduğu teknik kurallar:
 ### 4. İş Akışları & Orkestrasyon (Workflows)
 - **[orchestrate.md](file:///Users/boe747/SilverPilot/.agent/workflows/orchestrate.md)**
   - Büyük ve çok dosyalı iş geliştirme adımlarında ajanların sequential (sıralı) olarak nasıl orkestre edileceğini tanımlar.
+- **[brainstorm.md](file:///Users/boe747/SilverPilot/.agent/workflows/brainstorm.md)**
+  - Yeni bir özelliğin geliştirilmesi veya mimari kararlar öncesinde farklı çözüm yollarını (en az 3 seçenek) yapılandırılmış şekilde beyin fırtınası yaparak değerlendirir.
+- **[remember.md](file:///Users/boe747/SilverPilot/.agent/workflows/remember.md)**
+  - Kritik eşikler aşıldığında veya önemli kararlar alındığında öğrenimlerin ve bilgilerin kalıcı belleğe (.agent/memory/) kaydedilmesini sağlar.
 
 ---
 
