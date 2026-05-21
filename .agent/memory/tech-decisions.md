@@ -31,3 +31,10 @@ updated: 2026-05-21
 - **Kuveyt Scraper Retry & Resilience:** Added a 3-retry attempt loop with a 5s delay on connection/timeout issues before resorting to Yahoo Finance fallback proxy (`yahoo_si_f`).
 - **Hard Block Anomalies:** Structured parser/value errors (`CollectorError`) and critical value anomalies (Inverted spread, spread out-of-safe-range) strictly bypass Yahoo fallback and immediately trigger failed runs to preserve data integrity.
 - **Global Cross-Control Validation:** Real-time mid price divergence validation comparing scraped bank silver price against Yahoo `SI=F` global prices. If mid price deviates by > 5%, a warning is recorded in the run log and `details_json` without aborting the collector pipeline.
+
+## 6. Timeframe Isolation & Backfill Hardening (Phase 3.9 & 3.9.1 - May 2026)
+- **Timeframe Isolation (Source Naming):** Daily historical backfill data is stored under isolated source `"yahoo-si-f-1d"` and timeframe `"1d"` to prevent technique indicators calculation errors on real-time 5m data.
+- **Transaction Rollback Crash Safety:** Script errors in backfill trigger database rollback (`db.rollback()`) and record `failed` run status and exception error details inside a fresh database transaction block to prevent partial ingestions.
+- **Single-Query O(1) Duplicate Prevention:** Replaced 500+ single-row SQL SELECT queries inside the loop with single-query pre-fetching of timestamps into Python sets for O(1) lookup.
+- **Dual-Write Constraint Check:** Queries existing datetimes from both `PriceSnapshot` and `RawGlobalPrice` tables to prevent database `UniqueConstraint` errors.
+- **Timezone Normalization:** Enforced explicit timezone-aware UTC datetime normalization on all pre-fetched values to guarantee consistency across PostgreSQL and SQLite test environments.
