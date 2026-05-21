@@ -1,4 +1,12 @@
-# Project Planning & Task Decomposition Workflow (Planlama İş Akışı)
+---
+description: Standardized project planning, task decomposition, and user approval protocol. Standardizes phase division, Socratic Gate validation, and token economy.
+---
+
+# /plan - Project Planning & Task Decomposition
+
+$ARGUMENTS
+
+---
 
 ## 1. Purpose
 Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hata ayıklama veya refactoring işlemlerinde izlenecek adımları, fazlandırma kurallarını ve kullanıcı onay mekanizmalarını standartlaştırmak amacıyla tanımlanmıştır. `project-planner` ajanı bu iş akışının ana yürütücüsüdür.
