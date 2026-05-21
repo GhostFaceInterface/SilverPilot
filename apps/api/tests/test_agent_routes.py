@@ -161,3 +161,48 @@ def test_agent_memory_endpoints():
     assert response.status_code == 200
     memories = response.json()
     assert len(memories) == 0
+
+
+def test_agent_trigger_endpoints():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = override_get_db
+    
+    # Secure token settings override
+    def override_get_settings():
+        return Settings(agent_api_token="test_token")
+    app.dependency_overrides[get_settings] = override_get_settings
+    
+    client = TestClient(app)
+
+    # 1. Test POST /agent/news/trigger
+    assert client.post("/agent/news/trigger").status_code == 401
+    response = client.post("/agent/news/trigger", headers={"X-Agent-Token": "test_token"})
+    assert response.status_code == 200
+    assert response.json() == {"status": "triggered", "agent": "news"}
+
+    # 2. Test POST /agent/report/trigger
+    assert client.post("/agent/report/trigger").status_code == 401
+    response = client.post("/agent/report/trigger", headers={"X-Agent-Token": "test_token"})
+    assert response.status_code == 200
+    assert response.json() == {"status": "triggered", "agent": "report"}
+
+    # 3. Test POST /agent/risk/critique
+    assert client.post("/agent/risk/critique").status_code == 401
+    response = client.post("/agent/risk/critique", headers={"X-Agent-Token": "test_token"})
+    assert response.status_code == 200
+    assert response.json() == {"status": "triggered", "agent": "risk"}

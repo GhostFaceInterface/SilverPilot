@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Agent Security Settings
     agent_api_token: str = ""
 
+    agent_news_model: str = "deepseek-v4-flash"
+    agent_report_model: str = "deepseek-v4-flash"
+    agent_risk_model: str = "deepseek-v4-pro"
+
 
 
 @lru_cache

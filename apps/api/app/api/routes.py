@@ -492,3 +492,18 @@ def get_agent_memory(
     stmt = stmt.order_by(desc(AgentMemoryEvent.created_at)).limit(limit).offset(offset)
     results = db.execute(stmt).scalars().all()
     return list(results)
+
+
+@router.post("/agent/news/trigger")
+def trigger_news_agent(_: None = Depends(verify_agent_token)):
+    return {"status": "triggered", "agent": "news"}
+
+
+@router.post("/agent/report/trigger")
+def trigger_report_agent(_: None = Depends(verify_agent_token)):
+    return {"status": "triggered", "agent": "report"}
+
+
+@router.post("/agent/risk/critique")
+def critique_risk_agent(_: None = Depends(verify_agent_token)):
+    return {"status": "triggered", "agent": "risk"}

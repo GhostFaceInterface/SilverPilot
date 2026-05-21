@@ -22,6 +22,14 @@ DEEPSEEK_PRICING = {
     "deepseek-reasoner": {
         "input": Decimal("0.00000055"),
         "output": Decimal("0.00000219")
+    },
+    "deepseek-v4-flash": {
+        "input": Decimal("0.00000014"),
+        "output": Decimal("0.00000028")
+    },
+    "deepseek-v4-pro": {
+        "input": Decimal("0.000000435"),
+        "output": Decimal("0.00000087")
     }
 }
 
@@ -30,7 +38,7 @@ def calculate_llm_cost(model: str, prompt_tokens: int, completion_tokens: int) -
     Calculates the exact cost of an LLM call based on token counts.
     Fallback pricing is applied if model is not recognized.
     """
-    pricing = DEEPSEEK_PRICING.get(model, DEEPSEEK_PRICING["deepseek-chat"])
+    pricing = DEEPSEEK_PRICING.get(model, DEEPSEEK_PRICING["deepseek-v4-flash"])
     input_cost = Decimal(prompt_tokens) * pricing["input"]
     output_cost = Decimal(completion_tokens) * pricing["output"]
     return input_cost + output_cost

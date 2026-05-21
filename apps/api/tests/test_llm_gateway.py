@@ -23,6 +23,20 @@ def test_calculate_llm_cost():
     expected_reasoner = Decimal("1000") * Decimal("0.00000055") + Decimal("2000") * Decimal("0.00000219")
     assert cost_reasoner == expected_reasoner
 
+    # deepseek-v4-flash pricing: input $0.14/1M, output $0.28/1M
+    cost_flash = calculate_llm_cost("deepseek-v4-flash", 1000, 2000)
+    expected_flash = Decimal("1000") * Decimal("0.00000014") + Decimal("2000") * Decimal("0.00000028")
+    assert cost_flash == expected_flash
+
+    # deepseek-v4-pro pricing: input $0.435/1M, output $0.87/1M
+    cost_pro = calculate_llm_cost("deepseek-v4-pro", 1000, 2000)
+    expected_pro = Decimal("1000") * Decimal("0.000000435") + Decimal("2000") * Decimal("0.00000087")
+    assert cost_pro == expected_pro
+
+    # Fallback to deepseek-v4-flash when model not recognized
+    cost_fallback = calculate_llm_cost("unknown-model", 1000, 2000)
+    assert cost_fallback == expected_flash
+
 def test_budget_guard_limits(db_session):
     settings = get_settings()
     settings.deepseek_daily_budget_usd = Decimal("1.00")
