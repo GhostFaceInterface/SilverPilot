@@ -34,7 +34,7 @@ def backfill():
         # 2. Start Collector Run
         run = CollectorRun(
             collector_name="yahoo_xag_usd_backfill",
-            source="yahoo-si-f",
+            source="yahoo-si-f-1d",
             status="running",
             records_seen=0,
             records_inserted=0,
@@ -117,7 +117,7 @@ def backfill():
             # Check for existing snapshot
             existing_snap = db.query(PriceSnapshot).filter(
                 PriceSnapshot.asset_id == asset.id,
-                PriceSnapshot.source == "yahoo-si-f",
+                PriceSnapshot.source == "yahoo-si-f-1d",
                 PriceSnapshot.observed_at == observed_at
             ).first()
             
@@ -127,11 +127,22 @@ def backfill():
                 
             close_price = Decimal(str(row["close"]))
             
+            # Clean row values for JSON serialization (handling NaN and numpy types)
+            payload_dict = {}
+            for k, val in dict(row).items():
+                if pd.isna(val):
+                    payload_dict[k] = None
+                elif hasattr(val, "item"):
+                    item_val = val.item()
+                    payload_dict[k] = None if pd.isna(item_val) else item_val
+                else:
+                    payload_dict[k] = val
+            
             # Create RawGlobalPrice
             raw_global = RawGlobalPrice(
                 collector_run_id=run.id,
                 asset_id=asset.id,
-                source="yahoo-si-f",
+                source="yahoo-si-f-1d",
                 buy_price=close_price,
                 sell_price=close_price,
                 currency="USD",
@@ -139,7 +150,7 @@ def backfill():
                 fetched_at=datetime.now(UTC),
                 raw_payload_hash="backfill_" + str(row["timestamp"]),
                 parser_version="yahoo-finance-chart-v1",
-                payload_json=dict(row),
+                payload_json=payload_dict,
             )
             db.add(raw_global)
             db.flush()
@@ -147,7 +158,7 @@ def backfill():
             # Create PriceSnapshot
             snap = PriceSnapshot(
                 asset_id=asset.id,
-                source="yahoo-si-f",
+                source="yahoo-si-f-1d",
                 buy_price=close_price,
                 sell_price=close_price,
                 mid_price=close_price,
@@ -155,6 +166,8 @@ def backfill():
                 spread_absolute=Decimal("0.0"),
                 spread_percent=Decimal("0.0"),
                 observed_at=observed_at,
+                resolved_source="yahoo_si_f",
+                is_degraded=False,
             )
             db.add(snap)
             db.flush()
