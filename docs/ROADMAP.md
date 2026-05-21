@@ -627,6 +627,7 @@ Rules:
 - Agents cannot read production secrets, bank credentials, SSH private keys, or real-money systems.
 - Agents must use approved tools, sanitized backend summaries, and project-local SilverPilot skills.
 - Agents cannot directly mutate the production database.
+- Port Isolation Rule: Agents running on the VPS are prohibited from directly connecting to PostgreSQL database ports. They must exclusively interact with the system via FastAPI HTTP endpoints (e.g. `/risk/status`, `/agent/memory`).
 
 Initial budget targets:
 
@@ -653,7 +654,7 @@ Validation gate:
 
 ## Phase 6.5: Simplified Runtime Memory Layer
 
-Goal: give agents compact operational memory before or alongside the first agents, without adding external memory infrastructure.
+Goal: give agents compact operational memory before starting the first agents, without adding external memory infrastructure. This is a hard prerequisite for Phase 7 (First Agents) to prevent hallucination, repetition, and AI slop.
 
 This is backend-managed structured runtime memory, not LLM hidden state and not markdown. It stores compressed operational facts that help agents explain recurring issues, source reliability, and postmortem lessons.
 
@@ -713,7 +714,11 @@ Validation gate:
 
 ## Phase 7: First Agents
 
-Goal: add the minimum useful Hermes-backed agents after deterministic records, dashboard visibility, LLM gateway boundaries, and runtime memory boundaries exist.
+Goal: add the minimum useful Hermes-backed agents after deterministic records, dashboard visibility, LLM gateway boundaries, and runtime memory boundaries are fully validated. Memory layer (Phase 6.5) is active and integrated from day one so that agents are born stateful.
+
+Rules:
+- Agents must utilize the Phase 6.5 PostgreSQL memory layer (`agent_memory_events`) to retrieve historical run-context and write decision summaries.
+- Direct PostgreSQL port querying by the agents is strictly prohibited; all read/write memory operations must go through the approved FastAPI endpoints.
 
 Agents:
 
@@ -820,7 +825,6 @@ Validation gate:
 
 - No feature leakage.
 - Labels use future data only where label logic requires it.
-- Dataset versions are reproducible.
 
 ## Phase 10: First ML Model
 
@@ -842,6 +846,10 @@ Second target:
 
 - expected net return.
 
+Rules:
+- Off-VPS Training Rule: Model training of any scale is strictly prohibited on the live 4 vCPU production VPS. Training pipelines must run in a local sandbox or dedicated remote CI/CD runner.
+- Inference Only: The VPS container only loads serialized pre-trained weight files (.bin or pickle assets) and executes lightweight, low-overhead O(1) inference.
+
 Validation gate:
 
 - Walk-forward validation is used.
@@ -857,19 +865,20 @@ Components:
 
 - MLflow tracking.
 - Model registry.
-- Weekly training job.
+- Weekly training job (triggered locally or in GitHub actions, never on VPS).
 - Backtest comparison.
 - Champion/challenger selection.
 
 Flow:
 
 ```text
-train
+train (local/CI)
 -> evaluate
 -> backtest
 -> compare with existing champion
 -> register challenger
 -> manually approve promotion
+-> push weights to VPS via CI/CD
 ```
 
 Validation gate:
