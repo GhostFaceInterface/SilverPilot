@@ -633,7 +633,11 @@ def test_yahoo_xag_usd_collector_writes_global_price_and_snapshot():
     client = httpx.Client(transport=httpx.MockTransport(handler))
     db = testing_session()
     try:
-        run, raw_inserted, snapshot = collect_global_xag_usd(db, settings=Settings(), client=client)
+        run, raw_inserted, snapshot = collect_global_xag_usd(
+            db,
+            settings=Settings(global_xag_source_priority="yahoo-si-f"),
+            client=client,
+        )
 
         assert run.status == "success"
         assert raw_inserted is True
@@ -659,7 +663,11 @@ def test_yahoo_timeout_does_not_write_fake_global_price():
     try:
         run, raw_inserted, snapshot = collect_global_xag_usd(
             db,
-            settings=Settings(yahoo_xag_usd_retries=0, yahoo_xag_usd_backoff_seconds=0),
+            settings=Settings(
+                global_xag_source_priority="yahoo-si-f",
+                yahoo_xag_usd_retries=0,
+                yahoo_xag_usd_backoff_seconds=0,
+            ),
             client=client,
         )
 

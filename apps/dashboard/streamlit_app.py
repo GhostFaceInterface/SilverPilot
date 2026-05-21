@@ -17,7 +17,11 @@ st.set_page_config(page_title="SilverPilot Dashboard", layout="wide")
 
 def fetch_json(path: str, *, timeout_seconds: int = 8) -> tuple[dict[str, Any] | list[Any] | None, str | None]:
     url = f"{API_BASE_URL}{path}"
-    request = Request(url, headers={"Accept": "application/json"})
+    headers = {"Accept": "application/json"}
+    token = os.getenv("AGENT_API_TOKEN", "")
+    if token:
+        headers["X-Agent-Token"] = token
+    request = Request(url, headers=headers)
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))

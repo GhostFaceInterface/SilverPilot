@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_daily_budget_usd: Decimal = Field(default=Decimal("1.00"), gt=0)
 
+    # Agent Security Settings
+    agent_api_token: str = ""
+
 
 
 @lru_cache

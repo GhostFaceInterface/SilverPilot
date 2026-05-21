@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import desc, select, text, func
 from sqlalchemy.orm import Session
 
@@ -340,8 +340,22 @@ def get_latest_daily_report(db: Session = Depends(get_db)):
     }
 
 
+def verify_agent_token(
+    x_agent_token: str | None = Header(None),
+    settings: Settings = Depends(get_settings)
+) -> None:
+    if not settings.agent_api_token:
+        return
+    if x_agent_token != settings.agent_api_token:
+        raise HTTPException(status_code=401, detail="Access Denied: Invalid Agent API Token")
+
+
 @router.post("/agent/trace", response_model=LLMTraceResponse)
-def create_agent_trace(request: LLMTraceCreate, db: Session = Depends(get_db)) -> LLMTraceResponse:
+def create_agent_trace(
+    request: LLMTraceCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token)
+) -> LLMTraceResponse:
     trace = LLMCallTrace(
         agent_name=request.agent_name,
         model_name=request.model_name,
@@ -365,7 +379,8 @@ def get_agent_traces(
     limit: int = 50,
     offset: int = 0,
     agent_name: str | None = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token)
 ) -> list[LLMCallTrace]:
     stmt = select(LLMCallTrace)
     if agent_name:
@@ -376,7 +391,10 @@ def get_agent_traces(
 
 
 @router.get("/agent/traces/stats")
-def get_agent_traces_stats(db: Session = Depends(get_db)):
+def get_agent_traces_stats(
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token)
+):
     # 1. Total Cost & Count
     total_stats = db.execute(
         select(
@@ -438,7 +456,11 @@ def get_agent_traces_stats(db: Session = Depends(get_db)):
 
 
 @router.post("/agent/memory", response_model=AgentMemoryResponse)
-def create_agent_memory(request: AgentMemoryCreate, db: Session = Depends(get_db)) -> AgentMemoryResponse:
+def create_agent_memory(
+    request: AgentMemoryCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token)
+) -> AgentMemoryResponse:
     memory_event = AgentMemoryEvent(
         agent_name=request.agent_name,
         event_type=request.event_type,
@@ -458,7 +480,8 @@ def get_agent_memory(
     event_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token)
 ) -> list[AgentMemoryEvent]:
     stmt = select(AgentMemoryEvent).where(AgentMemoryEvent.agent_name == agent_name)
     if key:

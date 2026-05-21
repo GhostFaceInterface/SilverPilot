@@ -44,7 +44,7 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       DEEPSEEK_DAILY_BUDGET_USD: ${DEEPSEEK_DAILY_BUDGET_USD:-1.00}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,6 +107,7 @@ services:
     container_name: silverpilot-dashboard
     environment:
       SILVERPILOT_API_BASE_URL: ${SILVERPILOT_API_BASE_URL:-http://api:8000}
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:-}
     ports:
       - "8501:8501"
     depends_on:
@@ -121,7 +122,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-silverpilot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
 
       - postgres_data:/var/lib/postgresql/data
