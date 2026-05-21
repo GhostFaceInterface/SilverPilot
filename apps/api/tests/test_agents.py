@@ -378,3 +378,341 @@ async def test_report_agent_empty_database(db_session):
     assert "No active portfolio data or snapshots found" in report.payload_json["report_content"]
 
 
+@pytest.mark.anyio
+@patch("httpx.AsyncClient.post")
+async def test_news_agent_malformed_json_recovery(mock_post, db_session):
+    # Setup mock API key
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+
+    # Setup dummy collector run
+    run = CollectorRun(
+        collector_name="news-test-collector",
+        source="test",
+        status="SUCCESS",
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    # Add RawNews
+    news = RawNews(
+        collector_run_id=run.id,
+        source="test-source",
+        title="Silver news title",
+        url="http://example.com/silver",
+        fetched_at=datetime.now(timezone.utc),
+        raw_payload_hash="hash",
+        parser_version="1.0",
+    )
+    db_session.add(news)
+    db_session.commit()
+
+    # Mock HTTP response with invalid JSON
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "This is completely malformed non-JSON data from LLM gateway.",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+        },
+    }
+    mock_post.return_value = mock_response
+
+    event = await run_news_sentiment_analysis(db_session)
+    assert event is not None
+    assert event.value_json["sentiment"] == "NEUTRAL"
+    assert event.value_json["confidence"] == 0.5
+    assert "Failed to parse" in event.value_json["summary_markdown"]
+
+
+@pytest.mark.anyio
+@patch("httpx.AsyncClient.post")
+async def test_risk_agent_malformed_json_recovery(mock_post, db_session):
+    # Setup mock API key
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+
+    # Add mock Asset, PriceSnapshot, Signal
+    asset = Asset(symbol="XAG", name="Silver", asset_type="precious_metal", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+
+    price_snap = PriceSnapshot(
+        asset_id=asset.id,
+        source="test-source",
+        buy_price=Decimal("25.0"),
+        sell_price=Decimal("25.0"),
+        mid_price=Decimal("25.0"),
+        currency="USD",
+        spread_absolute=Decimal("0.0"),
+        spread_percent=Decimal("0.0"),
+        observed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(price_snap)
+    db_session.commit()
+
+    signal = Signal(
+        observed_at=datetime.now(timezone.utc),
+        price_snapshot_id=price_snap.id,
+        action="BUY",
+        reason_code="RSI_OVERSOLD",
+        price_usd_oz=Decimal("25.0"),
+        details_json={},
+    )
+    db_session.add(signal)
+    db_session.commit()
+
+    # Mock HTTP response with invalid JSON
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Invalid response format",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+        },
+    }
+    mock_post.return_value = mock_response
+
+    event = await run_signal_critique(db_session, signal.id)
+    assert event is not None
+    assert event.value_json["decision"] == "APPROVED"
+    assert event.value_json["confidence"] == 0.5
+    assert "Failed to parse" in event.value_json["critique_markdown"]
+
+
+@pytest.mark.anyio
+@patch("httpx.AsyncClient.post")
+async def test_risk_agent_degraded_state_missing_indicators(mock_post, db_session):
+    # Setup mock API key
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+
+    # Add mock Asset, PriceSnapshot, Signal, Portfolio, PortfolioSnapshot
+    # Do not add TechnicalIndicator! This simulates a missing indicator condition.
+    asset = Asset(symbol="XAG", name="Silver", asset_type="precious_metal", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+
+    price_snap = PriceSnapshot(
+        asset_id=asset.id,
+        source="test-source",
+        buy_price=Decimal("25.0"),
+        sell_price=Decimal("25.0"),
+        mid_price=Decimal("25.0"),
+        currency="USD",
+        spread_absolute=Decimal("0.0"),
+        spread_percent=Decimal("0.0"),
+        observed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(price_snap)
+    db_session.commit()
+
+    signal = Signal(
+        observed_at=datetime.now(timezone.utc),
+        price_snapshot_id=price_snap.id,
+        action="BUY",
+        reason_code="RSI_OVERSOLD",
+        price_usd_oz=Decimal("25.0"),
+        details_json={},
+    )
+    db_session.add(signal)
+    db_session.commit()
+
+    portfolio = Portfolio(
+        name="test-portfolio",
+        base_currency="USD",
+        initial_cash=Decimal("10000.0"),
+        cash_balance=Decimal("10000.0"),
+    )
+    db_session.add(portfolio)
+    db_session.commit()
+
+    portfolio_snap = PortfolioSnapshot(
+        portfolio_id=portfolio.id,
+        cash_balance=Decimal("10000.0"),
+        asset_quantity=Decimal("0.0"),
+        portfolio_value=Decimal("10000.0"),
+        realized_pnl=Decimal("0.0"),
+        unrealized_pnl=Decimal("0.0"),
+        observed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(portfolio_snap)
+    db_session.commit()
+
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": '{"decision": "CAUTION", "confidence": 0.8, "critique_markdown": "Audit despite missing indicators"}',
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+    }
+    mock_post.return_value = mock_response
+
+    event = await run_signal_critique(db_session, signal.id)
+    assert event is not None
+    assert event.value_json["decision"] == "CAUTION"
+    assert event.value_json["confidence"] == 0.8
+    assert "missing indicators" in event.value_json["critique_markdown"]
+
+
+@pytest.mark.anyio
+@patch("httpx.AsyncClient.post")
+async def test_risk_agent_degraded_state_missing_portfolio_snapshot(mock_post, db_session):
+    # Setup mock API key
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+
+    # Add mock Asset, PriceSnapshot, Signal
+    # Do not add Portfolio Snapshot or Portfolio at all!
+    asset = Asset(symbol="XAG", name="Silver", asset_type="precious_metal", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+
+    price_snap = PriceSnapshot(
+        asset_id=asset.id,
+        source="test-source",
+        buy_price=Decimal("25.0"),
+        sell_price=Decimal("25.0"),
+        mid_price=Decimal("25.0"),
+        currency="USD",
+        spread_absolute=Decimal("0.0"),
+        spread_percent=Decimal("0.0"),
+        observed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(price_snap)
+    db_session.commit()
+
+    signal = Signal(
+        observed_at=datetime.now(timezone.utc),
+        price_snapshot_id=price_snap.id,
+        action="BUY",
+        reason_code="RSI_OVERSOLD",
+        price_usd_oz=Decimal("25.0"),
+        details_json={},
+    )
+    db_session.add(signal)
+    db_session.commit()
+
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": '{"decision": "APPROVED", "confidence": 0.9, "critique_markdown": "Passed despite missing portfolio snapshot"}',
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+    }
+    mock_post.return_value = mock_response
+
+    event = await run_signal_critique(db_session, signal.id)
+    assert event is not None
+    assert event.value_json["decision"] == "APPROVED"
+    assert event.value_json["confidence"] == 0.9
+    assert "missing portfolio snapshot" in event.value_json["critique_markdown"]
+
+
+@pytest.mark.anyio
+@patch("httpx.AsyncClient.post")
+async def test_strategy_risk_critique_hook_execution(mock_post, db_session):
+    from app.services.strategy import trigger_risk_critique_hook
+
+    # Setup mock API key
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+
+    # Add mock Asset, PriceSnapshot, Signal
+    asset = Asset(symbol="XAG", name="Silver", asset_type="precious_metal", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+
+    price_snap = PriceSnapshot(
+        asset_id=asset.id,
+        source="test-source",
+        buy_price=Decimal("25.0"),
+        sell_price=Decimal("25.0"),
+        mid_price=Decimal("25.0"),
+        currency="USD",
+        spread_absolute=Decimal("0.0"),
+        spread_percent=Decimal("0.0"),
+        observed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(price_snap)
+    db_session.commit()
+
+    signal = Signal(
+        observed_at=datetime.now(timezone.utc),
+        price_snapshot_id=price_snap.id,
+        action="BUY",
+        reason_code="RSI_OVERSOLD",
+        price_usd_oz=Decimal("25.0"),
+        details_json={},
+    )
+    db_session.add(signal)
+    db_session.commit()
+
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": '{"decision": "APPROVED", "confidence": 0.95, "critique_markdown": "Hook test pass"}',
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+    }
+    mock_post.return_value = mock_response
+
+    event = await trigger_risk_critique_hook(db_session, signal_id=signal.id)
+    assert event is not None
+    assert event.event_type == "signal_critique"
+    assert event.value_json["decision"] == "APPROVED"
+    assert event.value_json["confidence"] == 0.95
+    assert event.value_json["critique_markdown"] == "Hook test pass"
+
+
+
