@@ -170,6 +170,9 @@ docker compose --env-file .env.production run --rm api alembic upgrade head
 echo -e \"\${BLUE}[4/5] Executing smoke check on HTTP Server...\${NC}\"
 curl -fsS http://127.0.0.1:8000/health
 
+echo -e \"\${BLUE}[4.5/5] Running E2E Strategy & Backtest Verification Pipeline...\${NC}\"
+docker compose --env-file .env.production run --rm api python scripts/verify_execution_pipeline.py
+
 echo -e \"\${BLUE}[5/5] Running all collector sanity jobs...\${NC}\"
 echo \"Running: tcmb-usd-try\"
 docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job tcmb-usd-try

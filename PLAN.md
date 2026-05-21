@@ -1,104 +1,109 @@
-# Implementation Plan: Phase 5.5 - Deterministic Signal & Backtest Engine
+# Implementation Plan: Phase 5.5 VPS Integration & Phase 6 LLM Gateway, Premium Custom Observability & Best-in-Class Paid Models
 
-Bu plan, SilverPilot projesinde **Option B (Backtest-First)** ve **Option C (Deterministic Signal Engine)** yaklaşımlarını birleştiren **Phase 5.5** aşamasının adım adım, düşük riskli ve son derece modüler bir şekilde hayata geçirilmesini amaçlar.
+Bu plan, localde başarıyla tamamlanan **Phase 5.5 (Deterministic Signal & Backtest Engine)** modüllerinin VPS ortamına entegrasyonunu ve bir sonraki aşama olan **Phase 6 (LLM Gateway, Custom Observability, and Agent Foundation)** mimarisini içerir. 
+
+Kullanıcı geri bildirimleri doğrultusunda **Özel Gözlemleme Sistemi (kendi yazacağımız sıfır VPS RAM yüklü modül)** ve **En Üst Seviye Ücretli Finansal Muhakeme Modelleri (Claude 3.5 Sonnet, DeepSeek-R1, Gemini 2.5 Pro)** kullanımı plana dahil edilmiştir.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
 - **Etkilenen Politikalar:**
-  - [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Gereken verilerin eksikliği durumunda bloklama, kağıt üzerinde işlem kuralları, gerçek para/banka entegrasyonu yasağı, işlem limitleri).
-  - [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Zaman damgası tekilliği, UTC uyumluluğu, deterministik ve izole indikatör/sinyal verileri).
-- **Etkilenen Dosyalar (Create / Modify):**
-  - **Modify:** `apps/api/app/models/entities.py` (Database model güncellemesi)
-  - **Create:** `apps/api/app/schemas/signal.py` (Pydantic doğrulama şemaları)
-  - **Create:** `apps/api/app/services/strategy.py` (Deterministik Strateji Koşucusu)
-  - **Create:** `scripts/backtest_engine.py` (Yerel/Çevrimdışı Tarihsel Simülasyon Motoru)
-  - **Create:** `scripts/verify_execution_pipeline.py` (Dry-run Entegrasyon ve Doğrulama Betiği)
-  - **Create/Modify:** `apps/api/tests/` altındaki pytest test dosyaları
+  - [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Veri bütünlüğü, işlem limitleri, gerçek para yasağı).
+  - [docs/ARCHITECTURE.md](file:///Users/boe747/SilverPilot/docs/ARCHITECTURE.md) (LLM bütçe sınırları, Özel Tracing, Port İzolasyon kuralı).
+- **Etkilenen Şemalar & Yapılar:**
+  - `signals` veritabanı tablosu (Alembic migrasyonunun VPS üzerinde canlıya alınması).
+  - `llm_call_traces` (Sıfırdan yazacağımız hafif ve yerel izleme tablosu).
+  - `apps/api/app/llm/` ve `apps/api/app/agents/` (Yeni modüller).
+
+---
+
+## 🚀 Mimari Kararlar (Kararlaştırılan Yapı)
+
+1. **Özel Gözlemleme Sistemi (Custom Light-Logger - Biz Yazıyoruz):**
+   - VPS kaynaklarını (RAM) yormamak ve verileri tamamen kendi bünyemizde tutmak için herhangi bir harici kütüphane (Langfuse vb.) **kurmuyoruz**.
+   - Veritabanımızda hafif bir `llm_call_traces` tablosu oluşturuyoruz.
+   - Backend tarafında yazacağımız `@trace_llm` dekoratörü ile tüm API çağrılarının yanıt süresini, token kullanımını ve maliyetini anlık ölçüp bu tabloya yazıyoruz.
+   - Streamlit dashboard arayüzümüze **"LLM Observability"** adında şık bir sekme ekleyerek, harcanan toplam dolar miktarını, ortalama yanıt sürelerini ve prompt loglarını görsel grafiklerle panelde sunuyoruz.
+
+2. **Premium Finansal Muhakeme Modelleri (Direct DeepSeek V4 Pro Entegrasyonu):**
+   - Finansal doğruluk ve maliyet/performans liderliğini garantilemek adına harici servisleri bypass ederek **doğrudan resmi DeepSeek API** altyapısını kullanıyoruz:
+     - **Tüm Ajanlar İçin (Risk, News, Report):** En yeni nesil **DeepSeek-V4-Pro** modelini kullanıyoruz.
+     - **Risk Agent (Risk Analizörü):** `deepseek-reasoner` (DeepSeek-V4-Pro'nun derinlemesine düşünme "Think" modunu tetikleyerek üstün kurumsal muhakeme ve matematiksel doğrulama).
+     - **News & Report Agents (Haber & Raporlama):** `deepseek-chat` (DeepSeek-V4-Pro'nun ultra hızlı, yüksek bağlamlı ve ekonomik standart modunu kullanarak hızlı haber tarama ve Türkçe raporlama).
+   - Bu modellerin tamamına doğrudan resmi **DeepSeek API Key** (`DEEPSEEK_API_KEY`) ile bağlanıyoruz.
+
+3. **Option C Güvenlik Sınırları:**
+   - **Port İzolasyonu:** VPS'teki ajanlar PostgreSQL'e doğrudan bağlanamaz. Tracing logları dahil tüm okuma/yazma işlemlerini FastAPI HTTP uç noktaları üzerinden yapacaktır.
+   - **Bellek Önceliği:** Faz 7 ajanları doğmadan önce Faz 6.5 bellek tabloları (`agent_memory_events`) hazır olacaktır.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-### `[x]` Faz 1: Database Migration & Schema Design (signals tablosu)
-- **Açıklama:** Mevcut `Signal` modelinin Phase 5.5 gereksinimlerine göre yeniden yapılandırılması ve veritabanı migrasyonunun tamamlanması.
+### `[ ]` **Faz 1: Phase 5.5 VPS Entegrasyonu ve Canlı Doğrulama**
+- **Açıklama:** Localde testi geçen strategy, backtest ve signals migrasyonlarının VPS ortamına deploy edilmesi ve E2E doğrulama betiğinin canlıda çalıştırılması.
 - **Yapılacaklar:**
-  - [x] `apps/api/app/models/entities.py` içindeki `Signal` modelinin güncellenmesi (Ajan: `backend-architect`):
+  - [ ] Local değişikliklerin git commit & push ile gönderilmesi (Ajan: `safety-gatekeeper`).
+  - [ ] `scripts/deploy.sh` betiğinin çalıştırılarak VPS üzerinde:
+    - Koda güncellemelerin çekilmesi (`git pull`).
+    - Docker container yapılarının yeniden kurulması (`docker compose up -d --build`).
+    - Veritabanı Alembic migrasyonlarının (`62456308964b_refactor_signals_table`) uygulanması.
+    - E2E doğrulama betiğinin (`scripts/verify_execution_pipeline.py`) PostgreSQL üzerinde izole bir transaction açarak dry-run çalıştırılması ve rollback ile temizlenmesi.
+- *DoD (Tamamlanma Tanımı):* `deploy.sh` betiğinin sıfır hata koduyla tamamlanması ve remote VPS smoke-testlerin başarıyla geçmesi.
+
+### `[ ]` **Faz 2: Phase 6.1 - LLM Gateway Config & Direct DeepSeek Entegrasyonu**
+- **Açıklama:** Doğrudan DeepSeek API bağlantısı, model bazlı (`deepseek-chat` ve `deepseek-reasoner`) fiyatlandırma haritası ve budget-guard bütçe sigortasının yazılması.
+- **Yapılacaklar:**
+  - [ ] `app/core/config.py` içerisine `DEEPSEEK_API_KEY` ve resmi DeepSeek base URL (`https://api.deepseek.com/v1`) tanımlarının eklenmesi (Ajan: `backend-architect`).
+  - [ ] `app/llm/gateway.py` asenkron `httpx` istemcisinin ve model fiyatlandırma tablosunun (input/output token başına cent cinsinden) eklenmesi.
+  - [ ] `app/llm/budget_guard.py` modülünün yazılması. Belirlenen günlük limit (örn: $1.00 USD) aşıldığında LLM çağrılarını keserek faturanın şişmesini engelleyen koruma mekanizması.
+- *DoD:* `pytest tests/test_llm_gateway.py` ile gateway çağrılarının ve bütçe sınırlarının mock olarak test edilmesi.
+
+### `[ ]` **Faz 3: Phase 6.2 - Kendi Gözlemleme Sistemimizin (Custom Light-Logger) İnşası**
+- **Açıklama:** Harici ağır uygulamalar yerine veritabanımızda tutulacak hafif ve yerel LLM tracing veritabanı şemasının, backend servislerinin ve Streamlit arayüzünün yazılması.
+- **Yapılacaklar:**
+  - [ ] `llm_call_traces` tablosunun veritabanı modelinin tasarlanması ve Alembic migrasyonunun oluşturulması:
     - `id`: Serial Primary Key.
-    - `observed_at`: DateTime(timezone=True) (UTC, index-enabled, nullable=False).
-    - `price_snapshot_id`: Integer, ForeignKey referencing `price_snapshots.id` (nullable=False).
-    - `indicator_id`: Integer, ForeignKey referencing `technical_indicators.id` (nullable=True - indikatörsüz stratejiler için).
-    - `action`: String(16) (Values: `'BUY'`, `'SELL'`, `'HOLD'`, nullable=False).
-    - `reason_code`: String(64) (e.g., `'RSI_OVERSOLD'`, `'RSI_OVERBOUGHT'`, `'SMA_GOLDEN_CROSS'`, nullable=False).
-    - `price_usd_oz`: Numeric(18, 6) (nullable=False).
-    - `details_json`: JSON (nullable=False, default=dict).
-    - `created_at`: DateTime(timezone=True) (server_default=func.now()).
-  - [x] `apps/api/app/schemas/signal.py` şema dosyasının sıfırdan oluşturulması (Pydantic tabanlı doğrulama).
-  - [x] Alembic migrasyonunun oluşturulması:
-    ```bash
-    cd apps/api
-    poetry run alembic revision --autogenerate -m "refactor_signals_table"
-    ```
-  - [x] Migrasyonun local PostgreSQL üzerinde test edilmesi (`poetry run alembic upgrade head`).
-- **DoD (Tamamlanma Tanımı):**
-  - PostgreSQL veritabanında `signals` tablosunun belirtilen kolonlarla başarıyla oluşturulması.
-  - `pytest` entegrasyon testlerinin migrasyon veya model uyuşmazlığı olmadan sıfır hata ile çalışması.
+    - `agent_name`: Hangi ajanın çağırdığı (Risk, News, Report vb.).
+    - `model_name`: Çağrılan model (`deepseek-chat`, `deepseek-reasoner` vb.).
+    - `prompt_tokens`, `completion_tokens`, `total_cost_usd`: Harcanan kaynaklar.
+    - `latency_ms`: Milisaniye cinsinden yanıt süresi.
+    - `status`: `'SUCCESS'` veya `'FAILED'`.
+    - `prompt_raw`, `response_raw`, `error_message`: Log detayları.
+    - `created_at`: DateTime (UTC).
+  - [ ] Backend tarafında `@trace_llm` dekoratörünün yazılması. Gateway çağrılarını sarmalayarak süre ve maliyet ölçümü yapması.
+  - [ ] Ajanların loglama yapabilmesi için FastAPI HTTP `/agent/trace` endpoints'lerinin yazılması (Port İzolasyon Kuralı).
+- *DoD:* `@trace_llm` dekoratörünün başarıyla veritabanına log attığının entegrasyon testleriyle kanıtlanması.
 
-### `[x]` Faz 2: Deterministic Strategy Runner (app/services/strategy.py)
-- **Açıklama:** Teknik indikatörleri okuyarak deterministik alım-satım kararları alan saf/matematiksel motorun yazılması.
+### `[ ]` **Faz 4: Phase 6.3 - Streamlit Dashboard LLM İzleme Paneli**
+- **Açıklama:** Yazdığımız Custom Logger verilerinin Streamlit arayüzünde şık grafiklerle gösterilmesi.
 - **Yapılacaklar:**
-  - [x] `apps/api/app/services/strategy.py` dosyasının oluşturulması (Ajan: `backend-architect`).
-  - [x] **Purity of Calculations:** İndikatör değerlendirme ve sinyal üretim mantığının veritabanı veya harici durum yan etkisi (side-effect) olmadan, tamamen deterministik matematiksel fonksiyonlar şeklinde tasarlanması.
-  - [x] **Inventory/State Constraints (Envanter Kısıtları):** Üst üste binen (overlapping) sinyallerin engellenmesi. Eğer halihazırda açık bir sanal pozisyon varsa yeni bir `BUY` sinyali üretilmemelidir.
-  - [x] **Signal Expiration:** Sinyallerin sadece belirli bir bar penceresi (active window of N bars) için geçerli olmasının sağlanması.
-  - [x] **Temel Stratejilerin İmplementasyonu:**
-    - **RSI (14):** RSI < 30 ise `BUY` (Oversold), RSI > 70 ise `SELL` (Overbought).
-    - **SMA Cross (20/50/200):** Altın Kesişim (SMA20 > SMA50) durumunda `BUY`, Ölüm Kesişimi durumunda `SELL`.
-    - **Bollinger Bands (20, 2):** Alt banda dokunulduğunda `BUY`, üst banda dokunulduğunda `SELL`.
-- **DoD (Tamamlanma Tanımı):**
-  - `apps/api/tests/test_strategy.py` altında strateji kurallarını test eden pytest test süitinin tamamlanması ve %100 başarılı olması.
-  - Testlerin edge-case (sıfır veri, NaN indikatör değerleri, aşırı oynak fiyatlar) durumlarında hata fırlatmadan güvenli bir şekilde `HOLD` kararı ürettiğinin doğrulanması.
+  - [ ] Streamlit dashboard uygulamamıza `LLM Analytics & Observability` adında yeni bir tab eklenmesi (Ajan: `frontend-architect`).
+  - [ ] Bu sekmede:
+    - Toplam LLM Harcaması (USD).
+    - Ajan başına çağrı sayısı ve maliyet dağılımı grafiği.
+    - Ortalama yanıt süreleri.
+    - Son 50 LLM çağrısının prompt ve response loglarının okunabilir şık bir tablo halinde listelenmesi.
+- *DoD:* Streamlit arayüzünde LLM Observability sekmesinin sorunsuz yüklenmesi ve verileri PostgreSQL'den FastAPI HTTP endpoints aracılığıyla canlı okuması.
 
-### `[x]` Faz 3: Offline Backtest Engine (scripts/backtest_engine.py)
-- **Açıklama:** Geçmişe dönük 2 yıllık günlük `"yahoo-si-f-1d"` ve 5m intraday verileri üzerinden simülasyon yapan çevrimdışı motorun kurulması.
+### `[ ]` **Faz 5: Phase 6.4 - Structured Output Validation (Instructor / Schema Guard)**
+- **Açıklama:** Ajanların ürettiği Türkçe veya mantıksal finans kararlarının Pydantic şemalarına tam uymasını sağlayan doğrulama katmanı.
 - **Yapılacaklar:**
-  - [x] `scripts/backtest_engine.py` scriptinin sıfırdan oluşturulması (Ajan: `data-engineer`).
-  - [x] **Simülasyon Döngüsü (Execution Loop):** Tarihsel `price_snapshots` ve `technical_indicators` verilerinin kronolojik olarak çekilerek sırayla Strategy Runner'a aktarılması.
-  - [x] **İşlem Maliyeti & Gerçekçi Sürtünme Modeli (Transaction Cost Reality):**
-    - **Spread:** Kuveyt Türk tarihsel spread farklarının (örneğin %2 ile %4 arası) veya yapılandırılabilir sabit bir spread oranının uygulanması.
-    - **Metals Tax (Vergi):** Türkiye Cumhuriyeti banka altın/gümüş satış işlemlerinde uygulanan %0.2 BSMV/vergi kesintisinin net hasılattan düşülmesi.
-    - **Banka Ücretleri (Fees):** İşlem başına sabit $0.05 USD ücret uygulanması.
-    - **Kayma (Slippage):** İletim ve işlem gecikmesi kaynaklı olarak fiyatta %0.05 oranında negatif kayma etkisi yansıtılması.
-  - [x] **Muhasebe Motoru (Accounting Engine):**
-    - Başlangıç portföy bakiyesinin $600 USD olarak set edilmesi.
-    - Her adımda gerçekleşen (realized) ve gerçekleşmeyen (unrealized) PnL hesabının yapılması.
-    - Her adımın bakiye durumunu tutan bir Equity Curve dizisi oluşturulması.
-  - [x] **Metrik ve Performans Analizörleri:**
-    - Net PnL (USD & % getiri).
-    - Maksimum Çekilme (Max Drawdown - MDD) hesabı.
-    - Win Rate (%) ve Profit Factor (Gross Profits / Gross Losses).
-    - Maliyet Yükü (Cost Drag % = Toplam maliyetler / Bitiş bakiyesi).
-  - [x] **Buy & Hold Benchmark Karşılaştırması:**
-    - İlk snapshot anında tüm bakiye ile ($600 USD) gümüş alıp, son snapshot anında satma (Buy and Hold) simülasyonunun aynı tarih aralığı için çalıştırılması.
-    - Strateji performansı ile Buy & Hold performansının yan yana terminale yazdırılması.
-- **DoD (Tamamlanma Tanımı):**
-  - `python scripts/backtest_engine.py --strategy rsi --timeframe 1d` komutunun terminalde hatasız çalışması ve karşılaştırmalı performans raporunu basması.
-  - `pytest apps/api/tests/test_backtest.py` testlerinin yazılması; drawdown ve vergi hesaplamalarının matematiksel olarak doğrulanması.
+  - [ ] `Instructor` kütüphanesi entegrasyonunun asenkron gateway'e bağlanması (Ajan: `backend-architect`).
+  - [ ] Şema hatası durumunda 2 kez otomatik retry ve prompt düzeltme (self-healing) mekanizmasının kurulması.
+- *DoD:* pytest ile şemaya uymayan mock LLM çıktılarının başarıyla reddedildiğinin ve düzeltildiğinin test edilmesi.
 
-### `[x]` Faz 4: E2E Verification & Automated Tests
-- **Açıklama:** Sistemin uçtan uca çalışabilirliğini, paper-trading veritabanı kısıtlarını ve deterministik entegrasyonu doğrulayan mekanizmaların kurulması.
+### `[ ]` **Faz 6: Phase 6.5 - PostgreSQL Bellek Katmanı (Prerequisite)**
+- **Açıklama:** Ajanların geçmiş kararları hatırlaması için `agent_memory_events` tablolarının ve FastAPI endpoint'lerinin oluşturulması.
 - **Yapılacaklar:**
-  - [x] `scripts/verify_execution_pipeline.py` doğrulama betiğinin sıfırdan yazılması (Ajan: `quality-engineer`).
-  - [x] Betiğin; indikatörleri okuması, strateji değerlendirmesi yapması, mock veritabanı oturumları ve rollback desteğiyle `signals` ve `paper_trades` tablolarına deneme kayıtları atarak risk engine kurallarını test etmesi.
-  - [x] **No-LLM Dependency:** Tüm doğrulama ve backtest süreçlerinin hiçbir harici API key (OpenRouter vb.) veya LLM çağrısı gerektirmeden tamamen local/offline çalışmasının garanti edilmesi.
-  - [x] **Safety-Gatekeeper Statik İncelemesi:** Kodların deploy edilmeden önce statik analiz kurallarına göre taranması.
-- **DoD (Tamamlanma Tanımı):**
-  - `python scripts/verify_execution_pipeline.py` betiğinin dry-run modunda sıfır hata kodu (exit code 0) ile tamamlanması.
-  - Projedeki tüm test süitinin (`pytest`) başarıyla yeşile dönmesi.
+  - [ ] `agent_memory_events` SQLAlchemy model ve migrasyonlarının tamamlanması (Ajan: `backend-architect`).
+  - [ ] `GET /agent/memory` ve `POST /agent/memory` endpoints entegrasyonu.
+- *DoD:* Bellek API uç noktalarının yeşil olması.
 
 ---
 
-## ❓ Açık Sorular & Riskler
-> [!IMPORTANT]
-> 1. **Geriye Dönük Sinyal Uyumsuzluğu:** Mevcut `Signal` tablosundaki kayıtların yeni kolon yapısına (`observed_at`, `price_snapshot_id`, vb.) dönüştürülmesi gerekiyor mu, yoksa eski veriler temizlenebilir mi? (Paper-trading aşamasında olduğumuz için eski signals verilerinin silinmesinde veya tablonun sıfırdan oluşturulmasında bir sakınca bulunmamaktadır.)
-> 2. **İndikatör Çözünürlüğü:** Backtest simülasyonunda 1 günlük `"yahoo-si-f-1d"` ile 5m intraday verilerinin her ikisi için de teknik göstergeler eksiksiz hesaplanabiliyor mu? (Evet, Phase 3.9 kapsamında backfill yapıları tamamlandığı için veriler hazırdır.)
+## ❓ Açık Sorular (Tamamlandı)
+- **Langfuse:** Kullanılmayacak, yerine **kendi yazacağımız sıfır RAM footprint'li Özel Gözlemleme Sistemi** kullanılacaktır.
+- **Modeller:** Doğrudan resmi **DeepSeek API Key** üzerinden **DeepSeek-V4-Pro** (`deepseek-chat` ve `deepseek-reasoner` modları) kullanılacaktır.
+- **Instructor:** requirements.txt dosyasına eklenerek güvenli şema doğrulaması sağlanacaktır.
+
