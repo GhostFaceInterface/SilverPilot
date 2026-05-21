@@ -38,6 +38,43 @@ def fetch_json(path: str, *, timeout_seconds: int = 8) -> tuple[dict[str, Any] |
     return None, f"{path} returned a non-object payload"
 
 
+def post_json(path: str, payload: dict[str, Any] | None = None, *, timeout_seconds: int = 20) -> tuple[dict[str, Any] | list[Any] | None, str | None]:
+    url = f"{API_BASE_URL}{path}"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    token = os.getenv("AGENT_API_TOKEN", "")
+    if token:
+        headers["X-Agent-Token"] = token
+    
+    data_bytes = None
+    if payload is not None:
+        data_bytes = json.dumps(payload).encode("utf-8")
+    
+    request = Request(url, data=data_bytes, headers=headers, method="POST")
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            res_payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        try:
+            err_body = exc.read().decode("utf-8")
+            err_json = json.loads(err_body)
+            err_msg = err_json.get("detail", err_body)
+        except Exception:
+            err_msg = f"HTTP {exc.code}"
+        return None, f"{path} returned error: {err_msg}"
+    except URLError as exc:
+        return None, f"{path} request failed: {exc.reason}"
+    except TimeoutError:
+        return None, f"{path} request timed out"
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return None, f"{path} returned invalid JSON: {exc}"
+    if isinstance(res_payload, (dict, list)):
+        return res_payload, None
+    return None, f"{path} returned a non-object payload"
+
+
 def decimal_value(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -114,9 +151,15 @@ def load_dashboard_data(api_base_url: str) -> dict[str, Any]:
         "collector_health": "/collectors/health",
         "validation_gate": "/collectors/validation-gate?window_hours=24&expected_interval_minutes=15",
         "risk_status": "/risk/status",
-        "llm_stats": "/agent/traces/stats",
-        "llm_traces": "/agent/traces?limit=50",
+        "latest_report": "/reports/daily/latest",
     }
+    token = os.getenv("AGENT_API_TOKEN", "")
+    if token:
+        endpoints["llm_stats"] = "/agent/traces/stats"
+        endpoints["llm_traces"] = "/agent/traces?limit=50"
+        endpoints["news_memory"] = "/agent/memory?agent_name=news-agent&event_type=news_sentiment&limit=5"
+        endpoints["risk_memory"] = "/agent/memory?agent_name=risk-agent&event_type=signal_critique&limit=5"
+        
     data: dict[str, Any] = {}
     errors: list[str] = []
     for key, path in endpoints.items():
@@ -458,6 +501,205 @@ def render_llm_observability(data: dict[str, Any]) -> None:
         st.info("No LLM calls recorded in the database yet.")
 
 
+def render_active_agents(data: dict[str, Any]) -> None:
+    st.subheader("Active Financial Agents Panel")
+    st.caption("Trigger active reasoning loops and view persisted news sentiments, risk critiques, and daily performance reports.")
+
+    token = os.getenv("AGENT_API_TOKEN", "")
+    if not token:
+        st.warning("⚠️ AGENT_API_TOKEN is not configured. Triggering agents and viewing memory events are disabled for security.")
+        return
+
+    sub_tab_news, sub_tab_risk, sub_tab_report = st.tabs([
+        "📰 News Sentiment Agent",
+        "🛡️ Risk Auditor Agent",
+        "📊 Daily Performance Report Agent"
+    ])
+
+    # 1. NEWS SENTIMENT AGENT SUB-TAB
+    with sub_tab_news:
+        st.markdown("### 📰 News Sentiment Analysis")
+        st.markdown(
+            "Synthesizes raw financial news from the last 24 hours, determines overall market sentiment for Silver (XAG), "
+            "and generates structured summaries using **DeepSeek V4 Flash**."
+        )
+        
+        # Display latest sentiment
+        news_memory = data.get("news_memory")
+        latest_news = news_memory[0] if news_memory else None
+        
+        col_act, col_info = st.columns([1, 3])
+        with col_act:
+            if st.button("Trigger News Sentiment Analysis", key="trigger_news_btn"):
+                with st.spinner("Analyzing market news..."):
+                    payload, err = post_json("/agent/news/trigger")
+                    if err:
+                        st.error(f"Failed to trigger: {err}")
+                    else:
+                        st.success("News analysis completed successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
+        with col_info:
+            if latest_news:
+                val = latest_news.get("value_json") or {}
+                analyzed_at = val.get("analyzed_at", latest_news.get("created_at", "-"))
+                st.caption(f"Last executed: **{analyzed_at}**")
+            else:
+                st.caption("No sentiment analysis recorded yet.")
+
+        st.markdown("---")
+
+        if latest_news:
+            val = latest_news.get("value_json") or {}
+            sentiment = val.get("sentiment", "NEUTRAL")
+            confidence = val.get("confidence", 0.0)
+            summary = val.get("summary_markdown", "")
+            
+            # Sentiment metrics card with premium aesthetics
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                if sentiment == "BULLISH":
+                    st.success(f"📈 **BULLISH**\n\nConfidence: {confidence:.1%}")
+                elif sentiment == "BEARISH":
+                    st.error(f"📉 **BEARISH**\n\nConfidence: {confidence:.1%}")
+                else:
+                    st.warning(f"➡️ **NEUTRAL**\n\nConfidence: {confidence:.1%}")
+            with c2:
+                st.info("💡 **Agent Insight Summary**")
+                st.markdown(summary or "No summary content available.")
+
+            if len(news_memory) > 1:
+                with st.expander("Show Sentiment Analysis History"):
+                    for hist in news_memory[1:]:
+                        h_val = hist.get("value_json") or {}
+                        h_sent = h_val.get("sentiment", "NEUTRAL")
+                        h_conf = h_val.get("confidence", 0.0)
+                        h_dt = h_val.get("analyzed_at", hist.get("created_at", ""))
+                        st.markdown(f"**{h_dt[:16]}** - `{h_sent}` (Conf: {h_conf:.1%})")
+                        st.markdown(h_val.get("summary_markdown", ""))
+                        st.markdown("---")
+        else:
+            st.info("Click the button above to run the News Sentiment Analysis for the first time.")
+
+    # 2. RISK AUDITOR AGENT SUB-TAB
+    with sub_tab_risk:
+        st.markdown("### 🛡️ Strategy Signal Critique")
+        st.markdown(
+            "Audits trading signals using high-reasoning **DeepSeek V4 Pro** models to critique "
+            "decisions against current technical indicators and portfolio exposure."
+        )
+
+        col_in, col_btn = st.columns([2, 1])
+        with col_in:
+            signal_id_str = st.text_input("Signal ID (Leave empty to audit the latest signal)", key="risk_sig_input")
+        with col_btn:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("Trigger Signal Critique", key="trigger_risk_btn"):
+                payload = {}
+                if signal_id_str.strip().isdigit():
+                    payload["signal_id"] = int(signal_id_str.strip())
+                with st.spinner("Auditing trade signal..."):
+                    res, err = post_json("/agent/risk/critique", payload)
+                    if err:
+                        st.error(f"Failed to critique signal: {err}")
+                    else:
+                        st.success("Risk critique completed successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
+
+        st.markdown("---")
+
+        risk_memory = data.get("risk_memory")
+        latest_risk = risk_memory[0] if risk_memory else None
+
+        if latest_risk:
+            val = latest_risk.get("value_json") or {}
+            decision = val.get("decision", "APPROVED")
+            confidence = val.get("confidence", 0.0)
+            critique = val.get("critique_markdown", "")
+            sig_id = val.get("signal_id", "-")
+            analyzed_at = val.get("analyzed_at", latest_risk.get("created_at", "-"))
+
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"**Signal Audited:** #{sig_id}")
+                st.caption(f"Audited at: {analyzed_at[:19]}")
+                if decision == "APPROVED":
+                    st.success(f"✅ **APPROVED**\n\nConfidence: {confidence:.1%}")
+                elif decision == "CAUTION":
+                    st.warning(f"⚠️ **CAUTION**\n\nConfidence: {confidence:.1%}")
+                else:
+                    st.error(f"❌ **REJECTED**\n\nConfidence: {confidence:.1%}")
+            with c2:
+                st.info("🛡️ **Critique & Risk Audit Notes**")
+                st.markdown(critique or "No critique details available.")
+
+            if len(risk_memory) > 1:
+                with st.expander("Show Critique History"):
+                    for hist in risk_memory[1:]:
+                        h_val = hist.get("value_json") or {}
+                        h_dec = h_val.get("decision", "APPROVED")
+                        h_conf = h_val.get("confidence", 0.0)
+                        h_sig = h_val.get("signal_id", "-")
+                        h_dt = h_val.get("analyzed_at", hist.get("created_at", ""))
+                        st.markdown(f"**Signal #{h_sig} Audited at {h_dt[:16]}** - `{h_dec}` (Conf: {h_conf:.1%})")
+                        st.markdown(h_val.get("critique_markdown", ""))
+                        st.markdown("---")
+        else:
+            st.info("No risk critique reports found in memory. Trigger a critique to view results.")
+
+    # 3. REPORT AGENT SUB-TAB
+    with sub_tab_report:
+        st.markdown("### 📊 Daily Performance Report")
+        st.markdown(
+            "Synthesizes portfolio balances and transaction history over the last 24 hours to generate a "
+            "comprehensive report detailing daily stats, PnL, and precious metal commentary using **DeepSeek V4 Flash**."
+        )
+
+        col_rpt_btn, col_rpt_info = st.columns([1, 3])
+        with col_rpt_btn:
+            if st.button("Generate Daily Performance Report", key="trigger_rpt_btn"):
+                with st.spinner("Compiling and generating daily report..."):
+                    res, err = post_json("/agent/report/trigger")
+                    if err:
+                        st.error(f"Failed to generate report: {err}")
+                    else:
+                        st.success("Report generated successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
+        with col_rpt_info:
+            report_envelope = data.get("latest_report")
+            report = report_envelope.get("report") if report_envelope else None
+            if report:
+                created_at = report.get("created_at", "-")
+                st.caption(f"Latest report generated at: **{created_at}**")
+            else:
+                st.caption("No reports compiled yet.")
+
+        st.markdown("---")
+
+        if report:
+            payload = report.get("payload") or report.get("payload_json") or {}
+            port_val = payload.get("portfolio_value", 0.0)
+            cash_bal = payload.get("cash_balance", 0.0)
+            trades_count = payload.get("trades_count", 0)
+            report_markdown = payload.get("report_content", "")
+
+            # Show report overview metrics
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                metric_card("Report Portfolio Value", money(port_val))
+            with m2:
+                metric_card("Report Cash Balance", money(cash_bal))
+            with m3:
+                metric_card("24h Trades In Report", f"{trades_count}")
+
+            st.markdown("#### Performance Summary Report")
+            st.markdown(report_markdown or "No report content found.")
+        else:
+            st.info("Click the button above to synthesize and compile a daily performance report.")
+
+
 st.title("SilverPilot")
 st.caption(f"Read-only dashboard from {API_BASE_URL} - loaded {utc_now_label()}")
 
@@ -468,12 +710,13 @@ if st.button("Refresh"):
 dashboard_data = load_dashboard_data(API_BASE_URL)
 
 # Premium Tabs Interface
-tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability = st.tabs([
+tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability, tab_active_agents = st.tabs([
     "💼 Portfolio & Overview",
     "🛡️ Risk Diagnostics",
     "🔌 Collectors Health",
     "📊 Global XAG Samples",
-    "👁️ LLM Observability"
+    "👁️ LLM Observability",
+    "🤖 Active Financial Agents"
 ])
 
 with tab_portfolio:
@@ -491,3 +734,6 @@ with tab_samples:
 
 with tab_observability:
     render_llm_observability(dashboard_data)
+
+with tab_active_agents:
+    render_active_agents(dashboard_data)
