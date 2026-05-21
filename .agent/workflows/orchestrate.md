@@ -1,4 +1,12 @@
-# Multi-Agent Orchestration Workflow
+---
+description: Multi-agent execution pipeline. Coordinates specialized subagents, quality engineers, and safety gatekeepers.
+---
+
+# /orchestrate - Multi-Agent Orchestration Workflow
+
+$ARGUMENTS
+
+---
 
 ## 1. Purpose
 Defines the sequential multi-agent execution pipeline when a large, complex, or multi-file feature is requested in the SilverPilot project. Coordinates specialised AI Coding Agents and local Antigravity Subagents to ensure minimal risk, token/cost optimization, and high implementation consistency.
