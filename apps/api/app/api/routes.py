@@ -21,6 +21,7 @@ from app.collectors.service import (
 from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal, LLMCallTrace, AgentMemoryEvent
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
+from app.agents.news import run_news_sentiment_analysis
 from app.schemas.collectors import (
     CollectorHealthResponse,
     CollectorQualityResponse,
@@ -494,9 +495,12 @@ def get_agent_memory(
     return list(results)
 
 
-@router.post("/agent/news/trigger")
-def trigger_news_agent(_: None = Depends(verify_agent_token)):
-    return {"status": "triggered", "agent": "news"}
+@router.post("/agent/news/trigger", response_model=AgentMemoryResponse)
+async def trigger_news_agent(
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token)
+) -> AgentMemoryResponse:
+    return await run_news_sentiment_analysis(db)
 
 
 @router.post("/agent/report/trigger")

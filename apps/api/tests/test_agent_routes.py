@@ -193,7 +193,12 @@ def test_agent_trigger_endpoints():
     assert client.post("/agent/news/trigger").status_code == 401
     response = client.post("/agent/news/trigger", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
-    assert response.json() == {"status": "triggered", "agent": "news"}
+    data = response.json()
+    assert data["agent_name"] == "news-agent"
+    assert data["event_type"] == "news_sentiment"
+    assert data["key"] == "latest_analysis"
+    assert data["value_json"]["sentiment"] == "NEUTRAL"
+
 
     # 2. Test POST /agent/report/trigger
     assert client.post("/agent/report/trigger").status_code == 401
