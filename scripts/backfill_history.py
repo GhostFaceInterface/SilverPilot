@@ -105,6 +105,28 @@ def backfill():
         # Calculate technical indicators
         df_indicators = calculate_indicators(df)
         
+        # Pre-fetch existing observed_at timestamps from PriceSnapshot (Phase 2 optimization)
+        print("Pre-fetching existing PriceSnapshot timestamps...")
+        existing_snapshots = set(
+            (r[0].replace(tzinfo=UTC) if r[0].tzinfo is None else r[0].astimezone(UTC))
+            for r in db.query(PriceSnapshot.observed_at).filter(
+                PriceSnapshot.asset_id == asset.id,
+                PriceSnapshot.source == "yahoo-si-f-1d"
+            ).all() if r[0] is not None
+        )
+        print(f"Found {len(existing_snapshots)} existing PriceSnapshots.")
+
+        # Pre-fetch existing observed_at timestamps from RawGlobalPrice (Phase 3 uniqueness check)
+        print("Pre-fetching existing RawGlobalPrice timestamps...")
+        existing_raws = set(
+            (r[0].replace(tzinfo=UTC) if r[0].tzinfo is None else r[0].astimezone(UTC))
+            for r in db.query(RawGlobalPrice.observed_at).filter(
+                RawGlobalPrice.asset_id == asset.id,
+                RawGlobalPrice.source == "yahoo-si-f-1d"
+            ).all() if r[0] is not None
+        )
+        print(f"Found {len(existing_raws)} existing RawGlobalPrices.")
+
         # Insert records
         seen = 0
         inserted = 0
@@ -114,14 +136,8 @@ def backfill():
             seen += 1
             observed_at = datetime.fromtimestamp(int(row["timestamp"]), tz=UTC)
             
-            # Check for existing snapshot
-            existing_snap = db.query(PriceSnapshot).filter(
-                PriceSnapshot.asset_id == asset.id,
-                PriceSnapshot.source == "yahoo-si-f-1d",
-                PriceSnapshot.observed_at == observed_at
-            ).first()
-            
-            if existing_snap:
+            # O(1) membership check to prevent duplicate queries and dual-write uniqueness violations
+            if observed_at in existing_snapshots or observed_at in existing_raws:
                 duplicates += 1
                 continue
                 
@@ -172,6 +188,10 @@ def backfill():
             db.add(snap)
             db.flush()
             
+            # Add to local sets to prevent duplicate constraint violation within the same run
+            existing_snapshots.add(observed_at)
+            existing_raws.add(observed_at)
+            
             # Helper to convert float to Decimal safely
             def to_dec(val):
                 if pd.isna(val) or val is None:
@@ -221,6 +241,14 @@ def backfill():
     except Exception as exc:
         db.rollback()
         print(f"Backfill failed: {exc}", file=sys.stderr)
+        try:
+            run.status = "failed"
+            run.error_message = str(exc)
+            run.finished_at = datetime.now(UTC)
+            db.add(run)
+            db.commit()
+        except Exception as commit_exc:
+            print(f"Failed to record failed status in DB: {commit_exc}", file=sys.stderr)
         raise exc
     finally:
         db.close()

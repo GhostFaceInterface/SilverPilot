@@ -1,40 +1,48 @@
-# [COMPLETED] Implementation Plan: Phase 3.9 Yahoo Finance Daily Backfill & Timeframe Isolation
+# Implementation Plan: Phase 3.9.1 backfill_history.py Robustness & Performance Hardening
+
+Bu plan, `safety-gatekeeper` ajanı tarafından yapılan denetim sonucunda ortaya konan risk ve iyileştirme önerilerini (Risk A, B, C) `backfill_history.py` betiğinde hayata geçirmeyi hedefler.
 
 ## 🛡️ Risk ve Bağlam Analizi
 - **Etkilenen Politikalar:**
-  - [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Veri kalitesi, test standartları, toplayıcı kararlılığı)
-  - [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (PriceSnapshot, RawGlobalPrice ve TechnicalIndicator şema ve kısıt kural bütünlüğü)
-- **Etkilenen Şemalar:**
-  - `PriceSnapshot`, `RawGlobalPrice` ve `TechnicalIndicator` tablolarında yeni veri girişi yapılmıştır.
-- **Kritik Risk (Mixed Timeframe Bug):**
-  - Tarihsel günlük backfill verileri ile real-time 5-dakikalık veriler veritabanında aynı `source` ismi (`yahoo-si-f`) ile saklanırsa, real-time gösterge motoru (`service.py`) son 200 barı çekip teknik gösterge hesaplarken bu iki timeframe verisini karıştıracaktır. Bu durum teknik göstergeleri (RSI, MACD, SMA200 vb.) tamamen kullanılmaz hale getirecektir.
-  - **Çözüm (Option A):** Günlük backfill verileri veritabanına `source="yahoo-si-f-1d"` olarak kaydedilmiştir. Gerçek zamanlı 5m verileri ise `source="yahoo-si-f"` olarak devam etmektedir. Bu sayede iki timeframe tamamen izole edilmiştir.
+  - [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Toplayıcı kalitesi, veri tekilliği, hata durumlarının veritabanına izlenebilir şekilde yansıtılması)
+  - [docs/ARCHITECTURE.md](file:///Users/boe747/SilverPilot/docs/ARCHITECTURE.md) (Veritabanı transaction güvenliği, toplayıcı çalışma durumları)
+- **Etkilenen Dosyalar:**
+  - [scripts/backfill_history.py](file:///Users/boe747/SilverPilot/scripts/backfill_history.py) (Tarihsel verileri dolduran betik)
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[x]` **Faz 1: Tarihsel Backfill Scriptinin Güncellenmesi (Ajan: `data-engineer`)**
-  - `scripts/backfill_history.py` dosyasındaki `source` değerlerinin tamamının `"yahoo-si-f-1d"` olarak güncellenmesi (duplicate kontrolü ve veri ekleme kısımlarında).
-  - Phase 3.8 veri hardening kurallarına tam uyum için `RawGlobalPrice` ve `PriceSnapshot` insert satırlarına `resolved_source="yahoo_si_f"` ve `is_degraded=False` alanlarının entegre edilmesi.
-  - *DoD (Tamamlanma Tanımı):* Güncellenen `scripts/backfill_history.py` kodunun gözden geçirilerek hata/uyarı içermemesi.
+### `[x]` Faz 1: Collector Run Crash Safety (Hata Durumu Kayıt Güvenliği)
+- **Yapılacaklar:**
+  - [scripts/backfill_history.py](file:///Users/boe747/SilverPilot/scripts/backfill_history.py) betiğindeki genel `try-except` bloğunun güncellenmesi.
+  - Hata oluşması durumunda aktif transaction rollback edildikten sonra yeni bir DB oturumu/alt transaction açılarak `CollectorRun.status` değerinin `"failed"` olarak işaretlenmesi ve `error_message` alanına yakalanan hatanın eklenerek veritabanına kaydedilmesi.
+- **DoD (Tamamlanma Tanımı):**
+  - Yapay olarak tetiklenen bir bağlantı hatası durumunda veritabanında `CollectorRun.status == "failed"` ve `error_message` alanının dolu olması.
 
-- `[x]` **Faz 2: Tarihsel Verinin Çekilmesi ve Veri Tabanına Aktarılması (Ajan: `data-engineer`)**
-  - Güncellenen backfill scriptinin çalıştırılması: `python scripts/backfill_history.py`
-  - Veri tabanında XAG asset id'sine sahip `yahoo-si-f-1d` PriceSnapshot, RawGlobalPrice ve TechnicalIndicator (timeframe="1d") kayıtlarının başarıyla oluştuğunun doğrulanması.
-  - *DoD:* SQL veya ORM sorgularıyla veritabanına 2 yıllık günlük verilerin (~500+ bar) ve bunlara ait teknik göstergelerin başarıyla eklendiğinin kanıtlanması.
+### `[x]` Faz 2: Single-Query O(1) Mükerrerlik Denetimi Optimizasyonu (Performans)
+- **Yapılacaklar:**
+  - Döngü içinde her kayıt için veritabanına 504 kez ayrı ayrı SELECT sorgusu atılması yerine, betiğin başında `PriceSnapshot` ve `RawGlobalPrice` tablolarından mevcut `"yahoo-si-f-1d"` kayıtlarının `observed_at` zaman damgalarının tek bir sorguyla çekilmesi.
+  - Çekilen verilerin Python `set` yapısında tutulması ve döngü içindeki mükerrerlik kontrolünün bu set üzerinden O(1) sürede yapılması.
+- **DoD:**
+  - Betik çalıştırıldığında veritabanına giden tekil SELECT sorgusu sayısının 500+'den 1'e düşmesi ve verilerin başarıyla eklenmesi.
 
-- `[x]` **Faz 3: Entegrasyon ve Regresyon Doğrulaması (Ajan: `quality-engineer`)**
-  - Mevcut real-time collector ve gösterge hesaplama mekanizmalarının bu backfill verilerinden etkilenmediğinin (timeframe contamination yaşanmadığının) doğrulanması.
-  - *DoD:* `pytest` komutu çalıştırılarak tüm 76 testin sıfır regresyonla başarıyla tamamlanması.
+### `[x]` Faz 3: İki Yönlü Tekillik Kısıt Denetimi (Çift Yazım Koruyucu)
+- **Yapılacaklar:**
+  - Tekillik denetiminin sadece `PriceSnapshot` tablosu üzerinde değil, aynı zamanda `RawGlobalPrice` tablosunun `observed_at` zaman damgaları üzerinde de yapılması.
+  - Eğer o tarihe ait bir raw fiyat veya snapshot mevcutsa kaydın atlanarak veritabanının `UniqueConstraint` ihlaliyle çökmesinin %100 engellenmesi.
+- **DoD:**
+  - DB'de manuel olarak sadece `RawGlobalPrice` kaydı oluşturulduğunda dahi betiğin IntegrityError fırlatmadan bu kaydı atlayabilmesi.
 
-- `[x]` **Faz 4: Güvenlik Geçidi ve Otomatik Git Commit/Push (Ajan: `safety-gatekeeper` & `quality-engineer`)**
-  - `safety-gatekeeper` tarafından pre-execution review ile kodun son kez onaylanması.
-  - Testlerin yeşil olması durumunda yapılan değişikliklerin `git add scripts/backfill_history.py` ile stage edilip, Conventional Commits formatında (`feat: implement Phase 3.9 historical daily backfill script`) otomatik olarak commit edilmesi ve `git push` ile uzak repoya gönderilmesi.
-  - *DoD:* Git commit ve push işleminin başarıyla tamamlandığının gösterilmesi.
+### `[x]` Faz 4: Entegrasyon ve Regresyon Testleri
+- **Yapılacaklar:**
+  - Değişiklikler yapıldıktan sonra tüm pytest entegrasyon testlerinin yürütülmesi.
+  - Yapılan değişikliklerin git reposuna commit & push edilmesi.
+- **DoD:**
+  - `pytest` komutu çalıştırılarak tüm 77 entegrasyon testinin (yeni yazılan backfill testi dahil) yeşil olması.
 
 ---
 
 ## ❓ Açık Sorular
 > [!NOTE]
-> Herhangi bir açık soru veya belirsizlik bulunmamaktadır. Mixed Timeframe Bug'ı çözecek olan Option A (Kaynak ismi izolasyonu) seçilmiştir ve Phase 3.8 veri standartları tam olarak korunmuştur.
+> Herhangi bir açık soru veya mimari belirsizlik bulunmamaktadır. Yapılacak tüm güncellemeler tek bir betik (`backfill_history.py`) üzerinde izole ve güvenlidir.
