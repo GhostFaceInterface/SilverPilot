@@ -38,3 +38,9 @@ updated: 2026-05-21
 - **Single-Query O(1) Duplicate Prevention:** Replaced 500+ single-row SQL SELECT queries inside the loop with single-query pre-fetching of timestamps into Python sets for O(1) lookup.
 - **Dual-Write Constraint Check:** Queries existing datetimes from both `PriceSnapshot` and `RawGlobalPrice` tables to prevent database `UniqueConstraint` errors.
 - **Timezone Normalization:** Enforced explicit timezone-aware UTC datetime normalization on all pre-fetched values to guarantee consistency across PostgreSQL and SQLite test environments.
+
+## 7. Deterministic Signal & Backtest Engine Architecture (Phase 5.5 - May 2026)
+- **Purity of Calculations:** All indicator and backtest logic must be purely deterministic and mathematically isolated from external side-effects. Use pure pandas and NumPy for calculations.
+- **Transactional Safety:** Database state changes (e.g., inserts to `signals`, `paper_trades`, and `risk_decisions`) during execution and test dry-runs must be fully isolated using SQLAlchemy transaction sessions, supporting complete rollbacks to prevent partial database states.
+- **Non-Overlapping Signals:** The Strategy Runner enforces strict inventory state constraints. A 'BUY' signal is blocked if a position is currently open or pending execution. Expiration windows are defined for inactive signals.
+- **Slippage & Tax Reality:** All backtests and paper simulations must account for transaction costs including Turkish bank-metals tax (currently 0.2% on sell transaction), bid-ask spreads, and latency slippage (modeled as a relative price drag).
