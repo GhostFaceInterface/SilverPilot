@@ -39,3 +39,9 @@ def db_session():
         session.close()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
+
+
+@pytest.fixture()
+def anyio_backend():
+    return "asyncio"
+

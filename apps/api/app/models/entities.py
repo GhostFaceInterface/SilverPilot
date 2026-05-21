@@ -309,4 +309,33 @@ class TechnicalIndicator(Base):
     price_snapshot: Mapped[PriceSnapshot | None] = relationship()
 
 
+class LLMCallTrace(Base):
+    __tablename__ = "llm_call_traces"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_name: Mapped[str] = mapped_column(String(100), index=True)
+    model_name: Mapped[str] = mapped_column(String(100), index=True)
+    prompt_tokens: Mapped[int] = mapped_column(default=0)
+    completion_tokens: Mapped[int] = mapped_column(default=0)
+    total_cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal("0.000000"))
+    latency_ms: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    prompt_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class AgentMemoryEvent(Base):
+    __tablename__ = "agent_memory_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_name: Mapped[str] = mapped_column(String(128), index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    key: Mapped[str] = mapped_column(String(256), index=True)
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 Index("ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at)
+

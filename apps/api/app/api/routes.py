@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select, text
+from sqlalchemy import desc, select, text, func
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -18,7 +18,7 @@ from app.collectors.service import (
     ingest_manual_price,
     latest_collector_run,
 )
-from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal
+from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal, LLMCallTrace, AgentMemoryEvent
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.schemas.collectors import (
@@ -33,6 +33,7 @@ from app.schemas.collectors import (
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 from app.schemas.risk import RiskPolicyStatusResponse
+from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse
 
 router = APIRouter()
 
@@ -337,3 +338,134 @@ def get_latest_daily_report(db: Session = Depends(get_db)):
             "created_at": report.created_at,
         }
     }
+
+
+@router.post("/agent/trace", response_model=LLMTraceResponse)
+def create_agent_trace(request: LLMTraceCreate, db: Session = Depends(get_db)) -> LLMTraceResponse:
+    trace = LLMCallTrace(
+        agent_name=request.agent_name,
+        model_name=request.model_name,
+        prompt_tokens=request.prompt_tokens,
+        completion_tokens=request.completion_tokens,
+        total_cost_usd=request.total_cost_usd,
+        latency_ms=request.latency_ms,
+        status=request.status,
+        prompt_raw=request.prompt_raw,
+        response_raw=request.response_raw,
+        error_message=request.error_message
+    )
+    db.add(trace)
+    db.commit()
+    db.refresh(trace)
+    return trace
+
+
+@router.get("/agent/traces", response_model=list[LLMTraceResponse])
+def get_agent_traces(
+    limit: int = 50,
+    offset: int = 0,
+    agent_name: str | None = None,
+    db: Session = Depends(get_db)
+) -> list[LLMCallTrace]:
+    stmt = select(LLMCallTrace)
+    if agent_name:
+        stmt = stmt.where(LLMCallTrace.agent_name == agent_name)
+    stmt = stmt.order_by(desc(LLMCallTrace.created_at)).limit(limit).offset(offset)
+    traces = db.execute(stmt).scalars().all()
+    return list(traces)
+
+
+@router.get("/agent/traces/stats")
+def get_agent_traces_stats(db: Session = Depends(get_db)):
+    # 1. Total Cost & Count
+    total_stats = db.execute(
+        select(
+            func.sum(LLMCallTrace.total_cost_usd).label("total_cost"),
+            func.count(LLMCallTrace.id).label("total_calls"),
+            func.avg(LLMCallTrace.latency_ms).label("avg_latency"),
+        )
+    ).first()
+    
+    total_cost = float(total_stats.total_cost or 0)
+    total_calls = total_stats.total_calls or 0
+    avg_latency = float(total_stats.avg_latency or 0)
+    
+    # 2. Break-down by Agent
+    agent_stats_rows = db.execute(
+        select(
+            LLMCallTrace.agent_name,
+            func.count(LLMCallTrace.id).label("calls"),
+            func.sum(LLMCallTrace.total_cost_usd).label("cost"),
+            func.avg(LLMCallTrace.latency_ms).label("latency")
+        ).group_by(LLMCallTrace.agent_name)
+    ).all()
+    
+    agent_breakdown = []
+    for row in agent_stats_rows:
+        agent_breakdown.append({
+            "agent_name": row.agent_name,
+            "calls": row.calls,
+            "total_cost_usd": float(row.cost or 0),
+            "avg_latency_ms": float(row.latency or 0)
+        })
+        
+    # 3. Break-down by Model
+    model_stats_rows = db.execute(
+        select(
+            LLMCallTrace.model_name,
+            func.count(LLMCallTrace.id).label("calls"),
+            func.sum(LLMCallTrace.total_cost_usd).label("cost"),
+            func.avg(LLMCallTrace.latency_ms).label("latency")
+        ).group_by(LLMCallTrace.model_name)
+    ).all()
+    
+    model_breakdown = []
+    for row in model_stats_rows:
+        model_breakdown.append({
+            "model_name": row.model_name,
+            "calls": row.calls,
+            "total_cost_usd": float(row.cost or 0),
+            "avg_latency_ms": float(row.latency or 0)
+        })
+        
+    return {
+        "total_cost_usd": total_cost,
+        "total_calls": total_calls,
+        "avg_latency_ms": avg_latency,
+        "by_agent": agent_breakdown,
+        "by_model": model_breakdown
+    }
+
+
+@router.post("/agent/memory", response_model=AgentMemoryResponse)
+def create_agent_memory(request: AgentMemoryCreate, db: Session = Depends(get_db)) -> AgentMemoryResponse:
+    memory_event = AgentMemoryEvent(
+        agent_name=request.agent_name,
+        event_type=request.event_type,
+        key=request.key,
+        value_json=request.value_json
+    )
+    db.add(memory_event)
+    db.commit()
+    db.refresh(memory_event)
+    return memory_event
+
+
+@router.get("/agent/memory", response_model=list[AgentMemoryResponse])
+def get_agent_memory(
+    agent_name: str,
+    key: str | None = None,
+    event_type: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+) -> list[AgentMemoryEvent]:
+    stmt = select(AgentMemoryEvent).where(AgentMemoryEvent.agent_name == agent_name)
+    if key:
+        stmt = stmt.where(AgentMemoryEvent.key == key)
+    if event_type:
+        stmt = stmt.where(AgentMemoryEvent.event_type == event_type)
+    
+    stmt = stmt.order_by(desc(AgentMemoryEvent.created_at)).limit(limit).offset(offset)
+    results = db.execute(stmt).scalars().all()
+    return list(results)

@@ -16,6 +16,8 @@ from app.models.entities import (
     RiskRule,
     Signal,
     TechnicalIndicator,
+    LLMCallTrace,
+    AgentMemoryEvent,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "RiskRule",
     "Signal",
     "TechnicalIndicator",
+    "LLMCallTrace",
+    "AgentMemoryEvent",
 ]

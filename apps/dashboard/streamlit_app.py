@@ -15,7 +15,7 @@ API_BASE_URL = os.getenv("SILVERPILOT_API_BASE_URL", "http://localhost:8000").rs
 st.set_page_config(page_title="SilverPilot Dashboard", layout="wide")
 
 
-def fetch_json(path: str, *, timeout_seconds: int = 8) -> tuple[dict[str, Any] | None, str | None]:
+def fetch_json(path: str, *, timeout_seconds: int = 8) -> tuple[dict[str, Any] | list[Any] | None, str | None]:
     url = f"{API_BASE_URL}{path}"
     request = Request(url, headers={"Accept": "application/json"})
     try:
@@ -29,7 +29,7 @@ def fetch_json(path: str, *, timeout_seconds: int = 8) -> tuple[dict[str, Any] |
         return None, f"{path} request timed out"
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         return None, f"{path} returned invalid JSON: {exc}"
-    if isinstance(payload, dict):
+    if isinstance(payload, (dict, list)):
         return payload, None
     return None, f"{path} returned a non-object payload"
 
@@ -110,6 +110,8 @@ def load_dashboard_data(api_base_url: str) -> dict[str, Any]:
         "collector_health": "/collectors/health",
         "validation_gate": "/collectors/validation-gate?window_hours=24&expected_interval_minutes=15",
         "risk_status": "/risk/status",
+        "llm_stats": "/agent/traces/stats",
+        "llm_traces": "/agent/traces?limit=50",
     }
     data: dict[str, Any] = {}
     errors: list[str] = []
@@ -332,6 +334,126 @@ def render_global_xag_samples(data: dict[str, Any]) -> None:
     st.table(source_rows)
 
 
+def render_llm_observability(data: dict[str, Any]) -> None:
+    st.subheader("LLM Analytics & Observability")
+    
+    llm_stats = data.get("llm_stats") or {}
+    llm_traces = data.get("llm_traces") or []
+    
+    # 1. High level metrics
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card(
+            "Total LLM Spend", 
+            f"${llm_stats.get('total_cost_usd', 0.0):,.6f}",
+            help_text="Accumulated cost of all LLM calls made by agents."
+        )
+    with cols[1]:
+        metric_card(
+            "Total LLM Calls", 
+            f"{llm_stats.get('total_calls', 0):,}",
+            help_text="Total number of API executions to DeepSeek."
+        )
+    with cols[2]:
+        avg_lat = llm_stats.get('avg_latency_ms', 0.0)
+        metric_card(
+            "Avg Response Latency", 
+            f"{avg_lat:,.0f} ms" if avg_lat else "-",
+            help_text="Average response latency in milliseconds."
+        )
+    with cols[3]:
+        st.metric("Status", "Active", help="Budget guard active and monitoring")
+        
+    # 2. Breakdowns using neat columns
+    st.markdown("---")
+    col_agent, col_model = st.columns(2)
+    
+    with col_agent:
+        st.markdown("#### Cost by Agent")
+        by_agent = llm_stats.get("by_agent") or []
+        if by_agent:
+            agent_rows = [
+                {
+                    "Agent Name": item.get("agent_name"),
+                    "Calls Count": f"{item.get('calls'):,}",
+                    "Total Cost": f"${item.get('total_cost_usd', 0.0):,.6f}",
+                    "Avg Latency": f"{item.get('avg_latency_ms', 0.0):,.0f} ms"
+                }
+                for item in by_agent
+            ]
+            st.table(agent_rows)
+        else:
+            st.info("No agent telemetry recorded yet.")
+            
+    with col_model:
+        st.markdown("#### Cost by Model")
+        by_model = llm_stats.get("by_model") or []
+        if by_model:
+            model_rows = [
+                {
+                    "Model Name": item.get("model_name"),
+                    "Calls Count": f"{item.get('calls'):,}",
+                    "Total Cost": f"${item.get('total_cost_usd', 0.0):,.6f}",
+                    "Avg Latency": f"{item.get('avg_latency_ms', 0.0):,.0f} ms"
+                }
+                for item in by_model
+            ]
+            st.table(model_rows)
+        else:
+            st.info("No model telemetry recorded yet.")
+            
+    # 3. Recent Call Logs
+    st.markdown("---")
+    st.markdown("#### Recent 50 LLM Call Logs")
+    if llm_traces:
+        log_rows = []
+        for i, item in enumerate(llm_traces):
+            created_dt = item.get("created_at")
+            if created_dt:
+                try:
+                    dt = datetime.fromisoformat(created_dt.replace("Z", "+00:00"))
+                    time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    time_str = created_dt
+            else:
+                time_str = "-"
+                
+            log_rows.append({
+                "Index": i + 1,
+                "Time": time_str,
+                "Agent": item.get("agent_name"),
+                "Model": item.get("model_name"),
+                "Status": item.get("status"),
+                "Cost": f"${float(item.get('total_cost_usd', 0)):,.6f}",
+                "Latency": f"{item.get('latency_ms', 0):,} ms",
+                "Tokens (In/Out)": f"{item.get('prompt_tokens', 0)} / {item.get('completion_tokens', 0)}"
+            })
+            
+        st.dataframe(log_rows, use_container_width=True)
+        
+        # Interactive raw inspector
+        st.markdown("##### Inspect Raw Trace Content")
+        trace_indices = [f"{r['Index']}. [{r['Agent']}] {r['Model']} ({r['Time']})" for r in log_rows]
+        selected_option = st.selectbox("Select a trace to view full prompt and response details:", trace_indices)
+        if selected_option:
+            sel_idx = int(selected_option.split(".")[0]) - 1
+            sel_trace = llm_traces[sel_idx]
+            
+            p_col, r_col = st.columns(2)
+            with p_col:
+                st.markdown("**Prompt Raw:**")
+                st.code(sel_trace.get("prompt_raw") or "Empty prompt")
+            with r_col:
+                if sel_trace.get("status") == "SUCCESS":
+                    st.markdown("**Response Raw:**")
+                    st.code(sel_trace.get("response_raw") or "Empty response")
+                else:
+                    st.markdown("**Error Message:**")
+                    st.error(sel_trace.get("error_message") or "Unknown error")
+    else:
+        st.info("No LLM calls recorded in the database yet.")
+
+
 st.title("SilverPilot")
 st.caption(f"Read-only dashboard from {API_BASE_URL} - loaded {utc_now_label()}")
 
@@ -341,8 +463,27 @@ if st.button("Refresh"):
 
 dashboard_data = load_dashboard_data(API_BASE_URL)
 
-render_status_overview(dashboard_data)
-render_portfolio(dashboard_data)
-render_risk(dashboard_data)
-render_collectors(dashboard_data)
-render_global_xag_samples(dashboard_data)
+# Premium Tabs Interface
+tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability = st.tabs([
+    "💼 Portfolio & Overview",
+    "🛡️ Risk Diagnostics",
+    "🔌 Collectors Health",
+    "📊 Global XAG Samples",
+    "👁️ LLM Observability"
+])
+
+with tab_portfolio:
+    render_status_overview(dashboard_data)
+    render_portfolio(dashboard_data)
+
+with tab_risk:
+    render_risk(dashboard_data)
+
+with tab_collectors:
+    render_collectors(dashboard_data)
+
+with tab_samples:
+    render_global_xag_samples(dashboard_data)
+
+with tab_observability:
+    render_llm_observability(dashboard_data)

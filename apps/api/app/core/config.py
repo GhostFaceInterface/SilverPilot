@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     fred_api_base_url: str = "https://api.stlouisfed.org/fred"
     fred_series_ids: str = "CPIAUCSL,PPIACO,UNRATE,FEDFUNDS,DGS10,DTWEXBGS"
 
+    # DeepSeek API Settings
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_daily_budget_usd: Decimal = Field(default=Decimal("1.00"), gt=0)
+
+
 
 @lru_cache
 def get_settings() -> Settings:
