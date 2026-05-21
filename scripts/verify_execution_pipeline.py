@@ -7,8 +7,12 @@ from datetime import UTC, datetime
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_path = os.path.dirname(current_dir)
 api_path = os.path.join(root_path, "apps", "api")
-if api_path not in sys.path:
-    sys.path.insert(0, api_path)
+if os.path.exists(api_path):
+    if api_path not in sys.path:
+        sys.path.insert(0, api_path)
+elif os.path.exists(os.path.join(root_path, "app")):
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
 
 from app.core.db import SessionLocal
 from app.models import (
