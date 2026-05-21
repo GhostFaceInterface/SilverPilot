@@ -210,4 +210,18 @@ def test_agent_trigger_endpoints():
     assert client.post("/agent/risk/critique").status_code == 401
     response = client.post("/agent/risk/critique", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
-    assert response.json() == {"status": "triggered", "agent": "risk"}
+    data = response.json()
+    assert data["agent_name"] == "risk-agent"
+    assert data["event_type"] == "signal_critique"
+    assert data["key"] == "critique_signal_none"
+    assert data["value_json"]["decision"] == "APPROVED"
+    assert "No signals exist in the database" in data["value_json"]["critique_markdown"]
+
+    # Test POST /agent/risk/critique with a non-existent signal_id (should return 404)
+    response_404 = client.post(
+        "/agent/risk/critique",
+        json={"signal_id": 9999},
+        headers={"X-Agent-Token": "test_token"},
+    )
+    assert response_404.status_code == 404
+    assert "not found" in response_404.json()["detail"]

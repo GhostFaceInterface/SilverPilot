@@ -22,6 +22,7 @@ from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceS
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.agents.news import run_news_sentiment_analysis
+from app.agents.risk import run_signal_critique
 from app.schemas.collectors import (
     CollectorHealthResponse,
     CollectorQualityResponse,
@@ -34,7 +35,7 @@ from app.schemas.collectors import (
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 from app.schemas.risk import RiskPolicyStatusResponse
-from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse
+from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse, RiskCritiqueRequest
 
 router = APIRouter()
 
@@ -508,6 +509,13 @@ def trigger_report_agent(_: None = Depends(verify_agent_token)):
     return {"status": "triggered", "agent": "report"}
 
 
-@router.post("/agent/risk/critique")
-def critique_risk_agent(_: None = Depends(verify_agent_token)):
-    return {"status": "triggered", "agent": "risk"}
+@router.post("/agent/risk/critique", response_model=AgentMemoryResponse)
+async def critique_risk_agent(
+    payload: RiskCritiqueRequest = RiskCritiqueRequest(),
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token),
+) -> AgentMemoryResponse:
+    try:
+        return await run_signal_critique(db, signal_id=payload.signal_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

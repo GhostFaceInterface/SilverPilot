@@ -36,3 +36,8 @@ class AgentMemoryResponse(AgentMemoryCreate):
 
     class Config:
         from_attributes = True
+
+
+class RiskCritiqueRequest(BaseModel):
+    signal_id: int | None = None
+

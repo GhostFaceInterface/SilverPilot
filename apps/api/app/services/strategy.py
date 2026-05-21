@@ -151,3 +151,15 @@ class StrategyRunner:
             return cls.evaluate_bb_strategy(close, bb_lower, bb_upper, has_open_position)
         else:
             return "HOLD", "UNKNOWN_STRATEGY"
+
+
+async def trigger_risk_critique_hook(db: Session, signal_id: int) -> "AgentMemoryEvent":
+    """
+    Integration hook/helper that triggers the Risk Agent's signal critique.
+    Imports run_signal_critique locally to prevent circular dependencies.
+    """
+    from sqlalchemy.orm import Session
+    from app.models.entities import AgentMemoryEvent
+    from app.agents.risk import run_signal_critique
+
+    return await run_signal_critique(db, signal_id=signal_id)
