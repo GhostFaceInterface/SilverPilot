@@ -241,15 +241,18 @@ class Signal(Base):
     __tablename__ = "signals"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source: Mapped[str] = mapped_column(String(128), index=True)
-    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"), nullable=True, index=True)
-    signal: Mapped[str] = mapped_column(String(32), index=True)
-    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4))
-    risk_decision_id: Mapped[int | None] = mapped_column(ForeignKey("risk_decisions.id"), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    price_snapshot_id: Mapped[int] = mapped_column(ForeignKey("price_snapshots.id"), nullable=False, index=True)
+    indicator_id: Mapped[int | None] = mapped_column(ForeignKey("technical_indicators.id"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    price_usd_oz: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    details_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    asset: Mapped[Asset | None] = relationship()
-    risk_decision: Mapped[RiskDecision | None] = relationship()
+    price_snapshot: Mapped["PriceSnapshot"] = relationship()
+    technical_indicator: Mapped["TechnicalIndicator | None"] = relationship()
+
 
 
 class Report(Base):
