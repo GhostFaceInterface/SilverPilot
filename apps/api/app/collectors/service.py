@@ -185,6 +185,30 @@ def ingest_global_price(
     # --- Technical Indicator Calculation (isolated: must never lose the price snapshot) ---
     _try_compute_and_store_indicator(db, asset=asset, source=source, snapshot=snapshot, observed_at=observed_at)
 
+    if collector_name == "yahoo_usd_try":
+        latest_tcmb = db.execute(
+            select(RawFxRate).where(
+                RawFxRate.source == "tcmb-today-xml",
+                RawFxRate.base_currency == "USD",
+                RawFxRate.quote_currency == "TRY"
+            ).order_by(RawFxRate.observed_at.desc()).limit(1)
+        ).scalar_one_or_none()
+        
+        if latest_tcmb:
+            deviation = abs(rate - latest_tcmb.rate) / latest_tcmb.rate
+            if deviation >= Decimal("0.02"):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("USD/TRY deviation >= 2% compared to TCMB daily reference")
+                
+                if "warning" not in run.details_json:
+                    details = dict(run.details_json)
+                    details["warning"] = "USD/TRY deviation >= 2% compared to TCMB daily reference"
+                    details["yahoo_rate"] = str(rate)
+                    details["tcmb_rate"] = str(latest_tcmb.rate)
+                    details["deviation_pct"] = float(deviation)
+                    run.details_json = details
+
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
@@ -366,6 +390,30 @@ def ingest_bank_price(
     )
     db.add(snapshot)
 
+    if collector_name == "yahoo_usd_try":
+        latest_tcmb = db.execute(
+            select(RawFxRate).where(
+                RawFxRate.source == "tcmb-today-xml",
+                RawFxRate.base_currency == "USD",
+                RawFxRate.quote_currency == "TRY"
+            ).order_by(RawFxRate.observed_at.desc()).limit(1)
+        ).scalar_one_or_none()
+        
+        if latest_tcmb:
+            deviation = abs(rate - latest_tcmb.rate) / latest_tcmb.rate
+            if deviation >= Decimal("0.02"):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("USD/TRY deviation >= 2% compared to TCMB daily reference")
+                
+                if "warning" not in run.details_json:
+                    details = dict(run.details_json)
+                    details["warning"] = "USD/TRY deviation >= 2% compared to TCMB daily reference"
+                    details["yahoo_rate"] = str(rate)
+                    details["tcmb_rate"] = str(latest_tcmb.rate)
+                    details["deviation_pct"] = float(deviation)
+                    run.details_json = details
+
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
@@ -427,6 +475,30 @@ def ingest_fx_rate(
             payload_json=payload,
         )
     )
+    if collector_name == "yahoo_usd_try":
+        latest_tcmb = db.execute(
+            select(RawFxRate).where(
+                RawFxRate.source == "tcmb-today-xml",
+                RawFxRate.base_currency == "USD",
+                RawFxRate.quote_currency == "TRY"
+            ).order_by(RawFxRate.observed_at.desc()).limit(1)
+        ).scalar_one_or_none()
+        
+        if latest_tcmb:
+            deviation = abs(rate - latest_tcmb.rate) / latest_tcmb.rate
+            if deviation >= Decimal("0.02"):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("USD/TRY deviation >= 2% compared to TCMB daily reference")
+                
+                if "warning" not in run.details_json:
+                    details = dict(run.details_json)
+                    details["warning"] = "USD/TRY deviation >= 2% compared to TCMB daily reference"
+                    details["yahoo_rate"] = str(rate)
+                    details["tcmb_rate"] = str(latest_tcmb.rate)
+                    details["deviation_pct"] = float(deviation)
+                    run.details_json = details
+
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
@@ -939,7 +1011,7 @@ def _execution_critical_usd_try_status(db: Session, *, stale_after_seconds: int,
     if latest_fx_rate is None:
         return {"usd_try": "missing", "source": None, "age_seconds": None, "stale": True}
 
-    latest_success_time = _latest_successful_run_time(db, collector_names={"tcmb_usd_try"}, source=latest_fx_rate.source)
+    latest_success_time = _latest_successful_run_time(db, collector_names={"tcmb_usd_try", "yahoo_usd_try", "kuveyt_usd_try"}, source=latest_fx_rate.source)
     reference_time = max(
         value
         for value in (

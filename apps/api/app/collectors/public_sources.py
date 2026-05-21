@@ -1351,3 +1351,112 @@ def _parse_turkish_decimal(value: str) -> Decimal:
     if "," in cleaned:
         cleaned = cleaned.replace(".", "").replace(",", ".")
     return _decimal(cleaned, field_name="price")
+
+def parse_kuveyt_finance_portal_json_usd_try(
+    raw_payload: str,
+    *,
+    fetched_at: datetime,
+    finance_portal_url: str,
+) -> ParsedFxRate:
+    import json
+    try:
+        rows = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise CollectorError("Kuveyt financePortal response is not valid JSON") from exc
+    if not isinstance(rows, list) or not rows:
+        raise CollectorError("Kuveyt financePortal response returned no rows")
+
+    usd_row = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("Title") or "").upper()
+        code = str(row.get("CurrencyCode") or "").upper()
+        if "USD" in title or "USD" in code:
+            usd_row = row
+            break
+            
+    if not usd_row:
+        raise CollectorError("USD row not found in Kuveyt financePortal response")
+
+    try:
+        buy_price = Decimal(str(usd_row["BuyRate"]))
+        sell_price = Decimal(str(usd_row["SellRate"]))
+    except (KeyError, ValueError) as exc:
+        raise CollectorError("Kuveyt financePortal USD row missing valid BuyRate/SellRate") from exc
+
+    midpoint = (buy_price + sell_price) / Decimal("2")
+
+    return ParsedFxRate(
+        base_currency="USD",
+        quote_currency="TRY",
+        rate=midpoint,
+        observed_at=fetched_at,
+        payload={
+            "source_type": "official_public_browser_loaded_json",
+            "timestamp_semantics": "no source timestamp in response; observed_at uses fetched_at",
+            "finance_portal_url": finance_portal_url,
+            "buy_price": str(buy_price),
+            "sell_price": str(sell_price),
+        },
+    )
+
+def collect_kuveyt_usd_try(
+    db: Session,
+    *,
+    settings: Settings,
+    client: httpx.Client | None = None,
+) -> tuple[CollectorRun, bool]:
+    from app.collectors.service import ingest_fx_rate, start_collector_run, finish_collector_run
+    
+    try:
+        page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
+        core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)
+        core_js = _fetch_text(core_script_url, settings=settings, client=client)
+        finance_portal_url = parse_kuveyt_finance_portal_endpoint(core_js, base_url=settings.kuveyt_silver_url)
+        raw_payload = _fetch_text(finance_portal_url, settings=settings, client=client)
+    except CollectorError as exc:
+        run = start_collector_run(
+            db,
+            collector_name="kuveyt_usd_try",
+            source="kuveyt-public-silver-page",
+            records_seen=0,
+            details_json={},
+        )
+        finish_collector_run(db, run, status="failed", error_message=str(exc))
+        db.commit()
+        return run, False
+
+    fetched_at = _to_utc(datetime.now(UTC))
+    try:
+        parsed = parse_kuveyt_finance_portal_json_usd_try(
+            raw_payload,
+            fetched_at=fetched_at,
+            finance_portal_url=finance_portal_url,
+        )
+    except CollectorError as exc:
+        run = start_collector_run(
+            db,
+            collector_name="kuveyt_usd_try",
+            source="kuveyt-public-silver-page",
+            records_seen=0,
+            details_json={},
+        )
+        finish_collector_run(db, run, status="failed", error_message=str(exc))
+        db.commit()
+        return run, False
+
+    run, inserted = ingest_fx_rate(
+        db,
+        source="kuveyt-public-silver-page",
+        base_currency=parsed.base_currency,
+        quote_currency=parsed.quote_currency,
+        rate=parsed.rate,
+        observed_at=parsed.observed_at,
+        fetched_at=fetched_at,
+        payload=parsed.payload,
+        raw_payload=raw_payload,
+        parser_version=KUVEYT_PARSER_VERSION,
+        collector_name="kuveyt_usd_try",
+    )
+    return run, inserted

@@ -20,10 +20,13 @@ from app.collectors.public_sources import (
     parse_fred_observations,
     parse_kuveyt_finance_portal_endpoint,
     parse_kuveyt_finance_portal_json,
+    parse_kuveyt_finance_portal_json_usd_try,
+    collect_kuveyt_usd_try,
     parse_kuveyt_public_silver_html,
     parse_yahoo_finance_chart_json,
     parse_yahoo_finance_usdtry_chart_json,
 )
+from app.collectors.service import ingest_fx_rate
 from app.collectors.runner import parse_collector_jobs, run_jobs
 from app.core.config import Settings
 from app.core.db import Base, get_db
@@ -1410,3 +1413,221 @@ def test_kuveyt_proxy_degraded_fallback():
     finally:
         client.close()
         db.close()
+
+def test_yahoo_usd_try_deviation_logged_when_gt_2_percent(caplog):
+    import logging
+    client_app, testing_session = make_client()
+    now = datetime.now(UTC)
+
+    # First ingest a TCMB rate
+    db = testing_session()
+    try:
+        tcmb_run, _ = ingest_fx_rate(
+            db,
+            source="tcmb-today-xml",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("30.00"),
+            observed_at=now - timedelta(minutes=10),
+            fetched_at=now - timedelta(minutes=10),
+            payload={"test": "tcmb"},
+            raw_payload="test",
+            parser_version="v1",
+            collector_name="tcmb_usd_try",
+        )
+    finally:
+        db.close()
+
+    db = testing_session()
+    try:
+        with caplog.at_level(logging.WARNING):
+            # Ingest Yahoo rate with > 2% deviation (30.00 * 1.05 = 31.50)
+            run, _ = ingest_fx_rate(
+                db,
+                source="yahoo-usd-try",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("31.50"),
+                observed_at=now,
+                fetched_at=now,
+                payload={"test": "yahoo"},
+                raw_payload="test",
+                parser_version="v1",
+                collector_name="yahoo_usd_try",
+            )
+        
+        # Check logs
+        assert "USD/TRY deviation >= 2% compared to TCMB daily reference" in caplog.text
+        
+        # Check details_json
+        assert "warning" in run.details_json
+        assert run.details_json["deviation_pct"] == 0.05
+    finally:
+        db.close()
+
+
+def test_yahoo_usd_try_deviation_not_logged_when_lt_2_percent(caplog):
+    import logging
+    client_app, testing_session = make_client()
+    now = datetime.now(UTC)
+
+    db = testing_session()
+    try:
+        ingest_fx_rate(
+            db,
+            source="tcmb-today-xml",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("30.00"),
+            observed_at=now - timedelta(minutes=10),
+            fetched_at=now - timedelta(minutes=10),
+            payload={"test": "tcmb"},
+            raw_payload="test",
+            parser_version="v1",
+            collector_name="tcmb_usd_try",
+        )
+    finally:
+        db.close()
+
+    db = testing_session()
+    try:
+        with caplog.at_level(logging.WARNING):
+            # Ingest Yahoo rate with < 2% deviation (30.00 * 1.01 = 30.30)
+            run, _ = ingest_fx_rate(
+                db,
+                source="yahoo-usd-try",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("30.30"),
+                observed_at=now,
+                fetched_at=now,
+                payload={"test": "yahoo"},
+                raw_payload="test",
+                parser_version="v1",
+                collector_name="yahoo_usd_try",
+            )
+        
+        assert "USD/TRY deviation >= 2% compared to TCMB daily reference" not in caplog.text
+        assert "warning" not in run.details_json
+    finally:
+        db.close()
+
+def test_kuveyt_finance_portal_parser_usd_try():
+    raw_payload = """
+[
+  {"Title":"USD","CurrencyCode":"USD","BuyRate":32.5,"SellRate":33.5},
+  {"Title":"GMS (gr)","CurrencyCode":"GMS (gr)","CurrencyDescription":"Gümüş","BuyRate":125.87879,"SellRate":129.63761,"ChangeRate":3.46,"ChangeRateNegative":false}
+]
+"""
+    parsed = parse_kuveyt_finance_portal_json_usd_try(
+        raw_payload,
+        fetched_at=datetime(2026, 5, 13, 12, 0, tzinfo=UTC),
+        finance_portal_url="https://test"
+    )
+    assert parsed.base_currency == "USD"
+    assert parsed.quote_currency == "TRY"
+    assert parsed.rate == Decimal("33.00")
+    assert parsed.payload["source_type"] == "official_public_browser_loaded_json"
+
+def test_kuveyt_usd_try_collector_writes_fx_rate():
+    _, testing_session = make_client()
+    db = testing_session()
+    
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 32.5, "SellRate": 33.5},
+                ],
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted = collect_kuveyt_usd_try(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        raw = db.query(RawFxRate).where(RawFxRate.source == "kuveyt-public-silver-page").one()
+        assert raw.base_currency == "USD"
+        assert raw.quote_currency == "TRY"
+        assert str(raw.rate) == "33.000000"
+    finally:
+        client.close()
+        db.close()
+
+def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
+    client, testing_session = make_client()
+    now = datetime.now(UTC)
+    db = testing_session()
+    try:
+        # Seed fresh global XAG
+        asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+        global_run = CollectorRun(
+            collector_name="global_xag_usd",
+            source="yahoo-si-f",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        # Seed fresh Kuveyt USD TRY (this acts as fallback for usd_try)
+        fx_run = CollectorRun(
+            collector_name="kuveyt_usd_try",
+            source="kuveyt-public-silver-page",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        # Seed fresh Kuveyt bank price
+        bank_run = CollectorRun(
+            collector_name="kuveyt_public_silver",
+            source="kuveyt-public-silver-page",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            started_at=now - timedelta(minutes=10),
+            finished_at=now - timedelta(minutes=10),
+            details_json={},
+        )
+        db.add_all([global_run, fx_run, bank_run])
+        db.flush()
+        db.add(RawGlobalPrice(
+            collector_run_id=global_run.id, asset_id=asset.id, source="yahoo-si-f",
+            buy_price=Decimal("28.00"), sell_price=Decimal("28.00"), currency="USD",
+            observed_at=now - timedelta(minutes=10), fetched_at=now - timedelta(minutes=10),
+            raw_payload_hash="test", parser_version="v1", payload_json={}
+        ))
+        db.add(RawFxRate(
+            collector_run_id=fx_run.id, source="kuveyt-public-silver-page",
+            base_currency="USD", quote_currency="TRY", rate=Decimal("33.00"),
+            observed_at=now - timedelta(minutes=10), fetched_at=now - timedelta(minutes=10),
+            raw_payload_hash="test", parser_version="v1", payload_json={}
+        ))
+        db.add(RawBankPrice(
+            collector_run_id=bank_run.id, asset_id=asset.id, source="kuveyt-public-silver-page",
+            buy_price=Decimal("130.00"), sell_price=Decimal("126.00"), currency="TRY",
+            observed_at=now - timedelta(minutes=10), fetched_at=now - timedelta(minutes=10),
+            raw_payload_hash="test", parser_version="v1", payload_json={}
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/health?stale_after_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["execution_critical"]["usd_try"] == "fresh"
+    assert body["execution_critical"]["usd_try_source"] == "kuveyt-public-silver-page"
+

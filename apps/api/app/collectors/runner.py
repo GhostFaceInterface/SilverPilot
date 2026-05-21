@@ -9,14 +9,16 @@ from app.collectors.public_sources import (
     collect_fred_macro,
     collect_global_xag_usd,
     collect_kuveyt_public_silver,
+    collect_kuveyt_usd_try,
     collect_yahoo_usd_try,
     collect_tcmb_usd_try,
 )
 from app.collectors.service import ingest_manual_price
 from app.core.db import SessionLocal
+from app.core.config import Settings
 from app.schemas.collectors import ManualPriceIngestRequest
 
-JOB_CHOICES = ("manual", "kuveyt-silver", "global-xag-usd", "yahoo-usd-try", "tcmb-usd-try", "fed-rss", "fred-macro")
+JOB_CHOICES = ("manual", "kuveyt-silver", "global-xag-usd", "yahoo-usd-try", "kuveyt-usd-try", "tcmb-usd-try", "fed-rss", "fred-macro")
 
 
 def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
@@ -34,6 +36,15 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
             return run.status == "success"
         if selected_job == "yahoo-usd-try":
             run, raw_inserted = collect_yahoo_usd_try(db)
+            print(
+                f"job={selected_job} collector_run_id={run.id} status={run.status} "
+                f"raw_inserted={raw_inserted}",
+                flush=True,
+            )
+            return run.status == "success"
+
+        if selected_job == "kuveyt-usd-try":
+            run, raw_inserted = collect_kuveyt_usd_try(db, settings=Settings())
             print(
                 f"job={selected_job} collector_run_id={run.id} status={run.status} "
                 f"raw_inserted={raw_inserted}",
