@@ -178,6 +178,8 @@ def ingest_global_price(
         spread_absolute=spread_absolute,
         spread_percent=spread_percent,
         observed_at=observed_at,
+        resolved_source=source,
+        is_degraded=False,
     )
     db.add(snapshot)
     db.flush()  # Flush to get snapshot.id before indicator insert
@@ -327,6 +329,8 @@ def ingest_bank_price(
     collector_name: str,
     usd_buy_price: Decimal | None = None,
     usd_sell_price: Decimal | None = None,
+    resolved_source: str | None = None,
+    is_degraded: bool = False,
 ) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
     asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
     if asset is None:
@@ -367,6 +371,8 @@ def ingest_bank_price(
             raw_payload_hash=payload_hash(raw_payload),
             parser_version=parser_version,
             payload_json=payload,
+            resolved_source=resolved_source,
+            is_degraded=is_degraded,
         )
     )
 
@@ -387,6 +393,8 @@ def ingest_bank_price(
         spread_absolute=spread_absolute,
         spread_percent=spread_percent,
         observed_at=observed_at,
+        resolved_source=resolved_source,
+        is_degraded=is_degraded,
     )
     db.add(snapshot)
 

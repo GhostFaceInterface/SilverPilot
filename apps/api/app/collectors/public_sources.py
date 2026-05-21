@@ -4,8 +4,14 @@ import time
 from email.utils import parsedate_to_datetime
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
+
+class HardAnomalyError(ValueError):
+    pass
 from html import unescape
 from io import StringIO
 from typing import Protocol
@@ -129,27 +135,43 @@ def collect_kuveyt_public_silver(
     settings = settings or get_settings()
     fetched_at = datetime.now(UTC)
     try:
-        page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
-        core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)
-        core_js = _fetch_text(core_script_url, settings=settings, client=client)
-        finance_portal_url = parse_kuveyt_finance_portal_endpoint(core_js, base_url=settings.kuveyt_silver_url)
-        raw_payload = _fetch_text(finance_portal_url, settings=settings, client=client)
-        parsed = parse_kuveyt_finance_portal_json(
-            raw_payload,
-            fetched_at=fetched_at,
-            finance_portal_url=finance_portal_url,
-        )
+        # Implement a retry loop (3 retries, 5s delay)
+        max_retries = 3
+        retry_delay = 5
+        parsed = None
+        raw_payload = None
 
-        # Anomaly Check 1: Swapped price check
+        for attempt in range(1, max_retries + 1):
+            try:
+                page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
+                core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)
+                core_js = _fetch_text(core_script_url, settings=settings, client=client)
+                finance_portal_url = parse_kuveyt_finance_portal_endpoint(core_js, base_url=settings.kuveyt_silver_url)
+                raw_payload = _fetch_text(finance_portal_url, settings=settings, client=client)
+                parsed = parse_kuveyt_finance_portal_json(
+                    raw_payload,
+                    fetched_at=fetched_at,
+                    finance_portal_url=finance_portal_url,
+                )
+                break
+            except Exception as exc:
+                if isinstance(exc, CollectorError):
+                    # Structural errors bypass retry and fail immediately
+                    raise exc
+                if attempt == max_retries:
+                    raise exc
+                time.sleep(retry_delay)
+
+        # Anomaly Check 1: Swapped price check (Hard Block Gate)
         if parsed.buy_price < parsed.sell_price:
-            raise ValueError(f"Kuveyt returned inverted spread: buy_price ({parsed.buy_price}) < sell_price ({parsed.sell_price})")
+            raise HardAnomalyError(f"Kuveyt returned inverted spread: buy_price ({parsed.buy_price}) < sell_price ({parsed.sell_price})")
 
-        # Anomaly Check 2: Spread percent must be between 2% and 25%
+        # Anomaly Check 2: Spread percent must be between 2% and 25% (Hard Block Gate)
         spread_abs = parsed.buy_price - parsed.sell_price
         mid_val = (parsed.buy_price + parsed.sell_price) / Decimal("2")
         spread_pct = (spread_abs / mid_val) * Decimal("100") if mid_val > 0 else Decimal("0")
         if not (Decimal("2.0") <= spread_pct <= Decimal("25.0")):
-            raise ValueError(f"Kuveyt silver spread percent {spread_pct:.2f}% is outside of safe range [2%, 25%]")
+            raise HardAnomalyError(f"Kuveyt silver spread percent {spread_pct:.2f}% is outside of safe range [2%, 25%]")
 
         # Fetch latest USDTRY rate from raw_fx_rates
         latest_fx = db.execute(
@@ -170,7 +192,7 @@ def collect_kuveyt_public_silver(
         usd_sell = parsed.sell_price / usd_try * Decimal("31.1035")
         usd_mid = (usd_buy + usd_sell) / Decimal("2")
 
-        # Anomaly Check 3: Mid price deviation of ±10% against last 5 PriceSnapshots
+        # Anomaly Check 3: Mid price deviation of ±10% against last 5 PriceSnapshots (Soft anomaly -> degraded mode fallback)
         last_snapshots = db.execute(
             select(PriceSnapshot)
             .where(
@@ -187,7 +209,48 @@ def collect_kuveyt_public_silver(
             if deviation > Decimal("0.10"):
                 raise ValueError(f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by {deviation*100:.2f}% from the 5-run average ({avg_usd_mid:.4f})")
 
-        return ingest_bank_price(
+        # Global Cross-Control (Anomaly 4)
+        one_hour_ago = fetched_at - timedelta(hours=1)
+        latest_yahoo = db.execute(
+            select(PriceSnapshot)
+            .where(
+                PriceSnapshot.source == "yahoo-si-f",
+                PriceSnapshot.observed_at >= one_hour_ago
+            )
+            .order_by(PriceSnapshot.observed_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+        yahoo_mid = None
+        if latest_yahoo is not None:
+            yahoo_mid = latest_yahoo.mid_price
+        else:
+            try:
+                provider = YahooXagUsdProvider()
+                parsed_yahoo = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
+                if parsed_yahoo.bid is not None and parsed_yahoo.ask is not None:
+                    yahoo_mid = (parsed_yahoo.bid + parsed_yahoo.ask) / Decimal("2")
+                else:
+                    yahoo_mid = parsed_yahoo.price
+            except Exception as e:
+                logger.warning(f"Failed to fetch Yahoo SI=F for cross-control: {e}")
+
+        deviation_details = {}
+        if yahoo_mid is not None and yahoo_mid > 0:
+            deviation_pct = abs(usd_mid - yahoo_mid) / yahoo_mid
+            if deviation_pct > Decimal("0.05"):
+                logger.warning(
+                    f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by "
+                    f"{deviation_pct*100:.2f}% from global Yahoo SI=F price ({yahoo_mid:.4f}) (Anomaly 4)"
+                )
+                deviation_details = {
+                    "warning": f"Kuveyt USD mid price deviates by {deviation_pct*100:.2f}% from global Yahoo SI=F price",
+                    "kuveyt_usd_mid": str(usd_mid),
+                    "yahoo_usd_mid": str(yahoo_mid),
+                    "deviation_pct": float(deviation_pct),
+                }
+
+        run, success, snapshot = ingest_bank_price(
             db,
             source="kuveyt-public-silver-page",
             asset_symbol="XAG",
@@ -202,7 +265,33 @@ def collect_kuveyt_public_silver(
             collector_name="kuveyt_public_silver",
             usd_buy_price=usd_buy,
             usd_sell_price=usd_sell,
+            resolved_source="kuveyt_public_portal",
+            is_degraded=False,
         )
+
+        if deviation_details:
+            details = dict(run.details_json) if run.details_json else {}
+            details.update(deviation_details)
+            run.details_json = details
+            db.commit()
+            db.refresh(run)
+
+        return run, success, snapshot
+
+    except (CollectorError, HardAnomalyError) as exc:
+        db.rollback()
+        run = record_failed_run(
+            db,
+            collector_name="kuveyt_public_silver",
+            source="kuveyt-public-silver-page",
+            error_message=str(exc),
+            details_json={
+                "parser_version": KUVEYT_PARSER_VERSION,
+                "failure_reason_code": "HARD_ANOMALY" if isinstance(exc, HardAnomalyError) else "STRUCTURAL_ERROR"
+            },
+        )
+        return run, False, None
+
     except Exception as exc:
         db.rollback()
         # Degraded Mode: fallback to Yahoo SI=F
@@ -236,6 +325,8 @@ def collect_kuveyt_public_silver(
                 collector_name="kuveyt_public_silver",
                 usd_buy_price=yahoo_price,
                 usd_sell_price=yahoo_price,
+                resolved_source="yahoo_si_f",
+                is_degraded=True,
             )
         except Exception as fallback_exc:
             db.rollback()

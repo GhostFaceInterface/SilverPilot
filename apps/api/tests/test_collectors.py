@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+import time
 
 from fastapi.testclient import TestClient
 import httpx
@@ -1630,4 +1631,602 @@ def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
     body = response.json()
     assert body["execution_critical"]["usd_try"] == "fresh"
     assert body["execution_critical"]["usd_try_source"] == "kuveyt-public-silver-page"
+
+def test_kuveyt_hardening_successful_run():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 44.1, "SellRate": 45.2},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 125.87879,
+                        "SellRate": 129.63761,
+                    },
+                ],
+            )
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [124.0],
+                                            "open": [124.0],
+                                            "high": [124.0],
+                                            "low": [124.0],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert snapshot.resolved_source == "kuveyt_public_portal"
+        assert snapshot.is_degraded is False
+
+        raw = db.query(RawBankPrice).one()
+        assert raw.resolved_source == "kuveyt_public_portal"
+        assert raw.is_degraded is False
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_hardening_degraded_fallback():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama" in str(request.url):
+            raise httpx.ConnectTimeout("connection timed out", request=request)
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [28.45],
+                                            "open": [28.45],
+                                            "high": [28.45],
+                                            "low": [28.45],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert snapshot.resolved_source == "yahoo_si_f"
+        assert snapshot.is_degraded is True
+
+        raw = db.query(RawBankPrice).one()
+        assert raw.resolved_source == "yahoo_si_f"
+        assert raw.is_degraded is True
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_retry_mechanism():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    kuveyt_page_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal kuveyt_page_calls
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            kuveyt_page_calls += 1
+            if kuveyt_page_calls < 3:
+                raise httpx.ConnectTimeout("connection timed out", request=request)
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 44.1, "SellRate": 45.2},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 125.87879,
+                        "SellRate": 129.63761,
+                    },
+                ],
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        from unittest.mock import patch
+        with patch("time.sleep", return_value=None) as mock_sleep:
+            run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+            assert run.status == "success"
+            assert raw_inserted is True
+            assert snapshot is not None
+            assert snapshot.resolved_source == "kuveyt_public_portal"
+            assert snapshot.is_degraded is False
+            assert kuveyt_page_calls == 3
+            assert mock_sleep.call_count == 2
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_hardening_structural_error():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<html><body>No script here</body></html>')
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [28.45],
+                                            "open": [28.45],
+                                            "high": [28.45],
+                                            "low": [28.45],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "failed"
+        assert raw_inserted is False
+        assert snapshot is None
+        assert "Kuveyt public page parser could not find public core script" in run.error_message
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_hardening_inverted_spread_hard_block():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 44.1, "SellRate": 45.2},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 130.0,
+                        "SellRate": 125.0,
+                    },
+                ],
+            )
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [28.45],
+                                            "open": [28.45],
+                                            "high": [28.45],
+                                            "low": [28.45],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "failed"
+        assert raw_inserted is False
+        assert snapshot is None
+        assert "inverted" in run.error_message.lower()
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_hardening_out_of_bounds_spread_hard_block():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 44.1, "SellRate": 45.2},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 100.0,
+                        "SellRate": 101.0,
+                    },
+                ],
+            )
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [28.45],
+                                            "open": [28.45],
+                                            "high": [28.45],
+                                            "low": [28.45],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "failed"
+        assert raw_inserted is False
+        assert snapshot is None
+        assert "spread percent" in run.error_message and "outside of safe range" in run.error_message
+    finally:
+        client.close()
+        db.close()
+
+
+def test_kuveyt_hardening_cross_control_warning():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    # Seed USDTRY FX rate
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        finished_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.50"),
+            observed_at=datetime.now(UTC) - timedelta(minutes=5),
+            fetched_at=datetime.now(UTC) - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 44.1, "SellRate": 45.2},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 125.87879,
+                        "SellRate": 129.63761,
+                    },
+                ],
+            )
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [100.00],
+                                            "open": [100.00],
+                                            "high": [100.00],
+                                            "low": [100.00],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert "warning" in run.details_json
+        assert "Kuveyt USD mid price deviates by" in run.details_json["warning"]
+        assert run.details_json["kuveyt_usd_mid"]
+        assert run.details_json["yahoo_usd_mid"] == "100.0"
+        assert run.details_json["deviation_pct"] > 0.05
+    finally:
+        client.close()
+        db.close()
+
 

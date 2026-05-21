@@ -32,6 +32,8 @@ class PriceSnapshot(Base):
     spread_absolute: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     spread_percent: Mapped[Decimal] = mapped_column(Numeric(10, 6))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    resolved_source: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_degraded: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     asset: Mapped[Asset] = relationship(back_populates="price_snapshots")
@@ -67,6 +69,8 @@ class RawBankPrice(Base):
     sell_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     currency: Mapped[str] = mapped_column(String(8))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    resolved_source: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_degraded: Mapped[bool] = mapped_column(Boolean, default=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     raw_payload_hash: Mapped[str] = mapped_column(String(64), index=True)
     parser_version: Mapped[str] = mapped_column(String(64))
