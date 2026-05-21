@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - api-image-build
-    if: github.event_name == 'workflow_dispatch' && inputs.run_vps_smoke
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_vps_smoke)
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
