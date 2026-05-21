@@ -1,6 +1,6 @@
 """Add technical_indicators table.
 
-Revision ID: 0004_add_technical_indicators_table
+Revision ID: 0004_add_tech_indicators
 Revises: 0003_add_collector_audit_fields
 Create Date: 2026-05-21
 """
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0004_add_technical_indicators_table"
+revision = "0004_add_tech_indicators"
 down_revision = "0003_add_collector_audit_fields"
 branch_labels = None
 depends_on = None
