@@ -206,7 +206,7 @@ Duplicate guard:
 - USD/TRY primary: TCMB daily XML. EVDS is optional when a free user key is available.
 - Macro/news primary: official Fed RSS and FRED API. FRED is the preferred no-cost macro-series gateway when `FRED_API_KEY` is configured.
 - Direct BLS API is deferred. Use FRED-hosted BLS-origin CPI/PPI/labor series first; keep `BLS_API_KEY` optional/backlog.
-- Türkiye macro sources matter for TRY execution simulation, bank spread comparison, local risk context, and official tax/rule checks.
+- Türkiye macro sources matter for USD execution simulation (from local TRY), bank spread comparison, local risk context, and official tax/rule checks.
 - Yahoo Finance and Investing are diagnostic/fallback only due robots, ToS, and dynamic-page risk.
 
 ### Free API Key Todo

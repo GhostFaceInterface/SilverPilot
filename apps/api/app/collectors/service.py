@@ -1,14 +1,19 @@
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pandas as pd
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
+from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews, TechnicalIndicator
 from app.schemas.collectors import ManualPriceIngestRequest
+from app.services.indicators import calculate_indicators
+
+logger = logging.getLogger(__name__)
 
 PRICE_QUANT = Decimal("0.000001")
 CONTEXT_COLLECTORS = {"fed_rss", "fred_macro"}
@@ -175,12 +180,111 @@ def ingest_global_price(
         observed_at=observed_at,
     )
     db.add(snapshot)
+    db.flush()  # Flush to get snapshot.id before indicator insert
+
+    # --- Technical Indicator Calculation (isolated: must never lose the price snapshot) ---
+    _try_compute_and_store_indicator(db, asset=asset, source=source, snapshot=snapshot, observed_at=observed_at)
 
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
     db.refresh(snapshot)
     return run, True, snapshot
+
+
+# ---------------------------------------------------------------------------
+# Technical Indicator helper (Phase 3.6)
+# ---------------------------------------------------------------------------
+_INDICATOR_HISTORY_BARS = 200
+_INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f"}
+
+
+def _try_compute_and_store_indicator(
+    db: Session,
+    *,
+    asset: Asset,
+    source: str,
+    snapshot: PriceSnapshot,
+    observed_at: datetime,
+) -> None:
+    """Compute technical indicators for the latest global price bar.
+
+    This function is intentionally isolated with try/except so that a failure
+    in indicator calculation NEVER causes the parent price snapshot to be lost.
+    Only triggers for global sources (yahoo-si-f), not bank sources.
+    """
+    if source not in _INDICATOR_GLOBAL_SOURCES:
+        return
+
+    try:
+        # Subquery: get latest N snapshot IDs, then fetch in chronological order
+        latest_ids_sq = (
+            select(PriceSnapshot.id)
+            .where(
+                PriceSnapshot.asset_id == asset.id,
+                PriceSnapshot.source == source,
+            )
+            .order_by(desc(PriceSnapshot.observed_at))
+            .limit(_INDICATOR_HISTORY_BARS)
+        ).subquery()
+        history_rows = db.execute(
+            select(PriceSnapshot)
+            .where(PriceSnapshot.id.in_(select(latest_ids_sq)))
+            .order_by(PriceSnapshot.id)  # id is monotonically increasing → chronological
+        ).scalars().all()
+
+        # history_rows is now oldest-first
+        rows = history_rows
+        if not rows:
+            logger.warning("indicator_skip: no historical bars for asset_id=%s source=%s", asset.id, source)
+            return
+
+        records = []
+        for s in rows:
+            records.append({
+                "high": float(s.buy_price or s.mid_price or 0),
+                "low": float(s.sell_price or s.mid_price or 0),
+                "close": float(s.mid_price or 0),
+            })
+        df = pd.DataFrame(records)
+
+        # Calculate indicators
+        df_ind = calculate_indicators(df)
+        last = df_ind.iloc[-1]
+
+        def _to_dec(val) -> Decimal | None:
+            if pd.isna(val) or val is None:
+                return None
+            return Decimal(str(val)).quantize(PRICE_QUANT)
+
+        indicator = TechnicalIndicator(
+            price_snapshot_id=snapshot.id,
+            bar_timestamp=observed_at,
+            timeframe="5m",
+            close_usd_oz=snapshot.mid_price,
+            rsi_14=_to_dec(last.get("rsi_14")),
+            macd_line=_to_dec(last.get("macd_line")),
+            macd_signal=_to_dec(last.get("macd_signal")),
+            macd_histogram=_to_dec(last.get("macd_histogram")),
+            bb_upper_20_2=_to_dec(last.get("bb_upper_20_2")),
+            bb_middle_20_2=_to_dec(last.get("bb_middle_20_2")),
+            bb_lower_20_2=_to_dec(last.get("bb_lower_20_2")),
+            sma_20=_to_dec(last.get("sma_20")),
+            sma_50=_to_dec(last.get("sma_50")),
+            sma_200=_to_dec(last.get("sma_200")),
+            atr_14=_to_dec(last.get("atr_14")),
+            xau_xag_ratio=None,
+        )
+        db.add(indicator)
+        logger.info(
+            "indicator_computed: snapshot_id=%s rsi=%.2f sma20=%s",
+            snapshot.id,
+            float(last.get("rsi_14", 0) or 0),
+            last.get("sma_20"),
+        )
+    except Exception:
+        logger.exception("indicator_error: failed to compute indicators for snapshot_id=%s — price snapshot preserved", snapshot.id)
+
 
 
 def ingest_bank_price(
@@ -197,6 +301,8 @@ def ingest_bank_price(
     raw_payload: str,
     parser_version: str,
     collector_name: str,
+    usd_buy_price: Decimal | None = None,
+    usd_sell_price: Decimal | None = None,
 ) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
     asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
     if asset is None:
@@ -240,16 +346,20 @@ def ingest_bank_price(
         )
     )
 
-    spread_absolute = _price(buy_price - sell_price)
-    mid_price = _price((buy_price + sell_price) / Decimal("2"))
+    snap_buy = usd_buy_price if usd_buy_price is not None else buy_price
+    snap_sell = usd_sell_price if usd_sell_price is not None else sell_price
+    snap_curr = "USD" if usd_buy_price is not None else currency.upper()
+
+    spread_absolute = _price(snap_buy - snap_sell)
+    mid_price = _price((snap_buy + snap_sell) / Decimal("2"))
     spread_percent = _price((spread_absolute / mid_price) * Decimal("100")) if mid_price > 0 else Decimal("0.000000")
     snapshot = PriceSnapshot(
         asset_id=asset.id,
         source=source,
-        buy_price=_price(buy_price),
-        sell_price=_price(sell_price),
+        buy_price=_price(snap_buy),
+        sell_price=_price(snap_sell),
         mid_price=mid_price,
-        currency=currency.upper(),
+        currency=snap_curr,
         spread_absolute=spread_absolute,
         spread_percent=spread_percent,
         observed_at=observed_at,

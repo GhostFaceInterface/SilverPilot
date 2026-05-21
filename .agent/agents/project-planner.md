@@ -38,6 +38,8 @@ Always output a structured, step-by-step implementation plan divided into highly
 
 ## 8. Related Skills
 - `general-coding.md` (clean-architecture layouts, DRY concepts).
+- `concise-planning.md` (standards for actionable, atomic implementation plans).
+- `lint-and-validate.md` (pre-commit quality validation checks and tests).
 
 ## 9. Example Task
 - **Goal:** Add volatility risk limits based on XAG/USD daily samples.

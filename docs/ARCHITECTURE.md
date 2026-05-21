@@ -140,7 +140,7 @@ The paper-trading engine must not run without a risk decision now that Phase 4 h
 - FRED is the preferred no-cost macro-series gateway for MVP when `FRED_API_KEY` is configured.
 - Direct BLS collection is deferred; BLS-origin CPI/PPI/labor series should come through FRED first when available.
 - TCMB daily XML is the primary USD/TRY execution-context source; TCMB EVDS and TÜİK are optional deeper local-macro sources.
-- Türkiye local macro data informs TRY execution, bank spread, local risk, and tax/rule context; it is not a primary global silver direction signal.
+- Türkiye local macro data informs USD execution (from local TRY), bank spread, local risk, and tax/rule context; it is not a primary global silver direction signal.
 - Kuveyt Türk official public silver page is the primary execution-critical bank silver source when its public browser-loaded finance portal data is available.
 - Manual bank-price fallback is a simulation unblocker only; it is not a production collector and must be visible as degraded/manual source context.
 - Global XAG/USD uses a provider resolver, not a single source. Stooq current CSV is the primary public source; Gold-API free no-auth JSON is an approved fallback; Metals.Dev is an optional free API-key fallback and is disabled without a key.
@@ -150,7 +150,7 @@ The paper-trading engine must not run without a risk decision now that Phase 4 h
 
 - Execution-critical: bank silver buy/sell, global XAG/USD, USD/TRY or bank FX effect, tax/KMV/BSMV rules.
 - Global-market context: U.S. rates, dollar index, CPI/PPI, Fed RSS.
-- Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
+- Local-macro context: TCMB rates, USD/TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
 - Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
 
 ## Collector Health States

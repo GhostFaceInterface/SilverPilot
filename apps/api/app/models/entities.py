@@ -274,4 +274,32 @@ class AgentRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class TechnicalIndicator(Base):
+    __tablename__ = "technical_indicators"
+    __table_args__ = (
+        UniqueConstraint("bar_timestamp", "timeframe", name="uq_technical_indicators_timestamp_timeframe"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    price_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("price_snapshots.id"), nullable=True, index=True)
+    bar_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True)
+    close_usd_oz: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    rsi_14: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    macd_line: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    macd_signal: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    macd_histogram: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    bb_upper_20_2: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    bb_middle_20_2: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    bb_lower_20_2: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    sma_20: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    sma_50: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    sma_200: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    atr_14: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    xau_xag_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    price_snapshot: Mapped[PriceSnapshot | None] = relationship()
+
+
 Index("ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at)

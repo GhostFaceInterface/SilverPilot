@@ -61,7 +61,7 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 - Tax/BSMV rules stay configurable and are not legal or tax advice.
 - FRED macro data is context, not an execution trigger by itself.
 - Direct BLS is backlog; missing direct BLS data must not block MVP decisions if FRED macro series are available.
-- Türkiye data can influence execution-risk scoring because local bank prices, TRY conversion, spread, and local tax/rule context affect simulated fills.
+- Türkiye data can influence execution-risk scoring because local bank prices, USD conversion from TRY, spread, and local tax/rule context affect simulated fills.
 - Türkiye macro data must not be treated as proof of global XAG/USD direction.
 
 ## Implemented Phase 4.1 Rules
@@ -98,7 +98,7 @@ This file is the canonical policy for paper-trading safety. Phase 4 has started 
 
 - Execution-critical: bank silver buy/sell, global XAG/USD, spread, TCMB/USDTRY or bank FX effect, tax/KMV/BSMV.
 - Global-market context: U.S. rates, broad USD strength, CPI/PPI, Fed RSS.
-- Local-macro context: TCMB rates, TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
+- Local-macro context: TCMB rates, USD/TRY pressure, Türkiye inflation, local confidence indicators, official rule changes.
 - Optional/backlog: direct BLS, TÜİK automated collector, deeper TCMB EVDS series, paid market-data APIs.
 
 ## Runtime Memory Role

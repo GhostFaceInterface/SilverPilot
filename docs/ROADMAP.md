@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 5: dashboard visibility. Initial Phase 5 work is a read-only Streamlit dashboard over existing backend endpoints. Phase 4 has deterministic paper-trade risk decisions deployed. After dashboard review, the immediate next steps are retrofitting the data collectors (Phase 3.6, 3.7, 3.8) to replace unreliable global sources with Yahoo Finance SI=F and add multi-layer anomaly controls for Kuveyt Türk. Agent orchestration via Hermes (primary) or OpenClaw (optional) will start in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
+SilverPilot is in Phase 5: dashboard visibility. Initial Phase 5 work is a read-only Streamlit dashboard over existing backend endpoints. Phase 4 has deterministic paper-trade risk decisions deployed. After dashboard review, the immediate next steps are retrofitting the data collectors (Phase 3.4 through 3.9) to replace unreliable global sources with Yahoo Finance SI=F, implement a Technical Indicator Engine, add multi-layer anomaly controls for Kuveyt Türk, and establish a backfill strategy. Agent orchestration via Hermes (primary) or OpenClaw (optional) will start in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -20,6 +20,14 @@ SilverPilot is in Phase 5: dashboard visibility. Initial Phase 5 work is a read-
 - Random third-party skills are forbidden unless explicitly reviewed and approved.
 - ML starts only after reliable data, risk policy, paper trading, and backtesting exist.
 - Each durable fact has one canonical documentation home.
+
+## Reference Sources (For Agent Verification)
+
+- Yahoo Finance API reference: https://github.com/ranaroussi/yfinance
+- pandas-ta reference: https://github.com/twopirllc/pandas-ta (Indicators: https://github.com/twopirllc/pandas-ta#indicators)
+- FRED API: https://fred.stlouisfed.org/docs/api/fred/
+- TCMB XML: https://www.tcmb.gov.tr/kurlar/today.xml
+- Kuveyt Türk GMS: https://www.kuveytturk.com.tr/tr/doviz-ve-emtia
 
 ## Phase 0: Project Skeleton and Discipline
 
@@ -211,14 +219,22 @@ Tables:
 Rules:
 
 - Raw data is append-only.
-- Normalized data is stored separately.
+- Normalized data is stored separately (`price_snapshots`).
 - Collector failures are logged.
 - Duplicate rows are prevented.
 - Timestamps are stored in UTC.
 - FRED requires a user API key but no paid market-data subscription.
 - BLS direct collection is optional/backlog; no BLS key is required for MVP.
-- Türkiye data supports TRY execution simulation, bank spread analysis, and local risk context.
+- Türkiye data supports USD execution simulation (from local TRY), bank spread analysis, and local risk context.
 - Türkiye data must not be treated as primary global XAG direction.
+
+Unit Conversion Pipeline (Before writing to `price_snapshots`):
+
+- Yahoo SI=F (USD/troy oz) -> USD/troy oz: Direct. No conversion needed.
+- Kuveyt Türk (TRY/gram) -> USD/troy oz: `bank_try_gram ÷ USDTRY × 31.1035`
+- Yahoo USDTRY=X -> USD/TRY: Direct. Reference only (for Kuveyt conversion).
+- TCMB -> USD/TRY: Direct. Official reference for Kuveyt conversion.
+- Yahoo GC=F (USD/troy oz) -> Ratio: `GC÷SI`. Direct. Both in same unit.
 
 Validation gate:
 
@@ -235,48 +251,6 @@ Validation gate:
 - VPS deploy and smoke validation can be triggered manually through GitHub Actions after required VPS secrets are configured.
 - One-shot collector smoke commands must fail the process when a collector records failed status.
 
-### Phase 3.6: Technical Indicator Engine
-
-Goal: Automatically calculate critical technical indicators from OHLCV price data.
-
-Primary data source: Yahoo Finance SI=F (Silver Futures COMEX)
-- Free, no API key required, 5m/1h/daily resolution.
-- 2 years of daily OHLCV, 5 days intraday.
-
-Indicators and periods to calculate:
-- RSI(14): Relative Strength Index
-- MACD(12,26,9): Moving Average Convergence Divergence
-- Bollinger Bands(20,2): Volatility bands
-- SMA(20), SMA(50), SMA(200): Simple moving averages
-- ATR(14): Average True Range (stop-loss calculation)
-- XAU/XAG Ratio: Gold/Silver ratio (GC=F / SI=F)
-
-New table: `technical_indicators`
-New collector: `YahooFinanceCollector` (5m OHLCV for SI=F)
-Library: `pandas-ta` or `ta-lib`
-
-### Phase 3.7: USD/TRY Gün İçi Takip
-
-Goal: Add intraday USD/TRY tracking alongside the daily TCMB rate.
-
-Primary: Yahoo Finance USDTRY=X (1-hour OHLCV, free, no API key)
-Reference: TCMB daily XML (existing, preserved)
-Cross-control: If Yahoo USD/TRY deviates from TCMB by ±%2, trigger a warning.
-
-### Phase 3.8: Kuveyt Türk Veri Sağlamlaştırma
-
-Goal: Harden the bank data collection chain against errors and swap anomalies.
-
-Anomaly controls:
-1. `buy_price > sell_price` check (if false -> BLOCK + ALERT, scraper swapped values).
-2. Spread between %2 and %25? (if false -> BLOCK + ALERT).
-3. Is the price within ±10% of the last 5 records? (if false -> DEGRADED).
-4. Cross-control: SI=F × USDTRY=X ≈ bank price ±%5 (if false -> ALERT).
-
-Fallback mechanism:
-- If Kuveyt Türk scraping fails -> Calculate theoretical TRY/gram using Yahoo SI=F × TCMB USD/TRY -> Run in DEGRADED mode.
-- Manual price entry is only a last resort and must always be marked as "manual".
-
 ### Phase 3.4: Bank Silver Price Resolution
 
 Goal: resolve execution-critical bank silver buy/sell data before the risk engine.
@@ -291,7 +265,7 @@ Primary path:
 
 Fallback path:
 
-- Fallback to Yahoo SI=F × TCMB USD/TRY theoretical calculation.
+- Fallback: Use Yahoo SI=F USD/oz directly as the bank price proxy (DEGRADED mode). No TRY conversion needed — portfolio is USD-based.
 - Existing `POST /collectors/manual-price` can insert manual bank prices into `raw_bank_prices`.
 - Manual fallback is allowed only to unblock simulation and validation.
 - Manual fallback must be visible as manual/degraded in health and reports.
@@ -310,6 +284,153 @@ Phase 4 gate:
 - Multi-job collector runner exists for sustained validation.
 - CI/VPS smoke must cover Kuveyt, Yahoo SI=F, TCMB, Fed RSS, FRED macro, collector health, collector quality, and validation-gate endpoints.
 - Do not start Phase 4 until sustained collector validation confirms freshness, duplicate behavior, and missing-data ratio are acceptable.
+
+### Phase 3.5: Yahoo Finance SI=F Integration
+
+Goal: Integrate Yahoo Finance SI=F as the primary global data source for XAG.
+
+Market Logic:
+- **Futures vs Spot:** SI=F is futures. The contango/backwardation difference (0.1-0.5%) is acceptable for paper trading.
+- **Market Hours:** COMEX trades Sun 18:00 - Fri 17:00 ET. Daily maintenance is 17:00-18:00 ET. Collector MUST NOT alarm `stale data` during this 1-hour maintenance window.
+- **Rate Limits:** Safe frequency is 90 seconds (40 req/hour) to avoid ban (limit ~2000/hr).
+- **User-Agent:** Mandatory `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36`.
+
+Endpoints:
+- 5m Intraday: `chart/SI=F?range=1d&interval=5m`
+- 1h Intraday: `chart/SI=F?range=5d&interval=1h`
+- 1d Daily (2 yrs): `chart/SI=F?range=2y&interval=1d`
+- USDTRY=X 1h: `chart/USDTRY=X?range=5d&interval=1h`
+- GC=F 1h: `chart/GC=F?range=1d&interval=1h`
+
+### Phase 3.6: Technical Indicator Engine
+
+Goal: Automatically calculate critical technical indicators from OHLCV price data.
+
+Primary data source: Yahoo Finance SI=F
+Library: Pure pandas (saf pandas rolling/ewm). `pandas-ta` ve `ta-lib` KULLANILMIYOR — Python 3.14+ VPS uyumluluğu için sıfır C-compilation bağımlılığı.
+
+Calculation Pipeline (Runs every 5m SI=F bar):
+1. SI=F data is already USD/troy oz. Use directly. No normalization required.
+2. Fetch minimum required historical bars (e.g. 200 bars for SMA200).
+3. Calculate using pure pandas (ewm for Wilder's smoothing, rolling for SMA/BB).
+4. NaN Control: If insufficient data, write NULL. Do not throw an error.
+5. Insert to `technical_indicators`.
+
+Code Specification (Actual Implementation — `app/services/indicators.py`):
+```python
+import pandas as pd
+
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    # df columns: high, low, close (close is USD/troy oz — SI=F native)
+    # All indicators are computed in USD. No TRY conversion needed.
+    # Uses pure pandas to avoid numba / pandas-ta compile dependencies on Python 3.14+.
+    df = df.copy()
+
+    # RSI 14 (Wilder's smoothing via ewm alpha=1/14)
+    delta = df['close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1/14, min_periods=14).mean()
+    avg_loss = loss.ewm(alpha=1/14, min_periods=14).mean()
+    rs = avg_gain / avg_loss
+    df['rsi_14'] = 100 - (100 / (1 + rs))
+
+    # MACD (12, 26, 9) via standard EMA
+    ema_fast = df['close'].ewm(span=12, adjust=False).mean()
+    ema_slow = df['close'].ewm(span=26, adjust=False).mean()
+    df['macd_line'] = ema_fast - ema_slow
+    df['macd_signal'] = df['macd_line'].ewm(span=9, adjust=False).mean()
+    df['macd_histogram'] = df['macd_line'] - df['macd_signal']
+
+    # Bollinger Bands (20, 2) via rolling
+    sma20 = df['close'].rolling(window=20).mean()
+    rstd = df['close'].rolling(window=20).std()
+    df['bb_upper_20_2'] = sma20 + (2 * rstd)
+    df['bb_middle_20_2'] = sma20
+    df['bb_lower_20_2'] = sma20 - (2 * rstd)
+
+    # SMAs
+    df['sma_20'] = df['close'].rolling(window=20).mean()
+    df['sma_50'] = df['close'].rolling(window=50).mean()
+    df['sma_200'] = df['close'].rolling(window=200).mean()
+
+    # ATR 14 (True Range + Wilder's smoothing)
+    h_l = df['high'] - df['low']
+    h_pc = (df['high'] - df['close'].shift(1)).abs()
+    l_pc = (df['low'] - df['close'].shift(1)).abs()
+    tr = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1)
+    df['atr_14'] = tr.ewm(alpha=1/14, min_periods=14).mean()
+
+    return df
+```
+
+Table Schema (`technical_indicators`):
+```sql
+CREATE TABLE technical_indicators (
+    id SERIAL PRIMARY KEY,
+    price_snapshot_id INTEGER REFERENCES price_snapshots(id),
+    bar_timestamp TIMESTAMPTZ NOT NULL,
+    timeframe VARCHAR(8) NOT NULL,
+    close_usd_oz NUMERIC(18,6),
+    rsi_14 NUMERIC(10,4),
+    macd_line NUMERIC(10,4),
+    macd_signal NUMERIC(10,4),
+    macd_histogram NUMERIC(10,4),
+    bb_upper_20_2 NUMERIC(10,4),
+    bb_middle_20_2 NUMERIC(10,4),
+    bb_lower_20_2 NUMERIC(10,4),
+    sma_20 NUMERIC(10,4),
+    sma_50 NUMERIC(10,4),
+    sma_200 NUMERIC(10,4),
+    atr_14 NUMERIC(10,4),
+    xau_xag_ratio NUMERIC(10,4),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(bar_timestamp, timeframe)
+);
+```
+
+Edge Cases:
+- Missing Data -> write NULL.
+- Market Closed -> Hash is identical -> skip insert.
+- Weekend/Holiday -> Collector runs, hash identical -> skip insert.
+- Gap (Sunday open) -> Normal, do not filter.
+- Null Close -> Yahoo sometimes returns null -> skip bar.
+- Volume 0 -> Normal in futures during illiquid hours -> do not filter.
+
+### Phase 3.7: Intraday USD/TRY Tracking
+
+Goal: Add intraday USD/TRY tracking alongside the daily TCMB rate.
+
+Primary: Yahoo Finance USDTRY=X (1-hour OHLCV, free, no API key).
+Reference: TCMB daily XML (existing, preserved).
+Cross-control: If Yahoo USD/TRY deviates from TCMB by ±%2, trigger a warning.
+
+### Phase 3.8: Kuveyt Türk Data Hardening
+
+Goal: Harden the bank data collection chain against errors and swap anomalies.
+
+Anomaly controls:
+1. `buy_price > sell_price` check (if false -> BLOCK + ALERT, scraper swapped values).
+2. Spread between %2 and %25? (if false -> BLOCK + ALERT).
+3. Is the price within ±10% of the last 5 records? (if false -> DEGRADED).
+4. Cross-control: Convert Kuveyt Türk TRY/gram to USD/oz (÷ USDTRY × 31.1035), then compare with SI=F USD/oz. Deviation > ±5% triggers ALERT.
+
+Retry & Fallback mechanism:
+- Retry 3 times, 5s intervals.
+- If Kuveyt Türk scraping fails completely -> Use Yahoo SI=F USD/oz directly as the bank price proxy -> Run in DEGRADED mode. Portfolio is USD-based, no TRY conversion needed.
+- Stay in DEGRADED mode until next successful scrape. Trade is allowed but risk engine logs warning.
+- If Kuveyt page struct changes -> Old parser logs FAILED.
+
+### Phase 3.9: Data Backfill Strategy
+
+Goal: Pre-fill database with enough history to compute indicators like SMA200.
+
+Backfill Flow:
+1. BEFORE starting the 5m collector, fetch 2-year daily OHLCV for SI=F (one-time).
+2. Write all bars to `raw_global_prices` and `price_snapshots`.
+3. Compute all indicators and write to `technical_indicators`.
+4. AFTER backfill completes, start the 5m collector.
+5. On every new 5m bar, only calculate and insert the latest bar's indicators.
 
 ## Phase 4: Risk Policy and Rule Engine
 
@@ -810,4 +931,4 @@ Validation gate:
 
 ## Immediate Next Step
 
-Immediate next is retrofitting the data collectors (Phase 3.6, 3.7, 3.8). We will introduce the Yahoo Finance collector for SI=F and USDTRY=X, implement the Technical Indicator Engine, and harden the Kuveyt Türk collection with 4-layer anomaly controls. Once the data pipeline is fully hardened, we will implement Phase 6 Hermes integration and Phase 6.5 Simplified Runtime Memory before building the first Agents. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Immediate next is retrofitting the data collectors (Phase 3.4 through 3.9). We will introduce the Yahoo Finance collector for SI=F and USDTRY=X, implement the Technical Indicator Engine with Backfill strategies, and harden the Kuveyt Türk collection with 4-layer anomaly controls. Once the data pipeline is fully hardened, we will implement Phase 6 Hermes integration and Phase 6.5 Simplified Runtime Memory before building the first Agents. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.

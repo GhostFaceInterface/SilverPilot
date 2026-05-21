@@ -7,7 +7,7 @@ from app.core.db import get_db
 from app.collectors.public_sources import (
     collect_global_xag_usd,
     collect_kuveyt_public_silver,
-    collect_stooq_xag_usd,
+    collect_yahoo_usd_try,
     collect_tcmb_usd_try,
 )
 from app.collectors.service import (
@@ -200,13 +200,13 @@ def run_kuveyt_silver_collector(db: Session = Depends(get_db)) -> CollectorRunRe
     )
 
 
-@router.post("/collectors/stooq-xag-usd/run", response_model=CollectorRunResultResponse)
-def run_stooq_xag_usd_collector(db: Session = Depends(get_db)) -> CollectorRunResultResponse:
-    run, raw_inserted, snapshot = collect_stooq_xag_usd(db)
+@router.post("/collectors/yahoo-usd-try/run", response_model=CollectorRunResultResponse)
+def run_yahoo_usd_try_collector(db: Session = Depends(get_db)) -> CollectorRunResultResponse:
+    run, raw_inserted = collect_yahoo_usd_try(db)
     return CollectorRunResultResponse(
         collector_run=_collector_run_payload(run),
         raw_inserted=raw_inserted,
-        price_snapshot=_price_snapshot_payload(snapshot) if snapshot is not None else None,
+        price_snapshot=None,
     )
 
 

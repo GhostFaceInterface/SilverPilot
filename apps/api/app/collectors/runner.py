@@ -9,14 +9,14 @@ from app.collectors.public_sources import (
     collect_fred_macro,
     collect_global_xag_usd,
     collect_kuveyt_public_silver,
-    collect_stooq_xag_usd,
+    collect_yahoo_usd_try,
     collect_tcmb_usd_try,
 )
 from app.collectors.service import ingest_manual_price
 from app.core.db import SessionLocal
 from app.schemas.collectors import ManualPriceIngestRequest
 
-JOB_CHOICES = ("manual", "kuveyt-silver", "global-xag-usd", "stooq-xag-usd", "tcmb-usd-try", "fed-rss", "fred-macro")
+JOB_CHOICES = ("manual", "kuveyt-silver", "global-xag-usd", "yahoo-usd-try", "tcmb-usd-try", "fed-rss", "fred-macro")
 
 
 def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
@@ -32,12 +32,11 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
                 flush=True,
             )
             return run.status == "success"
-        if selected_job == "stooq-xag-usd":
-            run, raw_inserted, snapshot = collect_stooq_xag_usd(db)
-            snapshot_id = snapshot.id if snapshot is not None else None
+        if selected_job == "yahoo-usd-try":
+            run, raw_inserted = collect_yahoo_usd_try(db)
             print(
                 f"job={selected_job} collector_run_id={run.id} status={run.status} "
-                f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
+                f"raw_inserted={raw_inserted}",
                 flush=True,
             )
             return run.status == "success"

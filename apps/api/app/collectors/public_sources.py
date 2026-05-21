@@ -13,6 +13,7 @@ from urllib.parse import urljoin
 from xml.etree import ElementTree
 
 import httpx
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.collectors.service import (
@@ -26,11 +27,10 @@ from app.collectors.service import (
     record_failed_run,
 )
 from app.core.config import Settings, get_settings
-from app.models import CollectorRun, PriceSnapshot
+from app.models import CollectorRun, PriceSnapshot, RawFxRate
 
 KUVEYT_PARSER_VERSION = "kuveyt-public-finance-portal-v2"
-STOOQ_PARSER_VERSION = "stooq-xagusd-csv-v1"
-GOLD_API_PARSER_VERSION = "gold-api-xag-usd-v1"
+YAHOO_FINANCE_CHART_PARSER_VERSION = "yahoo-finance-chart-v1"
 METALS_DEV_PARSER_VERSION = "metals-dev-silver-spot-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
 FED_RSS_PARSER_VERSION = "fed-rss-v1"
@@ -139,6 +139,54 @@ def collect_kuveyt_public_silver(
             fetched_at=fetched_at,
             finance_portal_url=finance_portal_url,
         )
+
+        # Anomaly Check 1: Swapped price check
+        if parsed.buy_price < parsed.sell_price:
+            raise ValueError(f"Kuveyt returned inverted spread: buy_price ({parsed.buy_price}) < sell_price ({parsed.sell_price})")
+
+        # Anomaly Check 2: Spread percent must be between 2% and 25%
+        spread_abs = parsed.buy_price - parsed.sell_price
+        mid_val = (parsed.buy_price + parsed.sell_price) / Decimal("2")
+        spread_pct = (spread_abs / mid_val) * Decimal("100") if mid_val > 0 else Decimal("0")
+        if not (Decimal("2.0") <= spread_pct <= Decimal("25.0")):
+            raise ValueError(f"Kuveyt silver spread percent {spread_pct:.2f}% is outside of safe range [2%, 25%]")
+
+        # Fetch latest USDTRY rate from raw_fx_rates
+        latest_fx = db.execute(
+            select(RawFxRate)
+            .where(RawFxRate.base_currency == "USD", RawFxRate.quote_currency == "TRY")
+            .order_by(desc(RawFxRate.fetched_at), desc(RawFxRate.observed_at))
+            .limit(1)
+        ).scalar_one_or_none()
+        if latest_fx is None:
+            raise ValueError("No latest USDTRY exchange rate found in raw_fx_rates")
+        usd_try = latest_fx.rate
+        if usd_try <= 0:
+            raise ValueError(f"Invalid USDTRY exchange rate found: {usd_try}")
+
+        # Convert Kuveyt scraped TRY/gram price to USD/oz
+        # Formula: usd_price = try_price ÷ USDTRY × 31.1035
+        usd_buy = parsed.buy_price / usd_try * Decimal("31.1035")
+        usd_sell = parsed.sell_price / usd_try * Decimal("31.1035")
+        usd_mid = (usd_buy + usd_sell) / Decimal("2")
+
+        # Anomaly Check 3: Mid price deviation of ±10% against last 5 PriceSnapshots
+        last_snapshots = db.execute(
+            select(PriceSnapshot)
+            .where(
+                PriceSnapshot.source == "kuveyt-public-silver-page",
+                PriceSnapshot.currency == "USD"
+            )
+            .order_by(PriceSnapshot.observed_at.desc())
+            .limit(5)
+        ).scalars().all()
+
+        if last_snapshots:
+            avg_usd_mid = sum(s.mid_price for s in last_snapshots) / len(last_snapshots)
+            deviation = abs(usd_mid - avg_usd_mid) / avg_usd_mid
+            if deviation > Decimal("0.10"):
+                raise ValueError(f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by {deviation*100:.2f}% from the 5-run average ({avg_usd_mid:.4f})")
+
         return ingest_bank_price(
             db,
             source="kuveyt-public-silver-page",
@@ -152,58 +200,79 @@ def collect_kuveyt_public_silver(
             raw_payload=raw_payload,
             parser_version=KUVEYT_PARSER_VERSION,
             collector_name="kuveyt_public_silver",
+            usd_buy_price=usd_buy,
+            usd_sell_price=usd_sell,
         )
     except Exception as exc:
         db.rollback()
-        run = record_failed_run(
-            db,
-            collector_name="kuveyt_public_silver",
-            source="kuveyt-public-silver-page",
-            error_message=str(exc),
-            details_json={"parser_version": KUVEYT_PARSER_VERSION},
-        )
-        return run, False, None
+        # Degraded Mode: fallback to Yahoo SI=F
+        try:
+            error_msg = str(exc)
+            provider = YahooXagUsdProvider()
+            parsed_yahoo = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
+            yahoo_price = parsed_yahoo.price
+
+            degraded_payload = {
+                "error_reason": error_msg,
+                "degraded_mode": True,
+                "proxy_source": parsed_yahoo.source,
+                "proxy_symbol": parsed_yahoo.symbol,
+                "proxy_price": str(yahoo_price),
+                **(parsed_yahoo.metadata or {})
+            }
+
+            return ingest_bank_price(
+                db,
+                source="kuveyt-public-silver-page",
+                asset_symbol="XAG",
+                buy_price=Decimal("0"),
+                sell_price=Decimal("0"),
+                currency="TRY",
+                observed_at=parsed_yahoo.observed_at,
+                fetched_at=fetched_at,
+                payload=degraded_payload,
+                raw_payload=parsed_yahoo.raw_payload,
+                parser_version="kuveyt-degraded-yahoo-proxy-v1",
+                collector_name="kuveyt_public_silver",
+                usd_buy_price=yahoo_price,
+                usd_sell_price=yahoo_price,
+            )
+        except Exception as fallback_exc:
+            db.rollback()
+            run = record_failed_run(
+                db,
+                collector_name="kuveyt_public_silver",
+                source="kuveyt-public-silver-page",
+                error_message=f"Scraper error: {exc} | Proxy fallback error: {fallback_exc}",
+                details_json={"parser_version": KUVEYT_PARSER_VERSION},
+            )
+            return run, False, None
 
 
-def collect_stooq_xag_usd(
+def collect_yahoo_usd_try(
     db: Session,
     *,
     settings: Settings | None = None,
     client: httpx.Client | None = None,
-) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
+) -> tuple[CollectorRun, bool]:
     settings = settings or get_settings()
     fetched_at = datetime.now(UTC)
-    provider = StooqXagUsdProvider()
+    provider = YahooUsdTryProvider()
     try:
-        parsed = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
-        return ingest_global_price(
+        parsed, raw_payload = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
+        return ingest_fx_rate(
             db,
-            source=parsed.source,
-            asset_symbol="XAG",
-            buy_price=parsed.ask or parsed.price,
-            sell_price=parsed.bid or parsed.price,
-            currency=parsed.currency,
+            source=provider.source,
+            base_currency=parsed.base_currency,
+            quote_currency=parsed.quote_currency,
+            rate=parsed.rate,
             observed_at=parsed.observed_at,
             fetched_at=fetched_at,
-            payload=_global_price_payload(parsed),
-            raw_payload=parsed.raw_payload,
-            parser_version=parsed.parser_version,
+            payload=parsed.payload,
+            raw_payload=raw_payload,
+            parser_version=provider.parser_version,
             collector_name=provider.collector_name,
         )
-    except GlobalSilverProviderError as exc:
-        db.rollback()
-        run = record_failed_run(
-            db,
-            collector_name=provider.collector_name,
-            source=provider.source,
-            error_message=str(exc),
-            details_json={
-                "parser_version": provider.parser_version,
-                "failure_reason_code": exc.reason_code,
-                **exc.details,
-            },
-        )
-        return run, False, None
     except Exception as exc:
         db.rollback()
         run = record_failed_run(
@@ -211,9 +280,9 @@ def collect_stooq_xag_usd(
             collector_name=provider.collector_name,
             source=provider.source,
             error_message=str(exc),
-            details_json={"parser_version": provider.parser_version, "failure_reason_code": "PARSE_ERROR"},
+            details_json={"parser_version": provider.parser_version},
         )
-        return run, False, None
+        return run, False
 
 
 def collect_global_xag_usd(
@@ -445,13 +514,13 @@ def collect_fred_macro(
         return run, 0
 
 
-class StooqXagUsdProvider:
-    source = "stooq-xagusd-csv"
-    collector_name = "stooq_xag_usd"
-    parser_version = STOOQ_PARSER_VERSION
+class YahooXagUsdProvider:
+    source = "yahoo-si-f"
+    collector_name = "yahoo_xag_usd"
+    parser_version = YAHOO_FINANCE_CHART_PARSER_VERSION
 
     def enabled(self, settings: Settings) -> bool:
-        return bool(settings.stooq_xag_usd_url)
+        return bool(settings.yahoo_chart_base_url)
 
     def fetch(
         self,
@@ -460,63 +529,61 @@ class StooqXagUsdProvider:
         fetched_at: datetime,
         client: httpx.Client | None,
     ) -> NormalizedGlobalSilverPrice:
-        raw_payload = _fetch_with_retry(
-            settings.stooq_xag_usd_url,
+        url = f"{settings.yahoo_chart_base_url.rstrip('/')}/SI=F"
+        raw_payload = _fetch_with_retry_yahoo(
+            url,
             settings=settings,
             client=client,
-            timeout_seconds=settings.stooq_xag_usd_timeout_seconds,
-            retries=settings.stooq_xag_usd_retries,
-            backoff_seconds=settings.stooq_xag_usd_backoff_seconds,
+            timeout_seconds=settings.yahoo_xag_usd_timeout_seconds,
+            retries=settings.yahoo_xag_usd_retries,
+            backoff_seconds=settings.yahoo_xag_usd_backoff_seconds,
             source=self.source,
+            params={"range": "1d", "interval": "5m"},
         )
-        parsed = parse_stooq_xag_usd_csv(raw_payload)
-        _reject_stale_global_quote(parsed.observed_at, fetched_at, settings=settings, source=self.source)
-        return NormalizedGlobalSilverPrice(
-            source=self.source,
-            symbol="XAG",
-            price=parsed.price,
-            currency=parsed.currency,
-            unit="troy_ounce",
-            observed_at=parsed.observed_at,
+        parsed = parse_yahoo_finance_chart_json(
+            raw_payload,
             fetched_at=fetched_at,
-            raw_payload=raw_payload,
-            parser_version=self.parser_version,
-            metadata={
-                **parsed.payload,
-                "source_type": "public_csv",
-                "failure_policy": "failed fetch/parse/stale data writes no price",
-                "reliability_tier": "primary_public_page",
-            },
-        )
-
-
-class GoldApiXagUsdProvider:
-    source = "gold-api-xag-usd"
-    collector_name = "gold_api_xag_usd"
-    parser_version = GOLD_API_PARSER_VERSION
-
-    def enabled(self, settings: Settings) -> bool:
-        return settings.gold_api_xag_usd_enabled and bool(settings.gold_api_xag_usd_url)
-
-    def fetch(
-        self,
-        *,
-        settings: Settings,
-        fetched_at: datetime,
-        client: httpx.Client | None,
-    ) -> NormalizedGlobalSilverPrice:
-        raw_payload = _fetch_with_retry(
-            settings.gold_api_xag_usd_url,
-            settings=settings,
-            client=client,
-            timeout_seconds=settings.gold_api_xag_usd_timeout_seconds,
-            retries=1,
-            backoff_seconds=settings.stooq_xag_usd_backoff_seconds,
+            expected_symbol="SI=F",
             source=self.source,
+            parser_version=self.parser_version,
         )
-        parsed = parse_gold_api_xag_usd_json(raw_payload, fetched_at=fetched_at)
         _reject_stale_global_quote(parsed.observed_at, fetched_at, settings=settings, source=self.source)
         return parsed
+
+
+class YahooUsdTryProvider:
+    source = "yahoo-usd-try"
+    collector_name = "yahoo_usd_try"
+    parser_version = YAHOO_FINANCE_CHART_PARSER_VERSION
+
+    def enabled(self, settings: Settings) -> bool:
+        return bool(settings.yahoo_chart_base_url)
+
+    def fetch(
+        self,
+        *,
+        settings: Settings,
+        fetched_at: datetime,
+        client: httpx.Client | None,
+    ) -> tuple[ParsedFxRate, str]:
+        url = f"{settings.yahoo_chart_base_url.rstrip('/')}/USDTRY=X"
+        raw_payload = _fetch_with_retry_yahoo(
+            url,
+            settings=settings,
+            client=client,
+            timeout_seconds=settings.yahoo_xag_usd_timeout_seconds,
+            retries=settings.yahoo_xag_usd_retries,
+            backoff_seconds=settings.yahoo_xag_usd_backoff_seconds,
+            source=self.source,
+            params={"range": "5d", "interval": "1h"},
+        )
+        parsed = parse_yahoo_finance_usdtry_chart_json(
+            raw_payload,
+            fetched_at=fetched_at,
+            source=self.source,
+            parser_version=self.parser_version,
+        )
+        return parsed, raw_payload
 
 
 class MetalsDevSilverProvider:
@@ -540,7 +607,7 @@ class MetalsDevSilverProvider:
             client=client,
             timeout_seconds=settings.metals_dev_timeout_seconds,
             retries=1,
-            backoff_seconds=settings.stooq_xag_usd_backoff_seconds,
+            backoff_seconds=settings.yahoo_xag_usd_backoff_seconds,
             source=self.source,
             params={
                 "api_key": settings.metals_dev_api_key,
@@ -553,19 +620,90 @@ class MetalsDevSilverProvider:
         return parsed
 
 
-def parse_gold_api_xag_usd_json(raw_payload: str, *, fetched_at: datetime) -> NormalizedGlobalSilverPrice:
+def parse_yahoo_finance_chart_json(
+    raw_payload: str,
+    *,
+    fetched_at: datetime,
+    expected_symbol: str,
+    source: str,
+    parser_version: str,
+) -> NormalizedGlobalSilverPrice:
     try:
         body = json.loads(raw_payload)
     except json.JSONDecodeError as exc:
-        raise GlobalSilverProviderError("PARSE_ERROR", "Gold-API response is not valid JSON") from exc
-    symbol = str(body.get("symbol") or "").upper()
-    currency = str(body.get("currency") or "USD").upper()
-    if symbol != "XAG" or currency != "USD":
-        raise GlobalSilverProviderError("PARSE_ERROR", "Gold-API response is not XAG/USD")
-    price = _decimal(str(body.get("price") or ""), field_name="Gold-API price")
-    observed_at = _parse_iso_datetime(body.get("updatedAt"), field_name="Gold-API updatedAt")
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} response is not valid JSON") from exc
+
+    chart = body.get("chart") or {}
+    error = chart.get("error")
+    if error:
+        raise GlobalSilverProviderError("HTTP_ERROR", f"{source} returned chart error: {error}")
+
+    result_list = chart.get("result")
+    if not isinstance(result_list, list) or not result_list:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} response missing results")
+
+    result = result_list[0]
+    meta = result.get("meta") or {}
+    symbol = str(meta.get("symbol") or expected_symbol).upper()
+    currency = str(meta.get("currency") or "USD").upper()
+
+    timestamps = result.get("timestamp") or []
+    indicators = result.get("indicators") or {}
+    quotes = indicators.get("quote") or []
+    
+    if not quotes or not isinstance(quotes, list):
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} indicators.quote missing")
+
+    quote = quotes[0] or {}
+    closes = quote.get("close") or []
+
+    if len(timestamps) != len(closes):
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} timestamps and closes length mismatch")
+
+    # Find the last non-null close price
+    idx = len(closes) - 1
+    price = None
+    observed_timestamp = None
+    while idx >= 0:
+        if closes[idx] is not None:
+            try:
+                price = Decimal(str(closes[idx]))
+                observed_timestamp = timestamps[idx]
+                break
+            except (ValueError, InvalidOperation):
+                pass
+        idx -= 1
+
+    if price is None or observed_timestamp is None:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} returned no valid close prices")
+
+    observed_at = datetime.fromtimestamp(observed_timestamp, tz=UTC)
+
+    # Gather additional metadata fields from the same index if available
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    volumes = quote.get("volume") or []
+
+    def get_val(arr, i):
+        if i < len(arr) and arr[i] is not None:
+            return str(arr[i])
+        return None
+
+    payload = {
+        "symbol": symbol,
+        "observed_timestamp": observed_timestamp,
+        "open": get_val(opens, idx),
+        "high": get_val(highs, idx),
+        "low": get_val(lows, idx),
+        "close": str(price),
+        "volume": get_val(volumes, idx),
+        "source_type": "yahoo_chart_api",
+        "reliability_tier": "primary_public_api",
+    }
+
     return NormalizedGlobalSilverPrice(
-        source=GoldApiXagUsdProvider.source,
+        source=source,
         symbol="XAG",
         price=price,
         currency=currency,
@@ -573,14 +711,83 @@ def parse_gold_api_xag_usd_json(raw_payload: str, *, fetched_at: datetime) -> No
         observed_at=observed_at,
         fetched_at=fetched_at,
         raw_payload=raw_payload,
-        parser_version=GOLD_API_PARSER_VERSION,
-        metadata={
-            "name": body.get("name"),
-            "updated_at": body.get("updatedAt"),
-            "source_type": "free_no_auth_json_api",
-            "access_tier": "free_no_key",
-            "reliability_tier": "approved_public_fallback",
-        },
+        parser_version=parser_version,
+        metadata=payload,
+    )
+
+
+def parse_yahoo_finance_usdtry_chart_json(
+    raw_payload: str,
+    *,
+    fetched_at: datetime,
+    source: str,
+    parser_version: str,
+) -> ParsedFxRate:
+    try:
+        body = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise CollectorError(f"{source} response is not valid JSON") from exc
+
+    chart = body.get("chart") or {}
+    error = chart.get("error")
+    if error:
+        raise CollectorError(f"{source} returned chart error: {error}")
+
+    result_list = chart.get("result")
+    if not isinstance(result_list, list) or not result_list:
+        raise CollectorError(f"{source} response missing results")
+
+    result = result_list[0]
+    meta = result.get("meta") or {}
+    symbol = str(meta.get("symbol") or "USDTRY=X").upper()
+
+    timestamps = result.get("timestamp") or []
+    indicators = result.get("indicators") or {}
+    quotes = indicators.get("quote") or []
+    
+    if not quotes or not isinstance(quotes, list):
+        raise CollectorError(f"{source} indicators.quote missing")
+
+    quote = quotes[0] or {}
+    closes = quote.get("close") or []
+
+    if len(timestamps) != len(closes):
+        raise CollectorError(f"{source} timestamps and closes length mismatch")
+
+    # Find the last non-null close price
+    idx = len(closes) - 1
+    rate = None
+    observed_timestamp = None
+    while idx >= 0:
+        if closes[idx] is not None:
+            try:
+                rate = Decimal(str(closes[idx]))
+                observed_timestamp = timestamps[idx]
+                break
+            except (ValueError, InvalidOperation):
+                pass
+        idx -= 1
+
+    if rate is None or observed_timestamp is None:
+        raise CollectorError(f"{source} returned no valid close rates")
+
+    observed_at = datetime.fromtimestamp(observed_timestamp, tz=UTC)
+
+    payload = {
+        "symbol": symbol,
+        "observed_timestamp": observed_timestamp,
+        "rate": str(rate),
+        "source_type": "yahoo_chart_api",
+        "base_currency": "USD",
+        "quote_currency": "TRY",
+    }
+
+    return ParsedFxRate(
+        base_currency="USD",
+        quote_currency="TRY",
+        rate=rate,
+        observed_at=observed_at,
+        payload=payload,
     )
 
 
@@ -618,37 +825,6 @@ def parse_metals_dev_silver_spot_json(raw_payload: str, *, fetched_at: datetime)
         },
     )
 
-
-def parse_stooq_xag_usd_csv(raw_payload: str) -> ParsedGlobalPrice:
-    rows = list(csv.DictReader(StringIO(raw_payload.strip())))
-    if not rows:
-        raise CollectorError("Stooq CSV returned no rows")
-    row = rows[0]
-    symbol = (row.get("Symbol") or "").upper()
-    if symbol != "XAGUSD":
-        raise CollectorError(f"Unexpected Stooq symbol: {symbol or 'missing'}")
-    close_value = row.get("Close")
-    if not close_value or close_value.upper() == "N/D":
-        raise CollectorError("Stooq XAG/USD close price is missing")
-
-    observed_at = _parse_datetime(row.get("Date"), row.get("Time"))
-    price = _decimal(close_value, field_name="Close")
-    return ParsedGlobalPrice(
-        price=price,
-        currency="USD",
-        observed_at=observed_at,
-        payload={
-            "symbol": symbol,
-            "date": row.get("Date"),
-            "time": row.get("Time"),
-            "open": row.get("Open"),
-            "high": row.get("High"),
-            "low": row.get("Low"),
-            "close": close_value,
-            "volume": row.get("Volume"),
-            "price_semantics": "close_as_mid; no bid/ask in Stooq CSV",
-        },
-    )
 
 
 def parse_tcmb_usd_try_xml(raw_payload: str) -> ParsedFxRate:
@@ -918,12 +1094,67 @@ def _fetch_with_retry(
     raise GlobalSilverProviderError(reason, f"{source} request failed", details={"attempts": attempts})
 
 
+def _fetch_with_retry_yahoo(
+    url: str,
+    *,
+    settings: Settings,
+    client: httpx.Client | None,
+    timeout_seconds: float,
+    retries: int,
+    backoff_seconds: float,
+    source: str,
+    params: dict | None = None,
+) -> str:
+    # Use realistic browser user agent to avoid Yahoo blocking
+    browser_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    headers = {"User-Agent": browser_user_agent, "Accept": "application/json"}
+    attempts = retries + 1
+    last_timeout = False
+    for attempt in range(1, attempts + 1):
+        try:
+            if client is None:
+                with httpx.Client(timeout=timeout_seconds, follow_redirects=True, headers=headers) as owned_client:
+                    response = owned_client.get(url, params=params)
+            else:
+                response = client.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=timeout_seconds,
+                    follow_redirects=True,
+                )
+            response.raise_for_status()
+            return response.text
+        except httpx.TimeoutException as exc:
+            last_timeout = True
+            if attempt >= attempts:
+                raise GlobalSilverProviderError(
+                    "TIMEOUT",
+                    f"{source} request timed out",
+                    details={"attempts": attempt, "timeout_seconds": timeout_seconds},
+                ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise GlobalSilverProviderError(
+                "HTTP_ERROR",
+                f"{source} returned HTTP {exc.response.status_code}",
+                details={"status_code": exc.response.status_code, "attempts": attempt},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise GlobalSilverProviderError(
+                "HTTP_ERROR",
+                f"{source} request failed",
+                details={"attempts": attempt},
+            ) from exc
+        if attempt < attempts and backoff_seconds > 0:
+            time.sleep(backoff_seconds * attempt)
+    reason = "TIMEOUT" if last_timeout else "HTTP_ERROR"
+    raise GlobalSilverProviderError(reason, f"{source} request failed", details={"attempts": attempts})
+
+
 def _global_xag_providers(settings: Settings) -> list[GlobalSilverPriceProvider]:
     available: dict[str, GlobalSilverPriceProvider] = {
-        "stooq": StooqXagUsdProvider(),
-        "stooq-xag-usd": StooqXagUsdProvider(),
-        "gold-api": GoldApiXagUsdProvider(),
-        "goldapi": GoldApiXagUsdProvider(),
+        "yahoo-si-f": YahooXagUsdProvider(),
+        "yahoo_si_f": YahooXagUsdProvider(),
         "metals-dev": MetalsDevSilverProvider(),
         "metalsdev": MetalsDevSilverProvider(),
     }
@@ -935,7 +1166,7 @@ def _global_xag_providers(settings: Settings) -> list[GlobalSilverPriceProvider]
         if provider is not None and provider.source not in seen:
             providers.append(provider)
             seen.add(provider.source)
-    return providers or [StooqXagUsdProvider(), GoldApiXagUsdProvider(), MetalsDevSilverProvider()]
+    return providers or [YahooXagUsdProvider(), MetalsDevSilverProvider()]
 
 
 def _global_price_payload(

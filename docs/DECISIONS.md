@@ -94,7 +94,7 @@ The direct BLS API collector is outside MVP. `BLS_API_KEY` may remain an optiona
 
 Status: accepted.
 
-Türkiye sources such as TCMB daily XML, optional EVDS, TÜİK, Resmi Gazete, GİB, and Hazine ve Maliye Bakanlığı matter for TRY execution simulation, bank spread comparison, local risk, and tax/rule verification. They are not treated as primary global silver direction signals.
+Türkiye sources such as TCMB daily XML, optional EVDS, TÜİK, Resmi Gazete, GİB, and Hazine ve Maliye Bakanlığı matter for USD execution simulation (from local TRY), bank spread comparison, local risk, and tax/rule verification. They are not treated as primary global silver direction signals.
 
 ## D-017: Advanced Agent Memory Deferred
 

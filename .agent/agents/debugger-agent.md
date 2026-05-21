@@ -40,6 +40,8 @@ Always present your bug investigation report directly in the chat using the foll
 
 ## 8. Related Skills
 - `general-coding.md` (clean code, solid exception rules).
+- `systematic-debugging.md` (playbook for root cause analysis and reproducing bugs).
+- `lint-and-validate.md` (pre-commit quality validation checks and tests).
 
 ## 9. Example Task
 - **Goal:** Fix a 500 Internal Server Error when calculating trade limits.

@@ -15,6 +15,7 @@ from app.models.entities import (
     RiskDecision,
     RiskRule,
     Signal,
+    TechnicalIndicator,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "RiskDecision",
     "RiskRule",
     "Signal",
+    "TechnicalIndicator",
 ]

@@ -35,15 +35,15 @@ class Settings(BaseSettings):
         "https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/"
         "hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"
     )
-    global_xag_source_priority: str = "stooq,gold-api,metals-dev"
+    global_xag_source_priority: str = "yahoo-si-f,metals-dev"
     global_xag_freshness_minutes: int = Field(default=90, ge=1)
-    stooq_xag_usd_url: str = "https://stooq.com/q/l/?s=xagusd&f=sd2t2ohlcv&h&e=csv"
-    stooq_xag_usd_timeout_seconds: float = Field(default=10, gt=0)
-    stooq_xag_usd_retries: int = Field(default=2, ge=0)
-    stooq_xag_usd_backoff_seconds: float = Field(default=1, ge=0)
-    gold_api_xag_usd_enabled: bool = True
-    gold_api_xag_usd_url: str = "https://api.gold-api.com/price/XAG"
-    gold_api_xag_usd_timeout_seconds: float = Field(default=10, gt=0)
+
+    # Yahoo Finance Settings
+    yahoo_chart_base_url: str = "https://query1.finance.yahoo.com/v8/finance/chart"
+    yahoo_xag_usd_timeout_seconds: float = Field(default=10, gt=0)
+    yahoo_xag_usd_retries: int = Field(default=2, ge=0)
+    yahoo_xag_usd_backoff_seconds: float = Field(default=1, ge=0)
+
     metals_dev_api_key: str = ""
     metals_dev_spot_url: str = "https://api.metals.dev/v1/metal/spot"
     metals_dev_timeout_seconds: float = Field(default=10, gt=0)
