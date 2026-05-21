@@ -8,7 +8,8 @@ Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hat
 ## 2. Rules & Steps (Adım Adım Planlama Süreci)
 
 ### Adım 1: Keşif ve Etki Alanı Tespiti (Scouting)
-- Kod yazmaya başlamadan önce, mevcut yapıyı anlamak için `scout-agent` veya `scout-subagent` yardımıyla okuma-amaçlı (`list_dir`, `grep_search`) tarama yapın.
+- **Mükerrer Keşif Yasağı (No Redundant Scouting):** Eğer kullanıcı görev açıklamasında veya konuşma bağlamında gerekli keşif sonuçlarını, dosya yollarını ve arka planı zaten sağlamışsa, bağımsız bir keşif ajanı (`scout-agent`) tetiklemeyin ve sıfırdan arama yapmayın. Doğrudan kullanıcının sağladığı bağlam üzerinden planlama adımına geçin. Güçlü modelle (Pro) çalışırken gereksiz arama yapmak büyük oranda token israfına yol açar.
+- Eğer kullanıcının vermediği, doğrulanması zorunlu kritik bir dosya varsa, sadece o dosyayı hedefleyerek okuyun (Adım 3'teki RTK kurallarına uyun).
 - Değişiklik yapılacak alanların finansal risk boyutunu ölçmek için **[docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md)** ve veri bütünlüğü için **[docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md)** dosyalarını inceleyin.
 
 ### Adım 2: Zorunlu Fazlandırma ve PLAN.md Hazırlığı
@@ -33,7 +34,16 @@ Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hat
 
 ---
 
-## 3. PLAN.md Standart Şablonu (Template)
+## 3. Token Economy & RTK (Read Target Keylines) Protocol (Token Tasarrufu ve RTK Protokolü)
+Güçlü modellerin (Gemini 3.5 Pro) planlama veya analiz aşamalarında gereksiz yere yüksek miktarda token tüketmesini önlemek için şu kurallara uymak zorunludur:
+
+- **RTK (Read Target Keylines - Hedef Satır Aralığı Okuma):** Bir kod dosyasını kontrol etmeniz veya incelemeniz gerektiğinde, dosyayı asla tamamen okumayın (`view_file` aracında satır sınırı belirtmeden çağırmak büyük token kaybına sebep olur). Her zaman `StartLine` ve `EndLine` belirterek sadece ilgili satır aralığını/fonksiyonları okuyun.
+- **Alt Ajan Bağlam Ayrımı (Subagent Context Isolation):** Büyük arama veya tarama işlemleri kaçınılmaz ise, bu işlemleri ana konuşmanın bağlam limitini doldurmamak için izole `scout-subagent` ile çalıştırıp sadece neticelerini ana konuşmaya aktarın.
+- **Gereksiz Dosya Okuma Yasağı:** Yalnızca plan kapsamına giren ve etki alanında olan dosyaları okuyun. Projenin bağımsız kısımlarını okumaktan kaçının.
+
+---
+
+## 4. PLAN.md Standart Şablonu (Template)
 
 Plan oluştururken her zaman aşağıdaki markdown şablonunu kullanın:
 
@@ -71,7 +81,8 @@ Plan oluştururken her zaman aşağıdaki markdown şablonunu kullanın:
 
 ---
 
-## 4. Anti-Patterns (Kaçınılması Gereken Hatalar)
+## 5. Anti-Patterns (Kaçınılması Gereken Hatalar)
 - **Onay Almadan Kodlama:** Kullanıcı onay vermeden gizlice backend kodu yazmaya veya dosya değiştirmeye başlamak.
 - **Devasa Fazlar:** Tek bir faza 5 farklı dosyanın değiştirilmesi, test edilmesi ve entegrasyonu gibi büyük işler yığmak. Fazları her zaman atomik tutun.
 - **DoD (Tamamlanma Tanımı) Eksikliği:** Bir fazın bittiğini kanıtlayacak somut bir test komutunun veya çıktının plana yazılmaması.
+- **Whole-File Bleeding:** `view_file` aracını kullanırken hedef satır aralıkları belirlemek yerine, tüm dosyayı okuyarak bağlamı (context) lüzumsuz doldurmak.
