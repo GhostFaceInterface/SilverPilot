@@ -41,3 +41,16 @@ class AgentMemoryResponse(AgentMemoryCreate):
 class RiskCritiqueRequest(BaseModel):
     signal_id: int | None = None
 
+
+class ReportResponse(BaseModel):
+    id: int
+    report_type: str
+    period_start: datetime
+    period_end: datetime
+    payload_json: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+

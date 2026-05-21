@@ -204,7 +204,14 @@ def test_agent_trigger_endpoints():
     assert client.post("/agent/report/trigger").status_code == 401
     response = client.post("/agent/report/trigger", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
-    assert response.json() == {"status": "triggered", "agent": "report"}
+    data = response.json()
+    assert data["id"] is not None
+    assert data["report_type"] == "daily"
+    assert data["payload_json"]["portfolio_value"] == 0.0
+    assert data["payload_json"]["cash_balance"] == 0.0
+    assert data["payload_json"]["trades_count"] == 0
+    assert "No active portfolio data or snapshots found" in data["payload_json"]["report_content"]
+
 
     # 3. Test POST /agent/risk/critique
     assert client.post("/agent/risk/critique").status_code == 401

@@ -23,6 +23,7 @@ from app.paper_trading.service import PaperTradingError, calculate_position, exe
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.agents.news import run_news_sentiment_analysis
 from app.agents.risk import run_signal_critique
+from app.agents.report import run_daily_performance_report
 from app.schemas.collectors import (
     CollectorHealthResponse,
     CollectorQualityResponse,
@@ -35,7 +36,7 @@ from app.schemas.collectors import (
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 from app.schemas.risk import RiskPolicyStatusResponse
-from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse, RiskCritiqueRequest
+from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse, RiskCritiqueRequest, ReportResponse
 
 router = APIRouter()
 
@@ -504,9 +505,13 @@ async def trigger_news_agent(
     return await run_news_sentiment_analysis(db)
 
 
-@router.post("/agent/report/trigger")
-def trigger_report_agent(_: None = Depends(verify_agent_token)):
-    return {"status": "triggered", "agent": "report"}
+@router.post("/agent/report/trigger", response_model=ReportResponse)
+async def trigger_report_agent(
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_token),
+) -> Report:
+    return await run_daily_performance_report(db)
+
 
 
 @router.post("/agent/risk/critique", response_model=AgentMemoryResponse)

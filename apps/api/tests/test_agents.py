@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 
 from app.agents.news import run_news_sentiment_analysis
 from app.agents.risk import run_signal_critique
-from app.models import RawNews, AgentMemoryEvent, CollectorRun, Signal, TechnicalIndicator, Portfolio, PortfolioSnapshot, Asset, PriceSnapshot
+from app.models import RawNews, AgentMemoryEvent, CollectorRun, Signal, TechnicalIndicator, Portfolio, PortfolioSnapshot, Asset, PriceSnapshot, Report, PaperTrade
 from app.core.config import get_settings
 from decimal import Decimal
 
@@ -274,4 +274,107 @@ async def test_risk_agent_empty_database(db_session):
     assert event.value_json["decision"] == "APPROVED"
     assert event.value_json["confidence"] == 1.0
     assert "No signals exist in the database" in event.value_json["critique_markdown"]
+
+
+@pytest.mark.anyio
+@patch("httpx.AsyncClient.post")
+async def test_report_agent_success(mock_post, db_session):
+    # Setup mock API key
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+
+    # Add mock Asset, Portfolio, PortfolioSnapshot, PaperTrade
+    asset = Asset(symbol="XAG", name="Silver", asset_type="precious_metal", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+
+    portfolio = Portfolio(
+        name="test-portfolio",
+        base_currency="USD",
+        initial_cash=Decimal("10000.0"),
+        cash_balance=Decimal("9500.0"),
+    )
+    db_session.add(portfolio)
+    db_session.commit()
+
+    portfolio_snap = PortfolioSnapshot(
+        portfolio_id=portfolio.id,
+        cash_balance=Decimal("9500.0"),
+        asset_quantity=Decimal("20.0"),
+        portfolio_value=Decimal("10000.0"),
+        realized_pnl=Decimal("100.0"),
+        unrealized_pnl=Decimal("-50.0"),
+        observed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(portfolio_snap)
+    db_session.commit()
+
+    trade = PaperTrade(
+        portfolio_id=portfolio.id,
+        asset_id=asset.id,
+        action="BUY",
+        quantity=Decimal("20.0"),
+        price=Decimal("25.0"),
+        gross_amount=Decimal("500.0"),
+        fees=Decimal("0.0"),
+        taxes=Decimal("0.0"),
+        net_amount=Decimal("500.0"),
+        created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    db_session.add(trade)
+    db_session.commit()
+
+    # Mock HTTP response from DeepSeekGateway
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "# Daily Performance Report\nGreat performance!",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 120,
+            "completion_tokens": 80,
+        },
+    }
+    mock_post.return_value = mock_response
+
+    from app.agents.report import run_daily_performance_report
+
+    report = await run_daily_performance_report(db_session)
+
+    assert report is not None
+    assert report.report_type == "daily"
+    assert report.payload_json["portfolio_value"] == 10000.0
+    assert report.payload_json["cash_balance"] == 9500.0
+    assert report.payload_json["trades_count"] == 1
+    assert "Great performance!" in report.payload_json["report_content"]
+
+    # Check database persistence
+    saved_report = db_session.query(Report).filter_by(report_type="daily").first()
+    assert saved_report is not None
+    assert saved_report.id == report.id
+
+
+@pytest.mark.anyio
+async def test_report_agent_empty_database(db_session):
+    from app.agents.report import run_daily_performance_report
+
+    # Run with empty database (should gracefully fallback without LLM calling)
+    report = await run_daily_performance_report(db_session)
+
+    assert report is not None
+    assert report.report_type == "daily"
+    assert report.payload_json["portfolio_value"] == 0.0
+    assert report.payload_json["cash_balance"] == 0.0
+    assert report.payload_json["trades_count"] == 0
+    assert "No active portfolio data or snapshots found" in report.payload_json["report_content"]
+
 

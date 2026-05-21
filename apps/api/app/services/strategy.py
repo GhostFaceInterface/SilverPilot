@@ -1,6 +1,8 @@
 import math
 from decimal import Decimal
 from typing import Literal
+from sqlalchemy.orm import Session
+
 
 StrategyType = Literal["rsi", "sma_cross", "bollinger"]
 
