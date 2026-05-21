@@ -10,6 +10,7 @@
 - **Soru Sor:** Görevde herhangi bir belirsizlik, eksik veri şeması, belirtilmemiş API uç noktası veya eksik iş kuralı varsa **kod yazmadan önce** kesinlikle soru sorulmalı ve açıklık getirilmelidir.
 - **Varsayım Yasağı:** Kritik mimari kararları (veri tabanı tasarımı, API yönlendirmeleri, harici servis entegrasyonları) varsayarak doğrudan koda geçilmemelidir.
 - **Prensip:** "Eğer %1 bile belirsizlik varsa kod yazmayı durdur, netleştir, onay al ve sonra başla."
+- **Planlama Standardı:** Büyük veya çok dosyalı değişikliklerden önce kesinlikle **[.agent/workflows/plan.md](file:///Users/boe747/SilverPilot/.agent/workflows/plan.md)** iş akışı (planning workflow) işletilmeli ve `PLAN.md` hazırlanarak kullanıcı onayı alınmalıdır.
 
 ## 3. Agent Routing Protocol (Ajan Yönlendirme)
 Görevin kapsamına göre AI asistanı ilgili uzman ajan kimliğine bürünmeli ve o ajanın kurallarını (`.agent/agents/`) yüklemelidir:

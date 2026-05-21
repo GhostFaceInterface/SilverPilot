@@ -39,6 +39,8 @@ Ajanların uymak zorunda olduğu teknik kurallar:
 ### 4. İş Akışları & Orkestrasyon (Workflows)
 - **[orchestrate.md](file:///Users/boe747/SilverPilot/.agent/workflows/orchestrate.md)**
   - Büyük ve çok dosyalı iş geliştirme adımlarında ajanların sequential (sıralı) olarak nasıl orkestre edileceğini tanımlar.
+- **[plan.md](file:///Users/boe747/SilverPilot/.agent/workflows/plan.md)**
+  - Görev fazlandırma, PLAN.md şablonu, kullanıcı onayı (Socratic Gate) ve faz takibi süreçlerini standartlaştıran planlama anayasasıdır.
 - **[brainstorm.md](file:///Users/boe747/SilverPilot/.agent/workflows/brainstorm.md)**
   - Yeni bir özelliğin geliştirilmesi veya mimari kararlar öncesinde farklı çözüm yollarını (en az 3 seçenek) yapılandırılmış şekilde beyin fırtınası yaparak değerlendirir.
 - **[remember.md](file:///Users/boe747/SilverPilot/.agent/workflows/remember.md)**
