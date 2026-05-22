@@ -87,8 +87,8 @@ Tüm entegrasyon ve birim testlerinin yazılarak sistemin VPS'e güvenle dağıt
   - `apps/api/tests/test_agent_routes.py` ve `apps/api/tests/test_agents.py` test suite'leri oluşturularak 100% test başarısı sağlandı.
 - [x] **Safety Gatekeeper Analizi**:
   - `safety-gatekeeper` ile kod statik analizi yapıldı, regresyon kontrolü sağlandı.
-- [/] **Otomatik Dağıtım**:
-  - Testler başarıyla geçtikten sonra değişikliklerin Git'e commit & push edilerek VPS'e taşınması (Çalışıyor...).
+- [x] **Otomatik Dağıtım**:
+  - Testler başarıyla geçtikten sonra değişikliklerin Git'e commit & push edilerek VPS'e taşınması başarıyla tamamlandı.
 - *DoD:* pytest suite'lerinin tamamının (139 test) yeşil geçmesi ve VPS'te `/health` endpoint'inin sorunsuz çalışması.
 
 ---
