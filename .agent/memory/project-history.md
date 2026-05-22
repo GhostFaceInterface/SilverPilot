@@ -1,7 +1,7 @@
 ---
 type: reference
 created: 2026-05-18
-updated: 2026-05-21
+updated: 2026-05-22
 ---
 
 # Project History & Milestone Archives
@@ -27,5 +27,7 @@ updated: 2026-05-21
 - **Phase 5.5 Local & VPS Integration (May 2026):** Fully completed and verified Strategy indicators calculations and Backtest engine locally (100% test coverage) and remotely. Successfully committed, pushed, and deployed updates to production VPS with active migrations applied and smoke checked with remote E2E Strategy & Backtest validation script (`verify_execution_pipeline.py`).
 - **Phase 6 Direct DeepSeek, Premium Custom Observability & Port-Isolated Memory Layer (May 2026):** Successfully built and deployed direct DeepSeek Gateway (supporting Chat and Reasoner modes) with a hard-coded $1.00 USD Budget Guard, custom RAM-free telemetry store (`llm_call_traces` schema), async `@trace_llm` decorator, secure FastAPI trace/memory ingestion routes (`/agent/trace`, `/agent/memory`), and a premium visual Observability section in the Streamlit Dashboard (complete with latency analytics, cost breakdowns, and live trace inspection). All 110 tests validated as green, and deployed seamlessly to production.
 - **Phase 8 Agent-Assisted Strategy Backtesting & Refinement (May 2026):** Fully implemented the "Offline-First" historical pre-cached strategy simulation engine. Added the `HistoricalAgentCache` database schema, ran migrations, and seeded **1008 price-correlated historical agent decisions** for time-series backtests. Upgraded `StrategyRunner` with automated veto rules (intercepting `BUY` signals based on bearish news sentiment or rejected critiques), and developed the twin comparative backtest simulator (`scripts/backtest_engine.py`) outputting a premium side-by-side performance audit sheet. Fully verified all 125 test cases via pytest, resolved Python 3.14 compatibility bugs, merged cleanly to `main`, and synchronized origin remote.
+- **Phase 9 ML Dataset Automation Pipeline & Security Hardening (May 2026):** Implemented a high-performance offline ML feature and label dataset constructor (`scripts/build_dataset.py`) supporting time-series multi-table joins, Pandas-based returns, volatilities, future labels calculations, and a strict mathematically-proven zero-leakage protocol. Built and exposed secure endpoints (`POST /datasets/build`, `GET /datasets/list`) protected by `verify_agent_token` access control, and added a robust mock-history test suite (`apps/api/tests/test_dataset.py`) to verify pipeline safety and zero leakage. Performed an exhaustive Security & Quality audit (`security-auditor` & `quality-engineer` roles), confirming 100% green status across all 129 project tests with no deleted or bypassed test assets.
+
 
 
