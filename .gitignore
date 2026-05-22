@@ -36,3 +36,7 @@ notebooks/*
 *.log
 logs/
 mlruns/
+
+# Local scratch items
+scratch/ag-kit/
+

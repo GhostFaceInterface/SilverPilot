@@ -1,6 +1,6 @@
 import datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -8,7 +8,16 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base
 from app.core.config import Settings
-from app.models import Asset, Portfolio, PriceSnapshot, TechnicalIndicator, Signal, PaperTrade, RiskDecision, AgentMemoryEvent
+from app.models import (
+    Asset,
+    Portfolio,
+    PriceSnapshot,
+    TechnicalIndicator,
+    Signal,
+    PaperTrade,
+    RiskDecision,
+    AgentMemoryEvent,
+)
 from app.services.regime import get_market_regime
 from app.services.strategy import StrategyRunner
 from app.services.auto_trader import run_auto_trading
@@ -21,7 +30,7 @@ def seed_indicator_history(db, asset, count=15):
         observed_time = now - datetime.timedelta(minutes=15 * (count - i))
         # Increasing price pattern for trending behavior or static for sideways
         price = Decimal("25.00") + Decimal(str(i * 0.1))
-        
+
         snapshot = PriceSnapshot(
             asset_id=asset.id,
             source="yahoo-si-f",
@@ -31,11 +40,11 @@ def seed_indicator_history(db, asset, count=15):
             currency="USD",
             spread_absolute=Decimal("0.10"),
             spread_percent=Decimal("0.4"),
-            observed_at=observed_time
+            observed_at=observed_time,
         )
         db.add(snapshot)
         db.flush()
-        
+
         indicator = TechnicalIndicator(
             price_snapshot_id=snapshot.id,
             bar_timestamp=observed_time,
@@ -47,7 +56,7 @@ def seed_indicator_history(db, asset, count=15):
             bb_lower_20_2=price - Decimal("1.5"),
             sma_20=price - Decimal("0.2"),
             sma_50=price - Decimal("0.5"),
-            atr_14=Decimal("0.3")
+            atr_14=Decimal("0.3"),
         )
         db.add(indicator)
     db.commit()
@@ -70,9 +79,9 @@ async def test_regime_classifier_sideways_coldstart():
         asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
         db.add(asset)
         db.flush()
-        
+
         seed_indicator_history(db, asset, count=5)
-        
+
         regime = get_market_regime(db)
         assert regime["regime"] == "SIDEWAYS"
         assert regime["adx"] == 0.0
@@ -99,15 +108,15 @@ async def test_regime_classifier_trending():
         asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
         db.add(asset)
         db.flush()
-        
+
         seed_indicator_history(db, asset, count=20)
-        
+
         regime = get_market_regime(db)
         assert "regime" in regime
         assert "adx" in regime
         assert "bb_bandwidth" in regime
         assert "relative_atr" in regime
-        
+
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
@@ -125,13 +134,13 @@ async def test_blended_strategy_votes():
         prev_sma_50=Decimal("23.50"),  # BUY in SMA Cross (Golden Cross)
         bb_lower=Decimal("26.00"),
         bb_upper=Decimal("30.00"),
-        has_open_position=False
+        has_open_position=False,
     )
-    
+
     assert "rsi" in votes
     assert "bollinger" in votes
     assert "sma_cross" in votes
-    
+
     assert votes["rsi"]["action"] == "BUY"
     assert votes["sma_cross"]["action"] == "BUY"
     assert votes["bollinger"]["action"] == "BUY"  # Close 25.0 <= bb_lower 26.0
@@ -160,7 +169,7 @@ async def test_auto_trading_blended_bullish_consensus():
             base_currency="USD",
             initial_cash=Decimal("1000.00"),
             cash_balance=Decimal("1000.00"),
-            is_real_money=False
+            is_real_money=False,
         )
         db.add(portfolio)
         db.flush()
@@ -168,10 +177,7 @@ async def test_auto_trading_blended_bullish_consensus():
         seed_indicator_history(db, asset, count=16)
 
         settings = Settings(
-            auto_trading_enabled=True,
-            strategy_name="blended",
-            telegram_bot_token="test_token",
-            telegram_chat_id=12345
+            auto_trading_enabled=True, strategy_name="blended", telegram_bot_token="test_token", telegram_chat_id=12345
         )
 
         mock_risk = RiskDecision(
@@ -179,18 +185,19 @@ async def test_auto_trading_blended_bullish_consensus():
             reason_code="RISK_CHECK_PASSED",
             risk_level="low",
             confidence=Decimal("1.0"),
-            details_json={}
+            details_json={},
         )
 
         mock_llm_response = {
             "content": '{"resolved_stance": "BULLISH", "confidence": 0.9, "resolution_markdown": "Test BULLISH Arbiter justification."}'
         }
 
-        with patch("app.services.auto_trader.get_settings", return_value=settings), \
-             patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk), \
-             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response), \
-             patch("app.services.auto_trader.Bot") as MockBot:
-            
+        with (
+            patch("app.services.auto_trader.get_settings", return_value=settings),
+            patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
+            patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
+            patch("app.services.auto_trader.Bot") as MockBot,
+        ):
             mock_bot_instance = AsyncMock()
             MockBot.return_value = mock_bot_instance
 
@@ -255,7 +262,7 @@ async def test_auto_trading_blended_neutral_consensus_silent():
             base_currency="USD",
             initial_cash=Decimal("1000.00"),
             cash_balance=Decimal("1000.00"),
-            is_real_money=False
+            is_real_money=False,
         )
         db.add(portfolio)
         db.flush()
@@ -263,20 +270,18 @@ async def test_auto_trading_blended_neutral_consensus_silent():
         seed_indicator_history(db, asset, count=16)
 
         settings = Settings(
-            auto_trading_enabled=True,
-            strategy_name="blended",
-            telegram_bot_token="test_token",
-            telegram_chat_id=12345
+            auto_trading_enabled=True, strategy_name="blended", telegram_bot_token="test_token", telegram_chat_id=12345
         )
 
         mock_llm_response = {
             "content": '{"resolved_stance": "NEUTRAL", "confidence": 0.75, "resolution_markdown": "Test NEUTRAL justification."}'
         }
 
-        with patch("app.services.auto_trader.get_settings", return_value=settings), \
-             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response), \
-             patch("app.services.auto_trader.Bot") as MockBot:
-            
+        with (
+            patch("app.services.auto_trader.get_settings", return_value=settings),
+            patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
+            patch("app.services.auto_trader.Bot") as MockBot,
+        ):
             mock_bot_instance = AsyncMock()
             MockBot.return_value = mock_bot_instance
 

@@ -18,7 +18,17 @@ from app.collectors.service import (
     ingest_manual_price,
     latest_collector_run,
 )
-from app.models import Asset, CollectorRun, Portfolio, PortfolioSnapshot, PriceSnapshot, Report, Signal, LLMCallTrace, AgentMemoryEvent
+from app.models import (
+    Asset,
+    CollectorRun,
+    Portfolio,
+    PortfolioSnapshot,
+    PriceSnapshot,
+    Report,
+    Signal,
+    LLMCallTrace,
+    AgentMemoryEvent,
+)
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.agents.news import run_news_sentiment_analysis
@@ -37,7 +47,15 @@ from app.schemas.collectors import (
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 from app.schemas.risk import RiskPolicyStatusResponse
-from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse, RiskCritiqueRequest, ReportResponse, OrchestrateRunRequest
+from app.schemas.agent import (
+    LLMTraceCreate,
+    LLMTraceResponse,
+    AgentMemoryCreate,
+    AgentMemoryResponse,
+    RiskCritiqueRequest,
+    ReportResponse,
+    OrchestrateRunRequest,
+)
 
 router = APIRouter()
 
@@ -344,10 +362,7 @@ def get_latest_daily_report(db: Session = Depends(get_db)):
     }
 
 
-def verify_agent_token(
-    x_agent_token: str | None = Header(None),
-    settings: Settings = Depends(get_settings)
-) -> None:
+def verify_agent_token(x_agent_token: str | None = Header(None), settings: Settings = Depends(get_settings)) -> None:
     if not settings.agent_api_token:
         return
     if x_agent_token != settings.agent_api_token:
@@ -356,9 +371,7 @@ def verify_agent_token(
 
 @router.post("/agent/trace", response_model=LLMTraceResponse)
 def create_agent_trace(
-    request: LLMTraceCreate,
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_agent_token)
+    request: LLMTraceCreate, db: Session = Depends(get_db), _: None = Depends(verify_agent_token)
 ) -> LLMTraceResponse:
     trace = LLMCallTrace(
         agent_name=request.agent_name,
@@ -370,7 +383,7 @@ def create_agent_trace(
         status=request.status,
         prompt_raw=request.prompt_raw,
         response_raw=request.response_raw,
-        error_message=request.error_message
+        error_message=request.error_message,
     )
     db.add(trace)
     db.commit()
@@ -384,7 +397,7 @@ def get_agent_traces(
     offset: int = 0,
     agent_name: str | None = None,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_agent_token)
+    _: None = Depends(verify_agent_token),
 ) -> list[LLMCallTrace]:
     stmt = select(LLMCallTrace)
     if agent_name:
@@ -395,10 +408,7 @@ def get_agent_traces(
 
 
 @router.get("/agent/traces/stats")
-def get_agent_traces_stats(
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_agent_token)
-):
+def get_agent_traces_stats(db: Session = Depends(get_db), _: None = Depends(verify_agent_token)):
     # 1. Total Cost & Count
     total_stats = db.execute(
         select(
@@ -407,69 +417,68 @@ def get_agent_traces_stats(
             func.avg(LLMCallTrace.latency_ms).label("avg_latency"),
         )
     ).first()
-    
+
     total_cost = float(total_stats.total_cost or 0)
     total_calls = total_stats.total_calls or 0
     avg_latency = float(total_stats.avg_latency or 0)
-    
+
     # 2. Break-down by Agent
     agent_stats_rows = db.execute(
         select(
             LLMCallTrace.agent_name,
             func.count(LLMCallTrace.id).label("calls"),
             func.sum(LLMCallTrace.total_cost_usd).label("cost"),
-            func.avg(LLMCallTrace.latency_ms).label("latency")
+            func.avg(LLMCallTrace.latency_ms).label("latency"),
         ).group_by(LLMCallTrace.agent_name)
     ).all()
-    
+
     agent_breakdown = []
     for row in agent_stats_rows:
-        agent_breakdown.append({
-            "agent_name": row.agent_name,
-            "calls": row.calls,
-            "total_cost_usd": float(row.cost or 0),
-            "avg_latency_ms": float(row.latency or 0)
-        })
-        
+        agent_breakdown.append(
+            {
+                "agent_name": row.agent_name,
+                "calls": row.calls,
+                "total_cost_usd": float(row.cost or 0),
+                "avg_latency_ms": float(row.latency or 0),
+            }
+        )
+
     # 3. Break-down by Model
     model_stats_rows = db.execute(
         select(
             LLMCallTrace.model_name,
             func.count(LLMCallTrace.id).label("calls"),
             func.sum(LLMCallTrace.total_cost_usd).label("cost"),
-            func.avg(LLMCallTrace.latency_ms).label("latency")
+            func.avg(LLMCallTrace.latency_ms).label("latency"),
         ).group_by(LLMCallTrace.model_name)
     ).all()
-    
+
     model_breakdown = []
     for row in model_stats_rows:
-        model_breakdown.append({
-            "model_name": row.model_name,
-            "calls": row.calls,
-            "total_cost_usd": float(row.cost or 0),
-            "avg_latency_ms": float(row.latency or 0)
-        })
-        
+        model_breakdown.append(
+            {
+                "model_name": row.model_name,
+                "calls": row.calls,
+                "total_cost_usd": float(row.cost or 0),
+                "avg_latency_ms": float(row.latency or 0),
+            }
+        )
+
     return {
         "total_cost_usd": total_cost,
         "total_calls": total_calls,
         "avg_latency_ms": avg_latency,
         "by_agent": agent_breakdown,
-        "by_model": model_breakdown
+        "by_model": model_breakdown,
     }
 
 
 @router.post("/agent/memory", response_model=AgentMemoryResponse)
 def create_agent_memory(
-    request: AgentMemoryCreate,
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_agent_token)
+    request: AgentMemoryCreate, db: Session = Depends(get_db), _: None = Depends(verify_agent_token)
 ) -> AgentMemoryResponse:
     memory_event = AgentMemoryEvent(
-        agent_name=request.agent_name,
-        event_type=request.event_type,
-        key=request.key,
-        value_json=request.value_json
+        agent_name=request.agent_name, event_type=request.event_type, key=request.key, value_json=request.value_json
     )
     db.add(memory_event)
     db.commit()
@@ -485,14 +494,14 @@ def get_agent_memory(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_agent_token)
+    _: None = Depends(verify_agent_token),
 ) -> list[AgentMemoryEvent]:
     stmt = select(AgentMemoryEvent).where(AgentMemoryEvent.agent_name == agent_name)
     if key:
         stmt = stmt.where(AgentMemoryEvent.key == key)
     if event_type:
         stmt = stmt.where(AgentMemoryEvent.event_type == event_type)
-    
+
     stmt = stmt.order_by(desc(AgentMemoryEvent.created_at)).limit(limit).offset(offset)
     results = db.execute(stmt).scalars().all()
     return list(results)
@@ -500,8 +509,7 @@ def get_agent_memory(
 
 @router.post("/agent/news/trigger", response_model=AgentMemoryResponse)
 async def trigger_news_agent(
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_agent_token)
+    db: Session = Depends(get_db), _: None = Depends(verify_agent_token)
 ) -> AgentMemoryResponse:
     return await run_news_sentiment_analysis(db)
 
@@ -512,7 +520,6 @@ async def trigger_report_agent(
     _: None = Depends(verify_agent_token),
 ) -> Report:
     return await run_daily_performance_report(db)
-
 
 
 @router.post("/agent/risk/critique", response_model=AgentMemoryResponse)
@@ -531,35 +538,30 @@ def run_dataset_build_task(version: str) -> None:
     """Helper to run the dataset pipeline in a background task thread."""
     try:
         from scripts.build_dataset import build_dataset
+
         build_dataset(version=version, dry_run=False)
     except Exception as e:
         import logging
+
         logger = logging.getLogger("silverpilot.ml.dataset")
         logger.error(f"Error building dataset version {version}: {e}", exc_info=True)
 
 
 @router.post("/datasets/build")
 def build_dataset_endpoint(
-    background_tasks: BackgroundTasks,
-    version: str = "1.0.0",
-    _: None = Depends(verify_agent_token)
+    background_tasks: BackgroundTasks, version: str = "1.0.0", _: None = Depends(verify_agent_token)
 ):
     """Triggers the ML dataset generation pipeline in the background."""
     background_tasks.add_task(run_dataset_build_task, version)
-    return {
-        "status": "accepted",
-        "message": f"Dataset build for version {version} started in background."
-    }
+    return {"status": "accepted", "message": f"Dataset build for version {version} started in background."}
 
 
 @router.get("/datasets/list")
-def list_datasets_endpoint(
-    _: None = Depends(verify_agent_token)
-):
+def list_datasets_endpoint(_: None = Depends(verify_agent_token)):
     """Lists metadata for all built datasets."""
     import os
     import json
-    
+
     # Locate project root dynamically
     current_dir = os.path.dirname(os.path.abspath(__file__))
     root_path = current_dir
@@ -584,20 +586,20 @@ def list_datasets_endpoint(
                     datasets.append(meta_data)
                 except Exception as e:
                     import logging
+
                     logger = logging.getLogger("silverpilot.ml.dataset")
                     logger.warning(f"Failed to read metadata for {item}: {e}")
-                    
+
     return datasets
 
 
 @router.get("/ml/model/active")
-def get_active_model(
-    _: None = Depends(verify_agent_token)
-):
+def get_active_model(_: None = Depends(verify_agent_token)):
     """
     Returns the metadata of the active champion model from disk (fail-secure).
     """
     from app.ml.inference import get_active_model_metadata
+
     return get_active_model_metadata()
 
 
@@ -605,7 +607,7 @@ async def run_orchestrate_background(signal_id: int | None = None) -> None:
     from app.core.db import SessionLocal
     from app.agents.orchestrator import run_multi_agent_analysis
     import logging
-    
+
     logger = logging.getLogger("silverpilot.agents.orchestrator.background")
     db = SessionLocal()
     try:
@@ -622,33 +624,23 @@ async def run_orchestrate_background(signal_id: int | None = None) -> None:
 async def trigger_orchestrator(
     payload: OrchestrateRunRequest = OrchestrateRunRequest(),
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    _: None = Depends(verify_agent_token)
+    _: None = Depends(verify_agent_token),
 ):
     """
     Triggers the multi-agent analysis orchestrator in the background.
     """
     background_tasks.add_task(run_orchestrate_background, payload.signal_id)
-    return {
-        "status": "accepted",
-        "message": "Multi-agent analysis triggered in background."
-    }
+    return {"status": "accepted", "message": "Multi-agent analysis triggered in background."}
 
 
 @router.post("/agent/telegram/webhook")
-async def telegram_webhook(
-    update: dict,
-    background_tasks: BackgroundTasks,
-    settings: Settings = Depends(get_settings)
-):
+async def telegram_webhook(update: dict, background_tasks: BackgroundTasks, settings: Settings = Depends(get_settings)):
     """
     Telegram webhook endpoint. Receives incoming updates asynchronously.
     Runs verification and processing in a background task to prevent timeouts.
     """
     if not settings.telegram_bot_token:
         return {"status": "ignored", "reason": "bot not configured"}
-        
+
     background_tasks.add_task(process_telegram_update, update, settings)
     return {"status": "accepted"}
-
-
-

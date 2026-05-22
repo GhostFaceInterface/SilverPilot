@@ -3,13 +3,12 @@
 Unit tests for app.services.indicators.calculate_indicators.
 Integration tests for live indicator wiring in app.collectors.service.ingest_global_price.
 """
-import math
+
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 import pandas as pd
-import pytest
 from sqlalchemy import select
 
 from app.models import Asset, PriceSnapshot, TechnicalIndicator
@@ -20,9 +19,11 @@ from app.services.indicators import calculate_indicators
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_ohlcv_df(n: int, base_price: float = 30.0, volatility: float = 0.5) -> pd.DataFrame:
     """Generate a synthetic OHLCV DataFrame with n rows."""
     import random
+
     random.seed(42)
     records = []
     price = base_price
@@ -39,6 +40,7 @@ def _make_ohlcv_df(n: int, base_price: float = 30.0, volatility: float = 0.5) ->
 # Unit Tests — calculate_indicators
 # ===========================================================================
 
+
 class TestCalculateIndicatorsBasic:
     """Test with a large enough DataFrame (200+ rows) to produce all indicators."""
 
@@ -46,9 +48,17 @@ class TestCalculateIndicatorsBasic:
         df = _make_ohlcv_df(250)
         result = calculate_indicators(df)
         expected_cols = [
-            "rsi_14", "macd_line", "macd_signal", "macd_histogram",
-            "bb_upper_20_2", "bb_middle_20_2", "bb_lower_20_2",
-            "sma_20", "sma_50", "sma_200", "atr_14",
+            "rsi_14",
+            "macd_line",
+            "macd_signal",
+            "macd_histogram",
+            "bb_upper_20_2",
+            "bb_middle_20_2",
+            "bb_lower_20_2",
+            "sma_20",
+            "sma_50",
+            "sma_200",
+            "atr_14",
         ]
         for col in expected_cols:
             assert col in result.columns, f"Missing column: {col}"
@@ -128,6 +138,7 @@ class TestBollingerBandOrdering:
 # ===========================================================================
 # Integration Tests — Live Wiring (ingest_global_price → TechnicalIndicator)
 # ===========================================================================
+
 
 class TestIngestGlobalPriceIndicatorWiring:
     """Test that ingest_global_price creates TechnicalIndicator records."""
@@ -250,7 +261,9 @@ class TestIngestGlobalPriceIndicatorWiring:
         )
 
         assert inserted is True
-        indicator_count = db_session.execute(
-            select(TechnicalIndicator).where(TechnicalIndicator.bar_timestamp == observed_at)
-        ).scalars().all()
+        indicator_count = (
+            db_session.execute(select(TechnicalIndicator).where(TechnicalIndicator.bar_timestamp == observed_at))
+            .scalars()
+            .all()
+        )
         assert len(indicator_count) == 0, "No indicator should be created for bank sources"

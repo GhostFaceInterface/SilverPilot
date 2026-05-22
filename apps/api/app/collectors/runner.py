@@ -18,7 +18,16 @@ from app.collectors.service import ingest_manual_price
 from app.core.db import SessionLocal
 from app.schemas.collectors import ManualPriceIngestRequest
 
-JOB_CHOICES = ("manual", "kuveyt-silver", "global-xag-usd", "yahoo-usd-try", "kuveyt-usd-try", "tcmb-usd-try", "fed-rss", "fred-macro")
+JOB_CHOICES = (
+    "manual",
+    "kuveyt-silver",
+    "global-xag-usd",
+    "yahoo-usd-try",
+    "kuveyt-usd-try",
+    "tcmb-usd-try",
+    "fed-rss",
+    "fred-macro",
+)
 
 
 def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
@@ -37,18 +46,17 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
         if selected_job == "yahoo-usd-try":
             run, raw_inserted = collect_yahoo_usd_try(db)
             print(
-                f"job={selected_job} collector_run_id={run.id} status={run.status} "
-                f"raw_inserted={raw_inserted}",
+                f"job={selected_job} collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}",
                 flush=True,
             )
             return run.status == "success"
 
         if selected_job == "kuveyt-usd-try":
             from app.core.config import get_settings
+
             run, raw_inserted = collect_kuveyt_usd_try(db, settings=get_settings())
             print(
-                f"job={selected_job} collector_run_id={run.id} status={run.status} "
-                f"raw_inserted={raw_inserted}",
+                f"job={selected_job} collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}",
                 flush=True,
             )
             return run.status == "success"
@@ -61,10 +69,12 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
                 flush=True,
             )
             from app.core.config import get_settings
+
             settings = get_settings()
             if settings.auto_trading_enabled:
                 import asyncio
                 from app.services.auto_trader import run_auto_trading
+
                 try:
                     try:
                         loop = asyncio.get_running_loop()
@@ -80,15 +90,24 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
             return run.status == "success"
         if selected_job == "tcmb-usd-try":
             run, raw_inserted = collect_tcmb_usd_try(db)
-            print(f"job={selected_job} collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}", flush=True)
+            print(
+                f"job={selected_job} collector_run_id={run.id} status={run.status} raw_inserted={raw_inserted}",
+                flush=True,
+            )
             return run.status == "success"
         if selected_job == "fed-rss":
             run, inserted = collect_fed_rss(db)
-            print(f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
+            print(
+                f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}",
+                flush=True,
+            )
             return run.status == "success"
         if selected_job == "fred-macro":
             run, inserted = collect_fred_macro(db)
-            print(f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}", flush=True)
+            print(
+                f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}",
+                flush=True,
+            )
             return run.status == "success"
 
         request = ManualPriceIngestRequest(
@@ -145,7 +164,9 @@ def main() -> None:
         choices=JOB_CHOICES,
         default=os.getenv("COLLECTOR_JOB", "manual"),
     )
-    parser.add_argument("--source-type", choices=["bank", "global"], default=os.getenv("MANUAL_PRICE_SOURCE_TYPE", "bank"))
+    parser.add_argument(
+        "--source-type", choices=["bank", "global"], default=os.getenv("MANUAL_PRICE_SOURCE_TYPE", "bank")
+    )
     parser.add_argument("--source", default=os.getenv("MANUAL_PRICE_SOURCE", "manual-scheduled"))
     parser.add_argument("--asset-symbol", default=os.getenv("MANUAL_PRICE_ASSET_SYMBOL", "XAG"))
     parser.add_argument("--buy-price", type=Decimal, default=Decimal(os.getenv("MANUAL_PRICE_BUY_PRICE", "10.00")))

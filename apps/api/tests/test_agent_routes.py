@@ -6,7 +6,6 @@ from decimal import Decimal
 
 from app.core.db import Base, get_db
 from app.main import create_app
-from app.models import LLMCallTrace, AgentMemoryEvent
 from app.core.config import get_settings, Settings
 
 
@@ -28,12 +27,13 @@ def test_agent_traces_endpoints():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
-    
+
     # Secure token settings override
     def override_get_settings():
         return Settings(agent_api_token="test_token")
+
     app.dependency_overrides[get_settings] = override_get_settings
-    
+
     client = TestClient(app)
 
     # 1. Post a new trace
@@ -47,13 +47,13 @@ def test_agent_traces_endpoints():
         "status": "SUCCESS",
         "prompt_raw": "Analyze risk",
         "response_raw": "Risk is low",
-        "error_message": None
+        "error_message": None,
     }
-    
+
     # Test unauthenticated access (fails with 401)
     unauth_response = client.post("/agent/trace", json=trace_payload)
     assert unauth_response.status_code == 401
-    
+
     # Test authenticated access (succeeds with 200)
     response = client.post("/agent/trace", json=trace_payload, headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
@@ -66,7 +66,7 @@ def test_agent_traces_endpoints():
 
     # 2. Get list of traces (fails without token, succeeds with token)
     assert client.get("/agent/traces").status_code == 401
-    
+
     response = client.get("/agent/traces", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
     traces = response.json()
@@ -75,7 +75,7 @@ def test_agent_traces_endpoints():
 
     # 3. Get traces stats (fails without token, succeeds with token)
     assert client.get("/agent/traces/stats").status_code == 401
-    
+
     response = client.get("/agent/traces/stats", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
     stats = response.json()
@@ -110,12 +110,13 @@ def test_agent_memory_endpoints():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
-    
+
     # Secure token settings override
     def override_get_settings():
         return Settings(agent_api_token="test_token")
+
     app.dependency_overrides[get_settings] = override_get_settings
-    
+
     client = TestClient(app)
 
     # 1. Post a new memory event
@@ -123,13 +124,13 @@ def test_agent_memory_endpoints():
         "agent_name": "TestNewsAgent",
         "event_type": "market_observation",
         "key": "silver_price_surge",
-        "value_json": {"price": 28.5, "sentiment": "bullish", "reason": "TCMB data"}
+        "value_json": {"price": 28.5, "sentiment": "bullish", "reason": "TCMB data"},
     }
-    
+
     # Test unauthenticated access (fails with 401)
     unauth_response = client.post("/agent/memory", json=memory_payload)
     assert unauth_response.status_code == 401
-    
+
     # Test authenticated access (succeeds with 200)
     response = client.post("/agent/memory", json=memory_payload, headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
@@ -143,7 +144,7 @@ def test_agent_memory_endpoints():
 
     # 2. Get the memory events (filtered by agent_name) (fails without token, succeeds with token)
     assert client.get("/agent/memory?agent_name=TestNewsAgent").status_code == 401
-    
+
     response = client.get("/agent/memory?agent_name=TestNewsAgent", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
     memories = response.json()
@@ -151,13 +152,17 @@ def test_agent_memory_endpoints():
     assert memories[0]["key"] == "silver_price_surge"
 
     # 3. Get with filtering by key
-    response = client.get("/agent/memory?agent_name=TestNewsAgent&key=silver_price_surge", headers={"X-Agent-Token": "test_token"})
+    response = client.get(
+        "/agent/memory?agent_name=TestNewsAgent&key=silver_price_surge", headers={"X-Agent-Token": "test_token"}
+    )
     assert response.status_code == 200
     memories = response.json()
     assert len(memories) == 1
 
     # 4. Get with filtering by wrong key
-    response = client.get("/agent/memory?agent_name=TestNewsAgent&key=different_key", headers={"X-Agent-Token": "test_token"})
+    response = client.get(
+        "/agent/memory?agent_name=TestNewsAgent&key=different_key", headers={"X-Agent-Token": "test_token"}
+    )
     assert response.status_code == 200
     memories = response.json()
     assert len(memories) == 0
@@ -181,12 +186,13 @@ def test_agent_trigger_endpoints():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
-    
+
     # Secure token settings override
     def override_get_settings():
         return Settings(agent_api_token="test_token")
+
     app.dependency_overrides[get_settings] = override_get_settings
-    
+
     client = TestClient(app)
 
     # 1. Test POST /agent/news/trigger
@@ -199,7 +205,6 @@ def test_agent_trigger_endpoints():
     assert data["key"] == "latest_analysis"
     assert data["value_json"]["sentiment"] == "NEUTRAL"
 
-
     # 2. Test POST /agent/report/trigger
     assert client.post("/agent/report/trigger").status_code == 401
     response = client.post("/agent/report/trigger", headers={"X-Agent-Token": "test_token"})
@@ -211,7 +216,6 @@ def test_agent_trigger_endpoints():
     assert data["payload_json"]["cash_balance"] == 0.0
     assert data["payload_json"]["trades_count"] == 0
     assert "No active portfolio data or snapshots found" in data["payload_json"]["report_content"]
-
 
     # 3. Test POST /agent/risk/critique
     assert client.post("/agent/risk/critique").status_code == 401
@@ -235,8 +239,9 @@ def test_agent_trigger_endpoints():
 
     # 4. Test POST /agent/orchestrate/run
     assert client.post("/agent/orchestrate/run").status_code == 401
-    
+
     from unittest.mock import patch
+
     with patch("app.agents.orchestrator.run_multi_agent_analysis") as mock_orchestrator:
         mock_orchestrator.return_value = {"status": "success"}
         response = client.post("/agent/orchestrate/run", headers={"X-Agent-Token": "test_token"})
@@ -244,4 +249,3 @@ def test_agent_trigger_endpoints():
         data = response.json()
         assert data["status"] == "accepted"
         assert "triggered in background" in data["message"]
-

@@ -2,7 +2,6 @@ import os
 import sys
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import UTC, datetime
 from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -20,6 +19,7 @@ from app.models import Asset, CollectorRun, PriceSnapshot, RawGlobalPrice, Techn
 
 # Import the backfill script
 import scripts.backfill_history as backfill_script
+
 
 def test_backfill_success_and_failure():
     # 1. Setup in-memory SQLite database
@@ -51,19 +51,17 @@ def test_backfill_success_and_failure():
                                 "high": [29.2, 29.5],
                                 "low": [28.3, 28.8],
                                 "close": [28.8, 29.3],
-                                "volume": [1000, 1500]
+                                "volume": [1000, 1500],
                             }
                         ]
-                    }
+                    },
                 }
             ]
         }
     }
 
     # Patch SessionLocal and httpx.get
-    with patch("scripts.backfill_history.SessionLocal", TestingSessionLocal), \
-         patch("httpx.get") as mock_get:
-        
+    with patch("scripts.backfill_history.SessionLocal", TestingSessionLocal), patch("httpx.get") as mock_get:
         # Setup mock HTTP response for success
         mock_response = MagicMock()
         mock_response.status_code = 200

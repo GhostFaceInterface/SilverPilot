@@ -4,6 +4,7 @@ Revision ID: 0001_initial_schema
 Revises:
 Create Date: 2026-05-13
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -102,7 +103,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_price_snapshots_asset_id"), "price_snapshots", ["asset_id"], unique=False)
-    op.create_index("ix_price_snapshots_asset_source_observed", "price_snapshots", ["asset_id", "source", "observed_at"], unique=False)
+    op.create_index(
+        "ix_price_snapshots_asset_source_observed",
+        "price_snapshots",
+        ["asset_id", "source", "observed_at"],
+        unique=False,
+    )
     op.create_index(op.f("ix_price_snapshots_observed_at"), "price_snapshots", ["observed_at"], unique=False)
     op.create_index(op.f("ix_price_snapshots_source"), "price_snapshots", ["source"], unique=False)
 

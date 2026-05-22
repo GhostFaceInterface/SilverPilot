@@ -4,7 +4,19 @@ from datetime import datetime, timezone, timedelta
 
 from app.agents.news import run_news_sentiment_analysis
 from app.agents.risk import run_signal_critique
-from app.models import RawNews, AgentMemoryEvent, CollectorRun, Signal, TechnicalIndicator, Portfolio, PortfolioSnapshot, Asset, PriceSnapshot, Report, PaperTrade
+from app.models import (
+    RawNews,
+    AgentMemoryEvent,
+    CollectorRun,
+    Signal,
+    TechnicalIndicator,
+    Portfolio,
+    PortfolioSnapshot,
+    Asset,
+    PriceSnapshot,
+    Report,
+    PaperTrade,
+)
 from app.core.config import get_settings
 from decimal import Decimal
 
@@ -770,6 +782,7 @@ async def test_market_research_agent_success(mock_post, db_session):
     mock_post.return_value = mock_response
 
     from app.agents.market_research import run_market_research_analysis
+
     event = await run_market_research_analysis(db_session)
 
     assert event is not None
@@ -847,6 +860,7 @@ async def test_ml_analyst_agent_success(mock_post, db_session):
     mock_post.return_value = mock_response
 
     from app.agents.ml_analyst import run_ml_inference_critique
+
     event = await run_ml_inference_critique(db_session)
 
     assert event is not None
@@ -892,6 +906,7 @@ async def test_source_reliability_agent_success(mock_post, db_session):
     mock_post.return_value = mock_response
 
     from app.agents.source_reliability import run_source_reliability_analysis
+
     event = await run_source_reliability_analysis(db_session)
 
     assert event is not None
@@ -956,6 +971,7 @@ async def test_postmortem_agent_success(mock_post, db_session):
     mock_post.return_value = mock_response
 
     from app.agents.postmortem import run_postmortem_analysis
+
     event = await run_postmortem_analysis(db_session)
 
     assert event is not None
@@ -991,6 +1007,7 @@ async def test_auditor_agent_success(mock_post, db_session):
     mock_post.return_value = mock_response
 
     from app.agents.auditor import run_system_audit
+
     event = await run_system_audit(db_session)
 
     assert event is not None
@@ -1139,10 +1156,10 @@ async def test_orchestrator_flow_and_conflict_resolution(mock_post, db_session):
         resp = AsyncMock()
         resp.status_code = 200
         resp.raise_for_status = lambda: None
-        
+
         content = responses[min(call_index, len(responses) - 1)]
         call_index += 1
-        
+
         resp.json = lambda: {
             "choices": [
                 {
@@ -1161,6 +1178,7 @@ async def test_orchestrator_flow_and_conflict_resolution(mock_post, db_session):
     mock_post.side_effect = mock_post_side_effect
 
     from app.agents.orchestrator import run_multi_agent_analysis
+
     res = await run_multi_agent_analysis(db_session)
 
     assert res["status"] == "success"
@@ -1172,13 +1190,9 @@ async def test_orchestrator_flow_and_conflict_resolution(mock_post, db_session):
     disag = db_session.query(AgentMemoryEvent).filter_by(id=res["disagreement"]).first()
     assert disag is not None
     assert disag.event_type == "agent_disagreement"
-    
+
     # Verify resolution persistence
     resol = db_session.query(AgentMemoryEvent).filter_by(id=res["resolution"]).first()
     assert resol is not None
     assert resol.event_type == "disagreement_resolution"
     assert resol.value_json["resolved_stance"] == "VETO"
-
-
-
-

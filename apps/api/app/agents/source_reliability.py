@@ -21,10 +21,7 @@ async def run_source_reliability_analysis(db: Session) -> AgentMemoryEvent:
     # 1. Fetch collector validation gate details
     try:
         validation_data = collector_validation_gate(
-            db,
-            window_hours=24,
-            expected_interval_minutes=15,
-            stale_after_minutes=60
+            db, window_hours=24, expected_interval_minutes=15, stale_after_minutes=60
         )
     except Exception as e:
         logger.warning(f"Failed to fetch collector validation data: {e}. Using fallback.")
@@ -34,7 +31,7 @@ async def run_source_reliability_analysis(db: Session) -> AgentMemoryEvent:
             "quality_status": "empty",
             "source_reliability": [],
             "blocking_reasons": ["VALIDATION_GATE_ERROR"],
-            "degraded_reasons": [str(e)]
+            "degraded_reasons": [str(e)],
         }
 
     # 2. Extract metrics & check empty DB gracefully

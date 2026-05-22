@@ -7,7 +7,9 @@ if TYPE_CHECKING:
     from app.models.entities import AgentMemoryEvent
 
 
-StrategyType = Literal["rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents", "blended"]
+StrategyType = Literal[
+    "rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents", "blended"
+]
 
 
 class StrategyRunner:
@@ -23,9 +25,7 @@ class StrategyRunner:
             return True
 
     @classmethod
-    def evaluate_rsi_strategy(
-        cls, rsi_14: Decimal | float | None, has_open_position: bool
-    ) -> tuple[str, str]:
+    def evaluate_rsi_strategy(cls, rsi_14: Decimal | float | None, has_open_position: bool) -> tuple[str, str]:
         """
         RSI (14) Strategy:
         - Buy: RSI < 30 (Oversold) - only if has_open_position is False
@@ -105,11 +105,7 @@ class StrategyRunner:
         - Buy: close <= bb_lower (Touch/Cross lower band) - only if has_open_position is False
         - Sell: close >= bb_upper (Touch/Cross upper band) - only if has_open_position is True
         """
-        if (
-            cls._is_invalid(close)
-            or cls._is_invalid(bb_lower)
-            or cls._is_invalid(bb_upper)
-        ):
+        if cls._is_invalid(close) or cls._is_invalid(bb_lower) or cls._is_invalid(bb_upper):
             return "HOLD", "BB_INSUFFICIENT_DATA"
 
         c = float(close)
@@ -176,9 +172,7 @@ class StrategyRunner:
         if strategy_name == "rsi":
             return cls.evaluate_rsi_strategy(rsi_14, has_open_position)
         elif strategy_name == "sma_cross":
-            return cls.evaluate_sma_cross_strategy(
-                sma_20, sma_50, prev_sma_20, prev_sma_50, has_open_position
-            )
+            return cls.evaluate_sma_cross_strategy(sma_20, sma_50, prev_sma_20, prev_sma_50, has_open_position)
         elif strategy_name == "bollinger":
             return cls.evaluate_bb_strategy(close, bb_lower, bb_upper, has_open_position)
         elif strategy_name == "blended":
@@ -198,9 +192,7 @@ class StrategyRunner:
             return "HOLD", "UNKNOWN_STRATEGY"
 
     @classmethod
-    def apply_agent_filters(
-        cls, action: str, news_sentiment: str | None, risk_decision: str | None
-    ) -> tuple[str, str]:
+    def apply_agent_filters(cls, action: str, news_sentiment: str | None, risk_decision: str | None) -> tuple[str, str]:
         """
         Applies agent filters (news sentiment and risk decision) to the strategy action.
         Vetoes BUY action to HOLD if news_sentiment is BEARISH or risk_decision is REJECTED.
@@ -211,7 +203,6 @@ class StrategyRunner:
             if risk_decision == "REJECTED":
                 return "HOLD", "AGENT_VETO_RISK_REJECTED"
         return action, ""
-
 
 
 async def trigger_risk_critique_hook(db: Session, signal_id: int) -> "AgentMemoryEvent":

@@ -27,19 +27,19 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
     """
     now = datetime.now(timezone.utc)
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
-    
+
     results = {}
     errors = {}
 
     # 1. Run Core and Auxiliary Agents Sequentially
-    
+
     # News Agent
     try:
         results["news"] = await run_news_sentiment_analysis(db)
     except Exception as e:
         logger.exception("News agent execution failed")
         errors["news"] = str(e)
-        
+
     # Risk Agent
     try:
         results["risk"] = await run_signal_critique(db, signal_id=signal_id)
@@ -101,46 +101,59 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
     disagreements = []
 
     # Conflict A: News Sentiment vs Market Research Sentiment
-    if (news_sentiment == "BULLISH" and market_sentiment == "BEARISH") or \
-       (news_sentiment == "BEARISH" and market_sentiment == "BULLISH"):
-        disagreements.append({
-            "type": "SENTIMENT_CONTRADICTION",
-            "description": f"Sentiment contradiction: News is {news_sentiment} while Market Research is {market_sentiment}."
-        })
+    if (news_sentiment == "BULLISH" and market_sentiment == "BEARISH") or (
+        news_sentiment == "BEARISH" and market_sentiment == "BULLISH"
+    ):
+        disagreements.append(
+            {
+                "type": "SENTIMENT_CONTRADICTION",
+                "description": f"Sentiment contradiction: News is {news_sentiment} while Market Research is {market_sentiment}.",
+            }
+        )
 
     # Conflict B: ML Veto with positive sentiments
     if ml_recommendation == "VETO" and (news_sentiment == "BULLISH" or market_sentiment == "BULLISH"):
-        disagreements.append({
-            "type": "ML_VETO_WITH_BULLISH_SENTIMENT",
-            "description": f"ML Analyst recommended VETO despite bullish signals (News: {news_sentiment}, Market Research: {market_sentiment})."
-        })
+        disagreements.append(
+            {
+                "type": "ML_VETO_WITH_BULLISH_SENTIMENT",
+                "description": f"ML Analyst recommended VETO despite bullish signals (News: {news_sentiment}, Market Research: {market_sentiment}).",
+            }
+        )
 
     # Conflict C: Risk Agent Rejection with positive sentiments
     if risk_decision == "REJECTED" and (news_sentiment == "BULLISH" or market_sentiment == "BULLISH"):
-        disagreements.append({
-            "type": "RISK_REJECTION_WITH_BULLISH_SENTIMENT",
-            "description": f"Risk Agent REJECTED trade signal despite bullish sentiments (News: {news_sentiment}, Market Research: {market_sentiment})."
-        })
+        disagreements.append(
+            {
+                "type": "RISK_REJECTION_WITH_BULLISH_SENTIMENT",
+                "description": f"Risk Agent REJECTED trade signal despite bullish sentiments (News: {news_sentiment}, Market Research: {market_sentiment}).",
+            }
+        )
 
     # Conflict D: ML Analyst vs Risk Decision contradictions
     if ml_recommendation == "VETO" and risk_decision == "APPROVED":
-        disagreements.append({
-            "type": "ML_VETO_VS_RISK_APPROVAL",
-            "description": "ML Analyst recommended VETO but Risk Agent APPROVED the signal."
-        })
+        disagreements.append(
+            {
+                "type": "ML_VETO_VS_RISK_APPROVAL",
+                "description": "ML Analyst recommended VETO but Risk Agent APPROVED the signal.",
+            }
+        )
     elif ml_recommendation == "APPROVE" and risk_decision == "REJECTED":
-        disagreements.append({
-            "type": "ML_APPROVAL_VS_RISK_REJECTION",
-            "description": "ML Analyst APPROVED the trade setup but Risk Agent REJECTED it."
-        })
+        disagreements.append(
+            {
+                "type": "ML_APPROVAL_VS_RISK_REJECTION",
+                "description": "ML Analyst APPROVED the trade setup but Risk Agent REJECTED it.",
+            }
+        )
 
     disagreement_event = None
     resolution_event = None
 
     # 4. Resolve Disagreements via deepseek-v4-pro Supreme Arbiter
     if disagreements:
-        logger.info(f"Disagreement detected: {len(disagreements)} conflicts found. Initiating Supreme Arbiter resolution.")
-        
+        logger.info(
+            f"Disagreement detected: {len(disagreements)} conflicts found. Initiating Supreme Arbiter resolution."
+        )
+
         # Log the disagreement event
         disagreement_event = AgentMemoryEvent(
             agent_name="orchestrator",
@@ -155,7 +168,7 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
                     "ml_recommendation": ml_recommendation,
                 },
                 "recorded_at": now.isoformat(),
-            }
+            },
         )
         db.add(disagreement_event)
         db.commit()
@@ -163,7 +176,7 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
 
         # Call Pro Supreme Arbiter
         model = "deepseek-v4-pro"
-        
+
         # Compile agent summaries to feed resolution
         agent_summaries = {}
         for k, v in results.items():
@@ -246,7 +259,9 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
             logger.warning(f"Supreme Arbiter execution or parse failed: {resolve_err}")
             resolved_stance = "NEUTRAL"
             confidence = 0.5
-            resolution_markdown = f"# Supreme Arbiter Resolution (Failed)\n\nConflict resolution failed to run or parse: {resolve_err}"
+            resolution_markdown = (
+                f"# Supreme Arbiter Resolution (Failed)\n\nConflict resolution failed to run or parse: {resolve_err}"
+            )
 
         # Save resolution event
         resolution_event = AgentMemoryEvent(
@@ -259,7 +274,7 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
                 "resolution_markdown": resolution_markdown,
                 "disagreements": disagreements,
                 "resolved_at": now.isoformat(),
-            }
+            },
         )
         db.add(resolution_event)
         db.commit()
@@ -286,6 +301,7 @@ async def run_blended_consensus_resolution(
     Saves the resolution into AgentMemoryEvent table under 'blended_consensus_resolution'.
     """
     from app.core.config import get_settings
+
     settings = get_settings()
     model = getattr(settings, "agent_risk_model", "deepseek-v4-pro") or "deepseek-v4-pro"
 
@@ -379,7 +395,7 @@ async def run_blended_consensus_resolution(
             "regime_info": regime_info,
             "strategy_votes": strategy_votes,
             "recorded_at": now.isoformat(),
-        }
+        },
     )
     db.add(event)
     db.flush()

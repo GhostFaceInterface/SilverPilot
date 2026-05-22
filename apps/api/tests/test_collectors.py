@@ -24,8 +24,6 @@ from app.collectors.public_sources import (
     parse_kuveyt_finance_portal_json_usd_try,
     collect_kuveyt_usd_try,
     parse_kuveyt_public_silver_html,
-    parse_yahoo_finance_chart_json,
-    parse_yahoo_finance_usdtry_chart_json,
 )
 from app.collectors.service import ingest_fx_rate
 from app.collectors.runner import parse_collector_jobs, run_jobs
@@ -605,25 +603,16 @@ def test_yahoo_xag_usd_collector_writes_global_price_and_snapshot():
         "chart": {
             "result": [
                 {
-                    "meta": {
-                        "symbol": "SI=F",
-                        "currency": "USD"
-                    },
+                    "meta": {"symbol": "SI=F", "currency": "USD"},
                     "timestamp": [observed_timestamp],
                     "indicators": {
                         "quote": [
-                            {
-                                "close": [28.45],
-                                "open": [28.40],
-                                "high": [28.50],
-                                "low": [28.35],
-                                "volume": [1000]
-                            }
+                            {"close": [28.45], "open": [28.40], "high": [28.50], "low": [28.35], "volume": [1000]}
                         ]
-                    }
+                    },
                 }
             ],
-            "error": None
+            "error": None,
         }
     }
 
@@ -696,7 +685,7 @@ def test_global_xag_fallback_uses_metals_dev_when_yahoo_times_out():
                     "price": 28.55,
                 },
                 "timestamp": observed_at.isoformat(),
-                "currency": "USD"
+                "currency": "USD",
             },
         )
 
@@ -709,7 +698,7 @@ def test_global_xag_fallback_uses_metals_dev_when_yahoo_times_out():
                 global_xag_source_priority="yahoo-si-f,metals-dev",
                 yahoo_xag_usd_retries=0,
                 yahoo_xag_usd_backoff_seconds=0,
-                metals_dev_api_key="test-key"
+                metals_dev_api_key="test-key",
             ),
             client=client,
         )
@@ -719,7 +708,9 @@ def test_global_xag_fallback_uses_metals_dev_when_yahoo_times_out():
         assert snapshot is not None
         assert run.details_json["selected_global_xag_source"] == "metals-dev-silver-spot"
         assert db.query(RawGlobalPrice).one().source == "metals-dev-silver-spot"
-        failed_yahoo = db.execute(select(CollectorRun).where(CollectorRun.collector_name == "yahoo_xag_usd")).scalar_one()
+        failed_yahoo = db.execute(
+            select(CollectorRun).where(CollectorRun.collector_name == "yahoo_xag_usd")
+        ).scalar_one()
         assert failed_yahoo.status == "failed"
         assert failed_yahoo.details_json["failure_reason_code"] == "TIMEOUT"
     finally:
@@ -736,21 +727,12 @@ def test_yahoo_usd_try_collector_writes_fx_rate():
         "chart": {
             "result": [
                 {
-                    "meta": {
-                        "symbol": "USDTRY=X",
-                        "currency": "TRY"
-                    },
+                    "meta": {"symbol": "USDTRY=X", "currency": "TRY"},
                     "timestamp": [observed_timestamp],
-                    "indicators": {
-                        "quote": [
-                            {
-                                "close": [32.50]
-                            }
-                        ]
-                    }
+                    "indicators": {"quote": [{"close": [32.50]}]},
                 }
             ],
-            "error": None
+            "error": None,
         }
     }
 
@@ -1156,7 +1138,7 @@ def test_kuveyt_public_collector_uses_public_browser_loaded_json():
 def test_kuveyt_anomaly_inverted_spread():
     _, testing_session = make_client()
     db = testing_session()
-    
+
     # Seed USDTRY FX rate first
     fx_run = CollectorRun(
         collector_name="yahoo_usd_try",
@@ -1222,7 +1204,7 @@ def test_kuveyt_anomaly_inverted_spread():
 def test_kuveyt_anomaly_spread_out_of_bounds():
     _, testing_session = make_client()
     db = testing_session()
-    
+
     # Seed USDTRY FX rate first
     fx_run = CollectorRun(
         collector_name="yahoo_usd_try",
@@ -1288,7 +1270,7 @@ def test_kuveyt_anomaly_spread_out_of_bounds():
 def test_kuveyt_anomaly_mid_price_deviation():
     _, testing_session = make_client()
     db = testing_session()
-    
+
     # Seed USDTRY FX rate first
     fx_run = CollectorRun(
         collector_name="yahoo_usd_try",
@@ -1314,7 +1296,7 @@ def test_kuveyt_anomaly_mid_price_deviation():
             parser_version="yahoo-finance-chart-v1",
         )
     )
-    
+
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
     for i in range(5):
         db.add(
@@ -1370,7 +1352,7 @@ def test_kuveyt_anomaly_mid_price_deviation():
 def test_kuveyt_proxy_degraded_fallback():
     _, testing_session = make_client()
     db = testing_session()
-    
+
     observed_at = datetime.now(UTC) - timedelta(minutes=1)
     observed_timestamp = int(observed_at.timestamp())
 
@@ -1378,25 +1360,16 @@ def test_kuveyt_proxy_degraded_fallback():
         "chart": {
             "result": [
                 {
-                    "meta": {
-                        "symbol": "SI=F",
-                        "currency": "USD"
-                    },
+                    "meta": {"symbol": "SI=F", "currency": "USD"},
                     "timestamp": [observed_timestamp],
                     "indicators": {
                         "quote": [
-                            {
-                                "close": [28.45],
-                                "open": [28.40],
-                                "high": [28.50],
-                                "low": [28.35],
-                                "volume": [1000]
-                            }
+                            {"close": [28.45], "open": [28.40], "high": [28.50], "low": [28.35], "volume": [1000]}
                         ]
-                    }
+                    },
                 }
             ],
-            "error": None
+            "error": None,
         }
     }
 
@@ -1410,7 +1383,7 @@ def test_kuveyt_proxy_degraded_fallback():
     client = httpx.Client(transport=httpx.MockTransport(handler))
     try:
         run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
-        
+
         assert run.status == "success"
         assert raw_inserted is True
         assert snapshot is not None
@@ -1423,8 +1396,10 @@ def test_kuveyt_proxy_degraded_fallback():
         client.close()
         db.close()
 
+
 def test_yahoo_usd_try_deviation_logged_when_gt_2_percent(caplog):
     import logging
+
     client_app, testing_session = make_client()
     now = datetime.now(UTC)
 
@@ -1464,10 +1439,10 @@ def test_yahoo_usd_try_deviation_logged_when_gt_2_percent(caplog):
                 parser_version="v1",
                 collector_name="yahoo_usd_try",
             )
-        
+
         # Check logs
         assert "USD/TRY deviation >= 2% compared to TCMB daily reference" in caplog.text
-        
+
         # Check details_json
         assert "warning" in run.details_json
         assert run.details_json["deviation_pct"] == 0.05
@@ -1477,6 +1452,7 @@ def test_yahoo_usd_try_deviation_logged_when_gt_2_percent(caplog):
 
 def test_yahoo_usd_try_deviation_not_logged_when_lt_2_percent(caplog):
     import logging
+
     client_app, testing_session = make_client()
     now = datetime.now(UTC)
 
@@ -1515,11 +1491,12 @@ def test_yahoo_usd_try_deviation_not_logged_when_lt_2_percent(caplog):
                 parser_version="v1",
                 collector_name="yahoo_usd_try",
             )
-        
+
         assert "USD/TRY deviation >= 2% compared to TCMB daily reference" not in caplog.text
         assert "warning" not in run.details_json
     finally:
         db.close()
+
 
 def test_kuveyt_finance_portal_parser_usd_try():
     raw_payload = """
@@ -1529,19 +1506,18 @@ def test_kuveyt_finance_portal_parser_usd_try():
 ]
 """
     parsed = parse_kuveyt_finance_portal_json_usd_try(
-        raw_payload,
-        fetched_at=datetime(2026, 5, 13, 12, 0, tzinfo=UTC),
-        finance_portal_url="https://test"
+        raw_payload, fetched_at=datetime(2026, 5, 13, 12, 0, tzinfo=UTC), finance_portal_url="https://test"
     )
     assert parsed.base_currency == "USD"
     assert parsed.quote_currency == "TRY"
     assert parsed.rate == Decimal("33.00")
     assert parsed.payload["source_type"] == "official_public_browser_loaded_json"
 
+
 def test_kuveyt_usd_try_collector_writes_fx_rate():
     _, testing_session = make_client()
     db = testing_session()
-    
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
             return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
@@ -1569,6 +1545,7 @@ def test_kuveyt_usd_try_collector_writes_fx_rate():
     finally:
         client.close()
         db.close()
+
 
 def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
     client, testing_session = make_client()
@@ -1611,24 +1588,50 @@ def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
         )
         db.add_all([global_run, fx_run, bank_run])
         db.flush()
-        db.add(RawGlobalPrice(
-            collector_run_id=global_run.id, asset_id=asset.id, source="yahoo-si-f",
-            buy_price=Decimal("28.00"), sell_price=Decimal("28.00"), currency="USD",
-            observed_at=now - timedelta(minutes=10), fetched_at=now - timedelta(minutes=10),
-            raw_payload_hash="test", parser_version="v1", payload_json={}
-        ))
-        db.add(RawFxRate(
-            collector_run_id=fx_run.id, source="kuveyt-public-silver-page",
-            base_currency="USD", quote_currency="TRY", rate=Decimal("33.00"),
-            observed_at=now - timedelta(minutes=10), fetched_at=now - timedelta(minutes=10),
-            raw_payload_hash="test", parser_version="v1", payload_json={}
-        ))
-        db.add(RawBankPrice(
-            collector_run_id=bank_run.id, asset_id=asset.id, source="kuveyt-public-silver-page",
-            buy_price=Decimal("130.00"), sell_price=Decimal("126.00"), currency="TRY",
-            observed_at=now - timedelta(minutes=10), fetched_at=now - timedelta(minutes=10),
-            raw_payload_hash="test", parser_version="v1", payload_json={}
-        ))
+        db.add(
+            RawGlobalPrice(
+                collector_run_id=global_run.id,
+                asset_id=asset.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("28.00"),
+                sell_price=Decimal("28.00"),
+                currency="USD",
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test",
+                parser_version="v1",
+                payload_json={},
+            )
+        )
+        db.add(
+            RawFxRate(
+                collector_run_id=fx_run.id,
+                source="kuveyt-public-silver-page",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("33.00"),
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test",
+                parser_version="v1",
+                payload_json={},
+            )
+        )
+        db.add(
+            RawBankPrice(
+                collector_run_id=bank_run.id,
+                asset_id=asset.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("130.00"),
+                sell_price=Decimal("126.00"),
+                currency="TRY",
+                observed_at=now - timedelta(minutes=10),
+                fetched_at=now - timedelta(minutes=10),
+                raw_payload_hash="test",
+                parser_version="v1",
+                payload_json={},
+            )
+        )
         db.commit()
     finally:
         db.close()
@@ -1639,6 +1642,7 @@ def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
     body = response.json()
     assert body["execution_critical"]["usd_try"] == "fresh"
     assert body["execution_critical"]["usd_try_source"] == "kuveyt-public-silver-page"
+
 
 def test_kuveyt_hardening_successful_run():
     _, testing_session = make_client()
@@ -1875,6 +1879,7 @@ def test_kuveyt_retry_mechanism():
     client = httpx.Client(transport=httpx.MockTransport(handler))
     try:
         from unittest.mock import patch
+
         with patch("time.sleep", return_value=None) as mock_sleep:
             run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
 
@@ -1923,7 +1928,7 @@ def test_kuveyt_hardening_structural_error():
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
-            return httpx.Response(200, text='<html><body>No script here</body></html>')
+            return httpx.Response(200, text="<html><body>No script here</body></html>")
         if "SI=F" in str(request.url):
             return httpx.Response(
                 200,
@@ -2236,5 +2241,3 @@ def test_kuveyt_hardening_cross_control_warning():
     finally:
         client.close()
         db.close()
-
-

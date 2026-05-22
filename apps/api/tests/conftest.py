@@ -44,4 +44,3 @@ def db_session():
 @pytest.fixture()
 def anyio_backend():
     return "asyncio"
-

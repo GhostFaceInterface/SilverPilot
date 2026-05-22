@@ -4,6 +4,7 @@ Revision ID: 0004_add_tech_indicators
 Revises: 0003_add_collector_audit_fields
 Create Date: 2026-05-21
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -35,13 +36,17 @@ def upgrade() -> None:
         sa.Column("atr_14", sa.Numeric(precision=10, scale=4), nullable=True),
         sa.Column("xau_xag_ratio", sa.Numeric(precision=10, scale=4), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["price_snapshot_id"], ["price_snapshots.id"], name="fk_technical_indicators_price_snapshot_id"),
+        sa.ForeignKeyConstraint(
+            ["price_snapshot_id"], ["price_snapshots.id"], name="fk_technical_indicators_price_snapshot_id"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("bar_timestamp", "timeframe", name="uq_technical_indicators_timestamp_timeframe"),
     )
     op.create_index("ix_technical_indicators_bar_timestamp", "technical_indicators", ["bar_timestamp"], unique=False)
     op.create_index("ix_technical_indicators_timeframe", "technical_indicators", ["timeframe"], unique=False)
-    op.create_index("ix_technical_indicators_price_snapshot_id", "technical_indicators", ["price_snapshot_id"], unique=False)
+    op.create_index(
+        "ix_technical_indicators_price_snapshot_id", "technical_indicators", ["price_snapshot_id"], unique=False
+    )
 
 
 def downgrade() -> None:

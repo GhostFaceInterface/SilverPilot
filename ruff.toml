@@ -1,0 +1,17 @@
+# Ruff configuration file
+# Ref: https://docs.astral.sh/ruff/configuration/
+
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # Line too long
+    "W291",  # Trailing whitespace
+    "W293",  # Blank line contains whitespace
+]
+
+# Allow module-level imports after sys.path manipulation in test files
+[lint.per-file-ignores]
+"apps/api/tests/*" = ["E402"]

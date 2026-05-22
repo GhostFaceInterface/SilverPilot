@@ -9,22 +9,19 @@ from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.entities import (
-    PriceSnapshot,
-    RawFxRate,
-    TechnicalIndicator,
-    HistoricalAgentCache,
-    AgentMemoryEvent
-)
+from app.models.entities import PriceSnapshot, RawFxRate, TechnicalIndicator, HistoricalAgentCache, AgentMemoryEvent
 
 logger = logging.getLogger("silverpilot.ml.inference")
 
 # Defensive import logic to prevent crashes if ML libraries are not available on VPS
 try:
     import lightgbm  # noqa: F401
+
     LIGHTGBM_AVAILABLE = True
 except ImportError:
-    logger.warning("LightGBM library is not installed in this environment. ML predictions will be disabled (graceful fallback).")
+    logger.warning(
+        "LightGBM library is not installed in this environment. ML predictions will be disabled (graceful fallback)."
+    )
     LIGHTGBM_AVAILABLE = False
 
 # Global variables for model caching
@@ -38,7 +35,7 @@ def load_model() -> Optional[object]:
     Returns None if the library is missing, file is not found, or loading fails.
     """
     global _MODEL_CACHE, _MODEL_LOADED
-    
+
     if _MODEL_LOADED:
         return _MODEL_CACHE
 
@@ -48,14 +45,16 @@ def load_model() -> Optional[object]:
         return None
 
     settings = get_settings()
-    
+
     # Try finding the model file relative to root path or absolute path
     model_paths_to_try = [
         settings.risk_ml_model_path,
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), settings.risk_ml_model_path),
-        os.path.abspath(settings.risk_ml_model_path)
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), settings.risk_ml_model_path
+        ),
+        os.path.abspath(settings.risk_ml_model_path),
     ]
-    
+
     resolved_path = None
     for p in model_paths_to_try:
         if os.path.exists(p):
@@ -88,31 +87,32 @@ def get_active_model_metadata() -> dict:
     Returns a dict with metadata, or a default dict if missing/uninitialized (fail-secure).
     """
     settings = get_settings()
-    
+
     # Deriving metadata path based on model path
     model_path = settings.risk_ml_model_path
     metadata_path = model_path.replace("champion_model.pkl", "champion_metadata.json")
     if metadata_path == model_path:
         metadata_path = os.path.splitext(model_path)[0] + "_metadata.json"
-        
+
     model_paths_to_try = [
         metadata_path,
         os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), metadata_path),
-        os.path.abspath(metadata_path)
+        os.path.abspath(metadata_path),
     ]
-    
+
     resolved_path = None
     for p in model_paths_to_try:
         if os.path.exists(p):
             resolved_path = p
             break
-            
+
     if not resolved_path:
         logger.warning(f"ML metadata file not found at any expected path: {model_paths_to_try}.")
         return {"model_status": "uninitialized"}
-        
+
     try:
         import json
+
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data
@@ -159,16 +159,20 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
             return None
 
         # Convert to Pandas DataFrame for calculations
-        df_price = pd.DataFrame([
-            {
-                "buy_price": float(p.buy_price),
-                "sell_price": float(p.sell_price),
-                "mid_price": float(p.mid_price),
-                "spread_percent": float(p.spread_percent) if p.spread_percent is not None else 0.0,
-                "observed_at": p.observed_at.replace(tzinfo=UTC) if p.observed_at.tzinfo is None else p.observed_at.astimezone(UTC)
-            }
-            for p in past_prices
-        ])
+        df_price = pd.DataFrame(
+            [
+                {
+                    "buy_price": float(p.buy_price),
+                    "sell_price": float(p.sell_price),
+                    "mid_price": float(p.mid_price),
+                    "spread_percent": float(p.spread_percent) if p.spread_percent is not None else 0.0,
+                    "observed_at": p.observed_at.replace(tzinfo=UTC)
+                    if p.observed_at.tzinfo is None
+                    else p.observed_at.astimezone(UTC),
+                }
+                for p in past_prices
+            ]
+        )
 
         # Current values (from anchor index)
         curr_idx = len(df_price) - 1
@@ -213,7 +217,7 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
             .limit(1)
         )
         latest_fx = db.execute(stmt_latest_fx).scalars().first()
-        
+
         stmt_past_fx = (
             select(RawFxRate)
             .where(RawFxRate.source == "tcmb")
@@ -245,7 +249,7 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
         df_price = df_price.set_index("observed_at", drop=False)
         vol_24h_series = df_price["ret_15m"].rolling("24h").std()
         vol_7d_series = df_price["ret_15m"].rolling("7D").std()
-        
+
         volatility_24h = float(vol_24h_series.iloc[-1]) if not pd.isna(vol_24h_series.iloc[-1]) else 0.0
         volatility_7d = float(vol_7d_series.iloc[-1]) if not pd.isna(vol_7d_series.iloc[-1]) else 0.0
 
@@ -270,10 +274,10 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
             .limit(1)
         )
         mem_sentiment = db.execute(stmt_memory_sentiment).scalars().first()
-        
+
         sentiment_score = 0.0
         sentiment_val = None
-        
+
         if mem_sentiment and mem_sentiment.value_json:
             sentiment_val = mem_sentiment.value_json.get("sentiment")
         else:
@@ -313,7 +317,7 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
             "xau_xag_ratio": [xau_xag_ratio],
             "news_sentiment_score": [sentiment_score],
             "hour_of_day": [hour_of_day],
-            "day_of_week": [day_of_week]
+            "day_of_week": [day_of_week],
         }
 
         df_feat = pd.DataFrame(feat_dict)
@@ -347,15 +351,25 @@ def predict_profitability(db: Session, asset_id: int) -> Optional[float]:
     try:
         # Re-order features explicitly to match training FEATURES list
         FEATURES = [
-            "bank_spread_percent", "xag_return_15m", "xag_return_1h", "xag_return_24h",
-            "usd_try_return_24h", "volatility_24h", "volatility_7d", "xau_xag_ratio",
-            "news_sentiment_score", "hour_of_day", "day_of_week"
+            "bank_spread_percent",
+            "xag_return_15m",
+            "xag_return_1h",
+            "xag_return_24h",
+            "usd_try_return_24h",
+            "volatility_24h",
+            "volatility_7d",
+            "xau_xag_ratio",
+            "news_sentiment_score",
+            "hour_of_day",
+            "day_of_week",
         ]
         X = df_feat[FEATURES]
 
         # Predict probability of class 1 (profitable after costs)
         proba = model.predict_proba(X)[0, 1]
-        logger.info(f"ML Predictor: Profitability Probability: {proba:.4f} (Threshold: {settings.risk_ml_min_probability})")
+        logger.info(
+            f"ML Predictor: Profitability Probability: {proba:.4f} (Threshold: {settings.risk_ml_min_probability})"
+        )
         return float(proba)
     except Exception as e:
         logger.error(f"Error during model prediction step: {e}. Bypassing.")

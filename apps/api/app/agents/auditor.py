@@ -32,10 +32,7 @@ async def run_system_audit(db: Session) -> AgentMemoryEvent:
     disagreements_list = [d.value_json for d in disagreements]
 
     # 2. Query LLM call traces to get budget consumption details
-    stmt_traces = (
-        select(LLMCallTrace)
-        .where(LLMCallTrace.created_at >= twenty_four_hours_ago)
-    )
+    stmt_traces = select(LLMCallTrace).where(LLMCallTrace.created_at >= twenty_four_hours_ago)
     traces = db.execute(stmt_traces).scalars().all()
 
     # Aggregate token costs and latencies
@@ -43,7 +40,7 @@ async def run_system_audit(db: Session) -> AgentMemoryEvent:
     cost_by_model = {}
     total_calls = len(traces)
     total_latency = 0
-    
+
     for trace in traces:
         cost = float(trace.total_cost_usd)
         total_cost += cost
@@ -135,7 +132,9 @@ async def run_system_audit(db: Session) -> AgentMemoryEvent:
         logger.warning(
             f"Failed to parse JSON from Auditor LLM response. Raw content: {raw_content}. Error: {parse_err}"
         )
-        audit_markdown = f"# System Audit Report (Error)\n\nFailed to parse LLM system audit details. Raw response:\n\n{raw_content}"
+        audit_markdown = (
+            f"# System Audit Report (Error)\n\nFailed to parse LLM system audit details. Raw response:\n\n{raw_content}"
+        )
 
     # 5. Save report to AgentMemoryEvent
     event = AgentMemoryEvent(

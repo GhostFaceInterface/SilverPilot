@@ -30,8 +30,10 @@ from app.models import CollectorRun, PriceSnapshot, RawFxRate
 
 logger = logging.getLogger(__name__)
 
+
 class HardAnomalyError(ValueError):
     pass
+
 
 KUVEYT_PARSER_VERSION = "kuveyt-public-finance-portal-v2"
 YAHOO_FINANCE_CHART_PARSER_VERSION = "yahoo-finance-chart-v1"
@@ -86,8 +88,7 @@ class GlobalSilverPriceProvider(Protocol):
     collector_name: str
     parser_version: str
 
-    def enabled(self, settings: Settings) -> bool:
-        ...
+    def enabled(self, settings: Settings) -> bool: ...
 
     def fetch(
         self,
@@ -95,8 +96,7 @@ class GlobalSilverPriceProvider(Protocol):
         settings: Settings,
         fetched_at: datetime,
         client: httpx.Client | None,
-    ) -> NormalizedGlobalSilverPrice:
-        ...
+    ) -> NormalizedGlobalSilverPrice: ...
 
 
 @dataclass(frozen=True)
@@ -162,7 +162,9 @@ def collect_kuveyt_public_silver(
 
         # Anomaly Check 1: Swapped price check (Hard Block Gate)
         if parsed.buy_price < parsed.sell_price:
-            raise HardAnomalyError(f"Kuveyt returned inverted spread: buy_price ({parsed.buy_price}) < sell_price ({parsed.sell_price})")
+            raise HardAnomalyError(
+                f"Kuveyt returned inverted spread: buy_price ({parsed.buy_price}) < sell_price ({parsed.sell_price})"
+            )
 
         # Anomaly Check 2: Spread percent must be between 2% and 25% (Hard Block Gate)
         spread_abs = parsed.buy_price - parsed.sell_price
@@ -191,30 +193,30 @@ def collect_kuveyt_public_silver(
         usd_mid = (usd_buy + usd_sell) / Decimal("2")
 
         # Anomaly Check 3: Mid price deviation of ±10% against last 5 PriceSnapshots (Soft anomaly -> degraded mode fallback)
-        last_snapshots = db.execute(
-            select(PriceSnapshot)
-            .where(
-                PriceSnapshot.source == "kuveyt-public-silver-page",
-                PriceSnapshot.currency == "USD"
+        last_snapshots = (
+            db.execute(
+                select(PriceSnapshot)
+                .where(PriceSnapshot.source == "kuveyt-public-silver-page", PriceSnapshot.currency == "USD")
+                .order_by(PriceSnapshot.observed_at.desc())
+                .limit(5)
             )
-            .order_by(PriceSnapshot.observed_at.desc())
-            .limit(5)
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         if last_snapshots:
             avg_usd_mid = sum(s.mid_price for s in last_snapshots) / len(last_snapshots)
             deviation = abs(usd_mid - avg_usd_mid) / avg_usd_mid
             if deviation > Decimal("0.10"):
-                raise ValueError(f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by {deviation*100:.2f}% from the 5-run average ({avg_usd_mid:.4f})")
+                raise ValueError(
+                    f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by {deviation * 100:.2f}% from the 5-run average ({avg_usd_mid:.4f})"
+                )
 
         # Global Cross-Control (Anomaly 4)
         one_hour_ago = fetched_at - timedelta(hours=1)
         latest_yahoo = db.execute(
             select(PriceSnapshot)
-            .where(
-                PriceSnapshot.source == "yahoo-si-f",
-                PriceSnapshot.observed_at >= one_hour_ago
-            )
+            .where(PriceSnapshot.source == "yahoo-si-f", PriceSnapshot.observed_at >= one_hour_ago)
             .order_by(PriceSnapshot.observed_at.desc())
             .limit(1)
         ).scalar_one_or_none()
@@ -239,10 +241,10 @@ def collect_kuveyt_public_silver(
             if deviation_pct > Decimal("0.05"):
                 logger.warning(
                     f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by "
-                    f"{deviation_pct*100:.2f}% from global Yahoo SI=F price ({yahoo_mid:.4f}) (Anomaly 4)"
+                    f"{deviation_pct * 100:.2f}% from global Yahoo SI=F price ({yahoo_mid:.4f}) (Anomaly 4)"
                 )
                 deviation_details = {
-                    "warning": f"Kuveyt USD mid price deviates by {deviation_pct*100:.2f}% from global Yahoo SI=F price",
+                    "warning": f"Kuveyt USD mid price deviates by {deviation_pct * 100:.2f}% from global Yahoo SI=F price",
                     "kuveyt_usd_mid": str(usd_mid),
                     "yahoo_usd_mid": str(yahoo_mid),
                     "deviation_pct": float(deviation_pct),
@@ -285,7 +287,7 @@ def collect_kuveyt_public_silver(
             error_message=str(exc),
             details_json={
                 "parser_version": KUVEYT_PARSER_VERSION,
-                "failure_reason_code": "HARD_ANOMALY" if isinstance(exc, HardAnomalyError) else "STRUCTURAL_ERROR"
+                "failure_reason_code": "HARD_ANOMALY" if isinstance(exc, HardAnomalyError) else "STRUCTURAL_ERROR",
             },
         )
         return run, False, None
@@ -305,7 +307,7 @@ def collect_kuveyt_public_silver(
                 "proxy_source": parsed_yahoo.source,
                 "proxy_symbol": parsed_yahoo.symbol,
                 "proxy_price": str(yahoo_price),
-                **(parsed_yahoo.metadata or {})
+                **(parsed_yahoo.metadata or {}),
             }
 
             return ingest_bank_price(
@@ -739,7 +741,7 @@ def parse_yahoo_finance_chart_json(
     timestamps = result.get("timestamp") or []
     indicators = result.get("indicators") or {}
     quotes = indicators.get("quote") or []
-    
+
     if not quotes or not isinstance(quotes, list):
         raise GlobalSilverProviderError("PARSE_ERROR", f"{source} indicators.quote missing")
 
@@ -833,7 +835,7 @@ def parse_yahoo_finance_usdtry_chart_json(
     timestamps = result.get("timestamp") or []
     indicators = result.get("indicators") or {}
     quotes = indicators.get("quote") or []
-    
+
     if not quotes or not isinstance(quotes, list):
         raise CollectorError(f"{source} indicators.quote missing")
 
@@ -913,7 +915,6 @@ def parse_metals_dev_silver_spot_json(raw_payload: str, *, fetched_at: datetime)
             "reliability_tier": "approved_optional_fallback",
         },
     )
-
 
 
 def parse_tcmb_usd_try_xml(raw_payload: str) -> ParsedFxRate:
@@ -1045,7 +1046,9 @@ def parse_kuveyt_public_silver_html(raw_payload: str, *, fetched_at: datetime) -
 
 
 def discover_kuveyt_core_script_url(page_html: str, *, base_url: str) -> str:
-    script_urls = re.findall(r'<script[^>]+src=["\']([^"\']*magiclick\.core\.min\.js[^"\']*)["\']', page_html, flags=re.IGNORECASE)
+    script_urls = re.findall(
+        r'<script[^>]+src=["\']([^"\']*magiclick\.core\.min\.js[^"\']*)["\']', page_html, flags=re.IGNORECASE
+    )
     if not script_urls:
         raise CollectorError("Kuveyt public page parser could not find public core script")
 
@@ -1441,6 +1444,7 @@ def _parse_turkish_decimal(value: str) -> Decimal:
         cleaned = cleaned.replace(".", "").replace(",", ".")
     return _decimal(cleaned, field_name="price")
 
+
 def parse_kuveyt_finance_portal_json_usd_try(
     raw_payload: str,
     *,
@@ -1448,6 +1452,7 @@ def parse_kuveyt_finance_portal_json_usd_try(
     finance_portal_url: str,
 ) -> ParsedFxRate:
     import json
+
     try:
         rows = json.loads(raw_payload)
     except json.JSONDecodeError as exc:
@@ -1464,7 +1469,7 @@ def parse_kuveyt_finance_portal_json_usd_try(
         if "USD" in title or "USD" in code:
             usd_row = row
             break
-            
+
     if not usd_row:
         raise CollectorError("USD row not found in Kuveyt financePortal response")
 
@@ -1490,6 +1495,7 @@ def parse_kuveyt_finance_portal_json_usd_try(
         },
     )
 
+
 def collect_kuveyt_usd_try(
     db: Session,
     *,
@@ -1497,7 +1503,7 @@ def collect_kuveyt_usd_try(
     client: httpx.Client | None = None,
 ) -> tuple[CollectorRun, bool]:
     from app.collectors.service import ingest_fx_rate, start_collector_run, finish_collector_run
-    
+
     try:
         page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
         core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)

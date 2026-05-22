@@ -21,21 +21,13 @@ async def run_news_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     twenty_four_hours_ago = now - timedelta(hours=24)
 
     # 1. Fetch news from the last 24 hours
-    stmt = (
-        select(RawNews)
-        .where(RawNews.fetched_at >= twenty_four_hours_ago)
-        .order_by(desc(RawNews.fetched_at))
-    )
+    stmt = select(RawNews).where(RawNews.fetched_at >= twenty_four_hours_ago).order_by(desc(RawNews.fetched_at))
     news_items = db.execute(stmt).scalars().all()
 
     # 2. Fallback to latest 10 news articles if none found in 24 hours
     if not news_items:
         logger.info("No news articles found in the last 24 hours. Falling back to the latest 10 news articles.")
-        stmt_fallback = (
-            select(RawNews)
-            .order_by(desc(RawNews.fetched_at))
-            .limit(10)
-        )
+        stmt_fallback = select(RawNews).order_by(desc(RawNews.fetched_at)).limit(10)
         news_items = db.execute(stmt_fallback).scalars().all()
 
     if not news_items:

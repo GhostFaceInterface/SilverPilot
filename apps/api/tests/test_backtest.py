@@ -53,7 +53,7 @@ def seed_historical_data(
     """Helper to seed mock price snapshots and indicators."""
     db = db_session_class()
     asset = db.query(Asset).filter(Asset.symbol == "XAG").first()
-    
+
     for idx, price in enumerate(prices):
         observed_at = datetime(2026, 5, 1 + idx, 4, 0, tzinfo=UTC)
         snap = PriceSnapshot(
@@ -84,36 +84,35 @@ def seed_historical_data(
             bb_upper_20_2=Decimal(str(bb_uppers[idx])) if bb_uppers and bb_uppers[idx] is not None else None,
         )
         db.add(ti)
-        
+
     db.commit()
     db.close()
-
 
 
 def test_backtest_rsi_oversold_to_overbought(db_session):
     # Prices: start high, go down (RSI oversold), go high (RSI overbought), hold
     prices = [35.0, 32.0, 25.0, 26.0, 38.0, 36.0]
     rsis = [65.0, 50.0, 25.0, 32.0, 75.0, 60.0]
-    
+
     seed_historical_data(db_session, prices, rsis)
-    
+
     with patch("scripts.backtest_engine.SessionLocal", db_session):
         results = run_backtest(
             strategy_name="rsi",
             timeframe="1d",
-            spread=0.02,     # 2% spread
-            tax=0.002,       # 0.2% tax on sell
-            fee=0.05,        # $0.05 fee
-            slippage=0.0005, # 0.05% slippage
+            spread=0.02,  # 2% spread
+            tax=0.002,  # 0.2% tax on sell
+            fee=0.05,  # $0.05 fee
+            slippage=0.0005,  # 0.05% slippage
             initial_cash=600.0,
         )
-        
+
         assert results is not None
         assert results["trades_count"] == 1  # 1 complete trade
         assert results["initial_cash"] == 600.0
-        
+
         # Verify transaction cost drag & ending balances are correctly set
-        assert results["ending_balance"] > 600.0  #Profitable trade
+        assert results["ending_balance"] > 600.0  # Profitable trade
         assert results["cost_drag_percent"] > 0.0
         assert results["max_drawdown"] >= 0.0
 
@@ -122,9 +121,9 @@ def test_backtest_no_trades_executed(db_session):
     # Prices are neutral, RSI stays neutral
     prices = [30.0, 30.2, 30.1, 29.9, 30.0]
     rsis = [50.0, 51.0, 50.0, 49.0, 50.0]
-    
+
     seed_historical_data(db_session, prices, rsis)
-    
+
     with patch("scripts.backtest_engine.SessionLocal", db_session):
         results = run_backtest(
             strategy_name="rsi",
@@ -135,7 +134,7 @@ def test_backtest_no_trades_executed(db_session):
             slippage=0.0005,
             initial_cash=600.0,
         )
-        
+
         assert results is not None
         assert results["trades_count"] == 0
         assert results["ending_balance"] == 600.0
@@ -145,14 +144,13 @@ def test_backtest_no_trades_executed(db_session):
 
 def test_backtest_drawdown_calculation():
     # Helper to calculate Max Drawdown on manual curve
-    from scripts.backtest_engine import run_backtest
-    
+
     # Let's test that drawdown handles peak and valley correctly.
     # In a simple equity curve: 100 -> 90 -> 110 -> 82.5 -> 120
     # First drop: (100 - 90)/100 = 10%
     # Second drop: peak is 110. Valley is 82.5. (110 - 82.5)/110 = 25%
     # Max drawdown should be 25%
-    
+
     # We can verify that our drawdown equation inside backtest engine does exactly this.
     # We will pass equity_curve values and compute the drawdown logic.
     equities = [100.0, 90.0, 110.0, 82.5, 120.0]
@@ -164,7 +162,7 @@ def test_backtest_drawdown_calculation():
         dd = (peak - eq) / peak if peak > 0.0 else 0.0
         if dd > max_drawdown:
             max_drawdown = dd
-            
+
     assert max_drawdown == 0.25
 
 
@@ -172,11 +170,12 @@ def test_backtest_rsi_with_agents_veto(db_session):
     # Prices start high, go down (RSI oversold - would trigger BUY), but agent is BEARISH
     prices = [35.0, 32.0, 25.0]
     rsis = [65.0, 50.0, 25.0]
-    
+
     seed_historical_data(db_session, prices, rsis)
-    
+
     # Add BEARISH news-agent cache record
     from app.models.entities import HistoricalAgentCache
+
     db = db_session()
     cache_record = HistoricalAgentCache(
         agent_name="news-agent",
@@ -187,7 +186,7 @@ def test_backtest_rsi_with_agents_veto(db_session):
     db.add(cache_record)
     db.commit()
     db.close()
-    
+
     with patch("scripts.backtest_engine.SessionLocal", db_session):
         results = run_backtest(
             strategy_name="rsi_with_agents",
@@ -198,7 +197,7 @@ def test_backtest_rsi_with_agents_veto(db_session):
             slippage=0.0005,
             initial_cash=600.0,
         )
-        
+
         assert results is not None
         # Veto should have blocked the BUY action, so trades_count should be 0!
         assert results["trades_count"] == 0
@@ -207,22 +206,22 @@ def test_backtest_rsi_with_agents_veto(db_session):
 
 def test_strategy_apply_agent_filters():
     from app.services.strategy import StrategyRunner
-    
+
     # Test BUY vetoed by news_sentiment
     action, reason = StrategyRunner.apply_agent_filters("BUY", "BEARISH", "APPROVED")
     assert action == "HOLD"
     assert reason == "AGENT_VETO_BEARISH_NEWS"
-    
+
     # Test BUY vetoed by risk_decision
     action, reason = StrategyRunner.apply_agent_filters("BUY", "BULLISH", "REJECTED")
     assert action == "HOLD"
     assert reason == "AGENT_VETO_RISK_REJECTED"
-    
+
     # Test BUY approved when news is BULLISH and risk is APPROVED
     action, reason = StrategyRunner.apply_agent_filters("BUY", "BULLISH", "APPROVED")
     assert action == "BUY"
     assert reason == ""
-    
+
     # Test non-BUY actions are untouched
     action, reason = StrategyRunner.apply_agent_filters("SELL", "BEARISH", "REJECTED")
     assert action == "SELL"
@@ -236,11 +235,12 @@ def test_backtest_sma_cross_with_agents_veto(db_session):
     prices = [30.0, 31.0]
     sma_20s = [28.0, 31.0]
     sma_50s = [30.0, 30.0]
-    
+
     seed_historical_data(db_session, prices=prices, sma_20s=sma_20s, sma_50s=sma_50s)
-    
+
     # Add REJECTED risk-agent cache record for Day 2
     from app.models.entities import HistoricalAgentCache
+
     db = db_session()
     cache_record = HistoricalAgentCache(
         agent_name="risk-agent",
@@ -251,7 +251,7 @@ def test_backtest_sma_cross_with_agents_veto(db_session):
     db.add(cache_record)
     db.commit()
     db.close()
-    
+
     with patch("scripts.backtest_engine.SessionLocal", db_session):
         results = run_backtest(
             strategy_name="sma_cross_with_agents",
@@ -262,7 +262,7 @@ def test_backtest_sma_cross_with_agents_veto(db_session):
             slippage=0.0005,
             initial_cash=600.0,
         )
-        
+
         assert results is not None
         # Veto should have blocked the BUY action, so trades_count should be 0!
         assert results["trades_count"] == 0
@@ -275,11 +275,12 @@ def test_backtest_bollinger_with_agents_veto(db_session):
     prices = [28.0]
     bb_lowers = [29.0]
     bb_uppers = [35.0]
-    
+
     seed_historical_data(db_session, prices=prices, bb_lowers=bb_lowers, bb_uppers=bb_uppers)
-    
+
     # Add BEARISH news-agent cache record for Day 1
     from app.models.entities import HistoricalAgentCache
+
     db = db_session()
     cache_record = HistoricalAgentCache(
         agent_name="news-agent",
@@ -290,7 +291,7 @@ def test_backtest_bollinger_with_agents_veto(db_session):
     db.add(cache_record)
     db.commit()
     db.close()
-    
+
     with patch("scripts.backtest_engine.SessionLocal", db_session):
         results = run_backtest(
             strategy_name="bollinger_with_agents",
@@ -301,9 +302,8 @@ def test_backtest_bollinger_with_agents_veto(db_session):
             slippage=0.0005,
             initial_cash=600.0,
         )
-        
+
         assert results is not None
         # Veto should have blocked the BUY action, so trades_count should be 0!
         assert results["trades_count"] == 0
         assert results["ending_balance"] == 600.0
-

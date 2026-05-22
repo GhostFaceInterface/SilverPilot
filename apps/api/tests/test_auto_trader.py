@@ -1,6 +1,6 @@
 import datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -26,10 +26,7 @@ async def test_auto_trading_disabled():
 
     # Override settings
     settings = Settings(
-        auto_trading_enabled=False,
-        strategy_name="rsi",
-        telegram_bot_token="test_token",
-        telegram_chat_id=12345
+        auto_trading_enabled=False, strategy_name="rsi", telegram_bot_token="test_token", telegram_chat_id=12345
     )
 
     with patch("app.services.auto_trader.get_settings", return_value=settings):
@@ -61,7 +58,7 @@ async def test_auto_trading_buy_signal():
         base_currency="USD",
         initial_cash=Decimal("600.00"),
         cash_balance=Decimal("600.00"),
-        is_real_money=False
+        is_real_money=False,
     )
     db.add(portfolio)
     db.flush()
@@ -76,7 +73,7 @@ async def test_auto_trading_buy_signal():
         currency="USD",
         spread_absolute=Decimal("0.10"),
         spread_percent=Decimal("0.33"),
-        observed_at=datetime.datetime.now(datetime.timezone.utc)
+        observed_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(snapshot)
     db.flush()
@@ -90,32 +87,26 @@ async def test_auto_trading_buy_signal():
         bb_upper_20_2=Decimal("35.00"),
         bb_lower_20_2=Decimal("28.00"),
         sma_20=Decimal("31.00"),
-        sma_50=Decimal("32.00")
+        sma_50=Decimal("32.00"),
     )
     db.add(indicator)
     db.commit()
 
     # Settings setup
     settings = Settings(
-        auto_trading_enabled=True,
-        strategy_name="rsi",
-        telegram_bot_token="test_token",
-        telegram_chat_id=12345
+        auto_trading_enabled=True, strategy_name="rsi", telegram_bot_token="test_token", telegram_chat_id=12345
     )
 
     # Risk decision mock
     mock_risk = RiskDecision(
-        decision="allow",
-        reason_code="RISK_CHECK_PASSED",
-        risk_level="low",
-        confidence=Decimal("1.0"),
-        details_json={}
+        decision="allow", reason_code="RISK_CHECK_PASSED", risk_level="low", confidence=Decimal("1.0"), details_json={}
     )
 
-    with patch("app.services.auto_trader.get_settings", return_value=settings), \
-         patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk), \
-         patch("app.services.auto_trader.Bot") as MockBot:
-        
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
+        patch("app.services.auto_trader.Bot") as MockBot,
+    ):
         mock_bot_instance = AsyncMock()
         MockBot.return_value = mock_bot_instance
 
@@ -170,7 +161,7 @@ async def test_auto_trading_sell_signal():
         base_currency="USD",
         initial_cash=Decimal("600.00"),
         cash_balance=Decimal("100.00"),  # Already invested mostly
-        is_real_money=False
+        is_real_money=False,
     )
     db.add(portfolio)
     db.flush()
@@ -178,11 +169,7 @@ async def test_auto_trading_sell_signal():
     # 2. Seed open position of 15 XAG
     # To have an open position, we need to add a successful trade
     mock_risk_decision = RiskDecision(
-        decision="allow",
-        reason_code="RISK_CHECK_PASSED",
-        risk_level="low",
-        confidence=Decimal("1.0"),
-        details_json={}
+        decision="allow", reason_code="RISK_CHECK_PASSED", risk_level="low", confidence=Decimal("1.0"), details_json={}
     )
     db.add(mock_risk_decision)
     db.flush()
@@ -197,7 +184,7 @@ async def test_auto_trading_sell_signal():
         fees=Decimal("0.050000"),
         taxes=Decimal("0.000000"),
         net_amount=Decimal("450.050000"),
-        risk_decision_id=mock_risk_decision.id
+        risk_decision_id=mock_risk_decision.id,
     )
     db.add(buy_trade)
     db.flush()
@@ -212,7 +199,7 @@ async def test_auto_trading_sell_signal():
         currency="USD",
         spread_absolute=Decimal("0.10"),
         spread_percent=Decimal("0.28"),
-        observed_at=datetime.datetime.now(datetime.timezone.utc)
+        observed_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(snapshot)
     db.flush()
@@ -226,23 +213,21 @@ async def test_auto_trading_sell_signal():
         bb_upper_20_2=Decimal("33.00"),
         bb_lower_20_2=Decimal("26.00"),
         sma_20=Decimal("29.00"),
-        sma_50=Decimal("28.00")
+        sma_50=Decimal("28.00"),
     )
     db.add(indicator)
     db.commit()
 
     # Settings setup
     settings = Settings(
-        auto_trading_enabled=True,
-        strategy_name="rsi",
-        telegram_bot_token="test_token",
-        telegram_chat_id=12345
+        auto_trading_enabled=True, strategy_name="rsi", telegram_bot_token="test_token", telegram_chat_id=12345
     )
 
-    with patch("app.services.auto_trader.get_settings", return_value=settings), \
-         patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk_decision), \
-         patch("app.services.auto_trader.Bot") as MockBot:
-        
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk_decision),
+        patch("app.services.auto_trader.Bot") as MockBot,
+    ):
         mock_bot_instance = AsyncMock()
         MockBot.return_value = mock_bot_instance
 

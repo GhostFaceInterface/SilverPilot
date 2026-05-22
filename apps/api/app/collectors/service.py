@@ -9,7 +9,17 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews, TechnicalIndicator
+from app.models import (
+    Asset,
+    CollectorRun,
+    PriceSnapshot,
+    RawBankPrice,
+    RawEvent,
+    RawFxRate,
+    RawGlobalPrice,
+    RawNews,
+    TechnicalIndicator,
+)
 from app.schemas.collectors import ManualPriceIngestRequest
 from app.services.indicators import calculate_indicators
 
@@ -33,7 +43,9 @@ def payload_hash(payload: bytes | str | dict) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def ingest_manual_price(db: Session, request: ManualPriceIngestRequest) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
+def ingest_manual_price(
+    db: Session, request: ManualPriceIngestRequest
+) -> tuple[CollectorRun, bool, PriceSnapshot | None]:
     asset = db.execute(select(Asset).where(Asset.symbol == request.asset_symbol)).scalar_one_or_none()
     if asset is None:
         raise CollectorError(f"Asset not found: {request.asset_symbol}")
@@ -187,7 +199,6 @@ def ingest_global_price(
     # --- Technical Indicator Calculation (isolated: must never lose the price snapshot) ---
     _try_compute_and_store_indicator(db, asset=asset, source=source, snapshot=snapshot, observed_at=observed_at)
 
-
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
@@ -230,11 +241,15 @@ def _try_compute_and_store_indicator(
             .order_by(desc(PriceSnapshot.observed_at))
             .limit(_INDICATOR_HISTORY_BARS)
         ).subquery()
-        history_rows = db.execute(
-            select(PriceSnapshot)
-            .where(PriceSnapshot.id.in_(select(latest_ids_sq)))
-            .order_by(PriceSnapshot.id)  # id is monotonically increasing → chronological
-        ).scalars().all()
+        history_rows = (
+            db.execute(
+                select(PriceSnapshot)
+                .where(PriceSnapshot.id.in_(select(latest_ids_sq)))
+                .order_by(PriceSnapshot.id)  # id is monotonically increasing → chronological
+            )
+            .scalars()
+            .all()
+        )
 
         # history_rows is now oldest-first
         rows = history_rows
@@ -244,11 +259,13 @@ def _try_compute_and_store_indicator(
 
         records = []
         for s in rows:
-            records.append({
-                "high": float(s.buy_price or s.mid_price or 0),
-                "low": float(s.sell_price or s.mid_price or 0),
-                "close": float(s.mid_price or 0),
-            })
+            records.append(
+                {
+                    "high": float(s.buy_price or s.mid_price or 0),
+                    "low": float(s.sell_price or s.mid_price or 0),
+                    "close": float(s.mid_price or 0),
+                }
+            )
         df = pd.DataFrame(records)
 
         # Calculate indicators
@@ -286,8 +303,9 @@ def _try_compute_and_store_indicator(
             last.get("sma_20"),
         )
     except Exception:
-        logger.exception("indicator_error: failed to compute indicators for snapshot_id=%s — price snapshot preserved", snapshot.id)
-
+        logger.exception(
+            "indicator_error: failed to compute indicators for snapshot_id=%s — price snapshot preserved", snapshot.id
+        )
 
 
 def ingest_bank_price(
@@ -375,7 +393,6 @@ def ingest_bank_price(
     )
     db.add(snapshot)
 
-
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
@@ -439,20 +456,24 @@ def ingest_fx_rate(
     )
     if collector_name == "yahoo_usd_try":
         latest_tcmb = db.execute(
-            select(RawFxRate).where(
+            select(RawFxRate)
+            .where(
                 RawFxRate.source == "tcmb-today-xml",
                 RawFxRate.base_currency == "USD",
-                RawFxRate.quote_currency == "TRY"
-            ).order_by(RawFxRate.observed_at.desc()).limit(1)
+                RawFxRate.quote_currency == "TRY",
+            )
+            .order_by(RawFxRate.observed_at.desc())
+            .limit(1)
         ).scalar_one_or_none()
-        
+
         if latest_tcmb:
             deviation = abs(rate - latest_tcmb.rate) / latest_tcmb.rate
             if deviation >= Decimal("0.02"):
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.warning("USD/TRY deviation >= 2% compared to TCMB daily reference")
-                
+
                 if "warning" not in run.details_json:
                     details = dict(run.details_json)
                     details["warning"] = "USD/TRY deviation >= 2% compared to TCMB daily reference"
@@ -729,7 +750,9 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
     since = now - timedelta(hours=window_hours)
     expected_runs = max(1, int((window_hours * 60) / expected_interval_minutes))
     runs = (
-        db.execute(select(CollectorRun).where(CollectorRun.started_at >= since).order_by(CollectorRun.started_at.desc()))
+        db.execute(
+            select(CollectorRun).where(CollectorRun.started_at >= since).order_by(CollectorRun.started_at.desc())
+        )
         .scalars()
         .all()
     )
@@ -738,9 +761,7 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
     for run in runs:
         groups.setdefault((run.collector_name, run.source), []).append(run)
     has_non_manual_group = any(not _is_manual_fallback_group(*key) for key in groups)
-    quality_group_keys = {
-        key for key in groups if not (has_non_manual_group and _is_manual_fallback_group(*key))
-    }
+    quality_group_keys = {key for key in groups if not (has_non_manual_group and _is_manual_fallback_group(*key))}
 
     window_started_at = _quality_window_started_at(db, quality_group_keys)
     elapsed_minutes = (
@@ -945,8 +966,15 @@ def _execution_critical_global_xag_status(db: Session, *, stale_after_seconds: i
     age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
     observed_age_seconds = int((now - observed_time).total_seconds()) if observed_time is not None else None
     stale_after = min(stale_after_seconds, settings.global_xag_freshness_minutes * 60)
-    stale = age_seconds is None or age_seconds > stale_after or observed_age_seconds is None or observed_age_seconds > stale_after
-    manual_fallback = latest_global_price.parser_version == "manual-v1" or latest_global_price.source.startswith("manual")
+    stale = (
+        age_seconds is None
+        or age_seconds > stale_after
+        or observed_age_seconds is None
+        or observed_age_seconds > stale_after
+    )
+    manual_fallback = latest_global_price.parser_version == "manual-v1" or latest_global_price.source.startswith(
+        "manual"
+    )
     if stale:
         global_xag = "stale"
     elif manual_fallback:
@@ -973,7 +1001,9 @@ def _execution_critical_usd_try_status(db: Session, *, stale_after_seconds: int,
     if latest_fx_rate is None:
         return {"usd_try": "missing", "source": None, "age_seconds": None, "stale": True}
 
-    latest_success_time = _latest_successful_run_time(db, collector_names={"tcmb_usd_try", "yahoo_usd_try", "kuveyt_usd_try"}, source=latest_fx_rate.source)
+    latest_success_time = _latest_successful_run_time(
+        db, collector_names={"tcmb_usd_try", "yahoo_usd_try", "kuveyt_usd_try"}, source=latest_fx_rate.source
+    )
     reference_time = max(
         value
         for value in (

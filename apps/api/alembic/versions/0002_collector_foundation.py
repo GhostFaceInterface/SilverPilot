@@ -4,6 +4,7 @@ Revision ID: 0002_collector_foundation
 Revises: 0001_initial_schema
 Create Date: 2026-05-13
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -75,7 +76,9 @@ def upgrade() -> None:
         sa.UniqueConstraint("asset_id", "source", "observed_at", name="uq_raw_global_prices_asset_source_observed"),
     )
     op.create_index(op.f("ix_raw_global_prices_asset_id"), "raw_global_prices", ["asset_id"], unique=False)
-    op.create_index(op.f("ix_raw_global_prices_collector_run_id"), "raw_global_prices", ["collector_run_id"], unique=False)
+    op.create_index(
+        op.f("ix_raw_global_prices_collector_run_id"), "raw_global_prices", ["collector_run_id"], unique=False
+    )
     op.create_index(op.f("ix_raw_global_prices_observed_at"), "raw_global_prices", ["observed_at"], unique=False)
     op.create_index(op.f("ix_raw_global_prices_source"), "raw_global_prices", ["source"], unique=False)
 
@@ -92,7 +95,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["collector_run_id"], ["collector_runs.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("source", "base_currency", "quote_currency", "observed_at", name="uq_raw_fx_source_pair_observed"),
+        sa.UniqueConstraint(
+            "source", "base_currency", "quote_currency", "observed_at", name="uq_raw_fx_source_pair_observed"
+        ),
     )
     op.create_index(op.f("ix_raw_fx_rates_collector_run_id"), "raw_fx_rates", ["collector_run_id"], unique=False)
     op.create_index(op.f("ix_raw_fx_rates_observed_at"), "raw_fx_rates", ["observed_at"], unique=False)

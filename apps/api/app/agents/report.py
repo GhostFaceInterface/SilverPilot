@@ -21,11 +21,7 @@ async def run_daily_performance_report(db: Session) -> Report:
     period_end = now
 
     # 1. Query the latest PortfolioSnapshot
-    stmt_snapshot = (
-        select(PortfolioSnapshot)
-        .order_by(desc(PortfolioSnapshot.observed_at))
-        .limit(1)
-    )
+    stmt_snapshot = select(PortfolioSnapshot).order_by(desc(PortfolioSnapshot.observed_at)).limit(1)
     portfolio_snapshot = db.execute(stmt_snapshot).scalar_one_or_none()
 
     # 2. Query all PaperTrade records in the 24-hour window

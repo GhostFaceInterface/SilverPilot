@@ -454,7 +454,9 @@ def test_fomo_risk_blocks_after_rapid_global_price_rise():
 def test_daily_loss_limit_blocks_trade():
     client, testing_session = make_client()
     seed_execution_critical_data(testing_session)
-    seed_realized_loss(testing_session, loss=Decimal("35.000000"), sell_created_at=datetime.now(UTC) - timedelta(hours=1))
+    seed_realized_loss(
+        testing_session, loss=Decimal("35.000000"), sell_created_at=datetime.now(UTC) - timedelta(hours=1)
+    )
 
     response = client.post(
         "/paper-trades",
@@ -476,7 +478,9 @@ def test_daily_loss_limit_blocks_trade():
 def test_weekly_loss_limit_blocks_when_daily_limit_is_not_reached():
     client, testing_session = make_client()
     seed_execution_critical_data(testing_session)
-    seed_realized_loss(testing_session, loss=Decimal("65.000000"), sell_created_at=datetime.now(UTC) - timedelta(days=2))
+    seed_realized_loss(
+        testing_session, loss=Decimal("65.000000"), sell_created_at=datetime.now(UTC) - timedelta(days=2)
+    )
 
     response = client.post(
         "/paper-trades",
@@ -580,8 +584,7 @@ def test_risk_status_reports_global_xag_source_diagnostics():
     assert diagnostics_24h["max_price"] == "78.000000"
     assert diagnostics_24h["range_percent"] == "83.636364"
     assert [
-        {"source": item["source"], "sample_count": item["sample_count"]}
-        for item in diagnostics_24h["sources"]
+        {"source": item["source"], "sample_count": item["sample_count"]} for item in diagnostics_24h["sources"]
     ] == [
         {"source": "gold-api-xag-usd", "sample_count": 2},
         {"source": "stooq-xagusd-csv", "sample_count": 2},
@@ -633,7 +636,9 @@ def test_risk_status_reports_runtime_blocking_thresholds():
     client, testing_session = make_client()
     seed_execution_critical_data(testing_session)
     seed_global_price_history(testing_session, prices=[Decimal("30.000000"), Decimal("39.000000")])
-    seed_realized_loss(testing_session, loss=Decimal("35.000000"), sell_created_at=datetime.now(UTC) - timedelta(hours=1))
+    seed_realized_loss(
+        testing_session, loss=Decimal("35.000000"), sell_created_at=datetime.now(UTC) - timedelta(hours=1)
+    )
 
     response = client.get("/risk/status")
 

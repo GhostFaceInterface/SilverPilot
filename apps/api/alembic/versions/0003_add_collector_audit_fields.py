@@ -4,6 +4,7 @@ Revision ID: 0003_add_collector_audit_fields
 Revises: 0002_collector_foundation
 Create Date: 2026-05-13
 """
+
 from alembic import op
 import sqlalchemy as sa
 

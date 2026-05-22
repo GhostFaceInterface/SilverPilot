@@ -108,7 +108,9 @@ class RawGlobalPrice(Base):
 class RawFxRate(Base):
     __tablename__ = "raw_fx_rates"
     __table_args__ = (
-        UniqueConstraint("source", "base_currency", "quote_currency", "observed_at", name="uq_raw_fx_source_pair_observed"),
+        UniqueConstraint(
+            "source", "base_currency", "quote_currency", "observed_at", name="uq_raw_fx_source_pair_observed"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -254,7 +256,6 @@ class Signal(Base):
     technical_indicator: Mapped["TechnicalIndicator | None"] = relationship()
 
 
-
 class Report(Base):
     __tablename__ = "reports"
 
@@ -341,12 +342,13 @@ class HistoricalAgentCache(Base):
     __tablename__ = "historical_agent_caches"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    agent_name: Mapped[str] = mapped_column(String(128), index=True)      # news-agent, risk-agent
-    event_type: Mapped[str] = mapped_column(String(64), index=True)       # news_sentiment, signal_critique
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True) # Eşleşen bar zamanı
-    value_json: Mapped[dict] = mapped_column(JSON, default=dict)          # Sentiment/Critique JSON payload
+    agent_name: Mapped[str] = mapped_column(String(128), index=True)  # news-agent, risk-agent
+    event_type: Mapped[str] = mapped_column(String(64), index=True)  # news_sentiment, signal_critique
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)  # Eşleşen bar zamanı
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)  # Sentiment/Critique JSON payload
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-Index("ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at)
-
+Index(
+    "ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at
+)

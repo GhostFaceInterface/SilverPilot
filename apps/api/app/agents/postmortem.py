@@ -31,10 +31,7 @@ async def run_postmortem_analysis(db: Session) -> AgentMemoryEvent:
     # 2. Fallback to latest 5 blocked trades if none found in 24 hours
     if not blocked_trades:
         stmt_fallback = (
-            select(PaperTrade)
-            .where(PaperTrade.action == "blocked")
-            .order_by(desc(PaperTrade.created_at))
-            .limit(5)
+            select(PaperTrade).where(PaperTrade.action == "blocked").order_by(desc(PaperTrade.created_at)).limit(5)
         )
         blocked_trades = db.execute(stmt_fallback).scalars().all()
 
@@ -62,7 +59,7 @@ async def run_postmortem_analysis(db: Session) -> AgentMemoryEvent:
         decision_code = "UNKNOWN"
         risk_level = "UNKNOWN"
         details_json = {}
-        
+
         # Load associated RiskDecision
         if trade.risk_decision_id is not None:
             decision = db.execute(
@@ -73,18 +70,20 @@ async def run_postmortem_analysis(db: Session) -> AgentMemoryEvent:
                 risk_level = decision.risk_level
                 details_json = decision.details_json
 
-        trades_data.append({
-            "trade_id": trade.id,
-            "portfolio_id": trade.portfolio_id,
-            "quantity": float(trade.quantity),
-            "price": float(trade.price),
-            "gross_amount": float(trade.gross_amount),
-            "net_amount": float(trade.net_amount),
-            "created_at": trade.created_at.isoformat(),
-            "block_reason_code": decision_code,
-            "risk_level": risk_level,
-            "block_details": details_json,
-        })
+        trades_data.append(
+            {
+                "trade_id": trade.id,
+                "portfolio_id": trade.portfolio_id,
+                "quantity": float(trade.quantity),
+                "price": float(trade.price),
+                "gross_amount": float(trade.gross_amount),
+                "net_amount": float(trade.net_amount),
+                "created_at": trade.created_at.isoformat(),
+                "block_reason_code": decision_code,
+                "risk_level": risk_level,
+                "block_details": details_json,
+            }
+        )
 
     # 5. Call LLM to run postmortem critique
     model = "deepseek-v4-pro"
@@ -147,7 +146,9 @@ async def run_postmortem_analysis(db: Session) -> AgentMemoryEvent:
         logger.warning(
             f"Failed to parse JSON from Postmortem LLM response. Raw content: {raw_content}. Error: {parse_err}"
         )
-        details_markdown = f"# Postmortem Analysis (Error)\n\nFailed to parse LLM postmortem report. Raw response:\n\n{raw_content}"
+        details_markdown = (
+            f"# Postmortem Analysis (Error)\n\nFailed to parse LLM postmortem report. Raw response:\n\n{raw_content}"
+        )
 
     # 6. Save report to AgentMemoryEvent
     event = AgentMemoryEvent(

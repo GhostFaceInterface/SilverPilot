@@ -74,7 +74,9 @@ async def run_market_research_analysis(db: Session) -> AgentMemoryEvent:
             "sma_50": float(technical_indicator.sma_50) if technical_indicator.sma_50 else None,
             "sma_200": float(technical_indicator.sma_200) if technical_indicator.sma_200 else None,
             "xau_xag_ratio": float(technical_indicator.xau_xag_ratio) if technical_indicator.xau_xag_ratio else None,
-            "bar_timestamp": technical_indicator.bar_timestamp.isoformat() if technical_indicator.bar_timestamp else None,
+            "bar_timestamp": technical_indicator.bar_timestamp.isoformat()
+            if technical_indicator.bar_timestamp
+            else None,
         }
 
     price_dict = {}
@@ -89,12 +91,14 @@ async def run_market_research_analysis(db: Session) -> AgentMemoryEvent:
 
     events_list = []
     for e in events:
-        events_list.append({
-            "source": e.source,
-            "event_type": e.event_type,
-            "observed_at": e.observed_at.isoformat(),
-            "payload": e.payload_json,
-        })
+        events_list.append(
+            {
+                "source": e.source,
+                "event_type": e.event_type,
+                "observed_at": e.observed_at.isoformat(),
+                "payload": e.payload_json,
+            }
+        )
 
     # 6. Call LLM
     model = "deepseek-v4-flash"

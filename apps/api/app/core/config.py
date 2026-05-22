@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     strategy_name: str = "rsi"
     auto_trading_enabled: bool = True
 
-
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"
     postgres_password: str = "change_me"
@@ -79,7 +78,6 @@ class Settings(BaseSettings):
     agent_news_model: str = "deepseek-v4-flash"
     agent_report_model: str = "deepseek-v4-flash"
     agent_risk_model: str = "deepseek-v4-pro"
-
 
 
 @lru_cache

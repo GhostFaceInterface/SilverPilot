@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from pydantic import BaseModel, Field
 
+
 class LLMTraceCreate(BaseModel):
     agent_name: str = Field(min_length=1, max_length=100)
     model_name: str = Field(min_length=1, max_length=100)
@@ -14,6 +15,7 @@ class LLMTraceCreate(BaseModel):
     prompt_raw: str | None = None
     response_raw: str | None = None
     error_message: str | None = None
+
 
 class LLMTraceResponse(LLMTraceCreate):
     id: int
@@ -56,5 +58,3 @@ class ReportResponse(BaseModel):
 
 class OrchestrateRunRequest(BaseModel):
     signal_id: int | None = None
-
-

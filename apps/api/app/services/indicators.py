@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
     Computes technical indicators for a given DataFrame of prices.
@@ -11,9 +12,17 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or len(df) < 2:
         # Not enough data to compute indicators, fill with None
         for col in [
-            'rsi_14', 'macd_line', 'macd_signal', 'macd_histogram', 
-            'bb_upper_20_2', 'bb_middle_20_2', 'bb_lower_20_2', 
-            'sma_20', 'sma_50', 'sma_200', 'atr_14'
+            "rsi_14",
+            "macd_line",
+            "macd_signal",
+            "macd_histogram",
+            "bb_upper_20_2",
+            "bb_middle_20_2",
+            "bb_lower_20_2",
+            "sma_20",
+            "sma_50",
+            "sma_200",
+            "atr_14",
         ]:
             df[col] = None
         return df
@@ -26,51 +35,51 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
         return series.ewm(span=length, adjust=False).mean()
 
     # RSI 14
-    delta = df['close'].diff()
+    delta = df["close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1/14, min_periods=14).mean()
-    avg_loss = loss.ewm(alpha=1/14, min_periods=14).mean()
+    avg_gain = gain.ewm(alpha=1 / 14, min_periods=14).mean()
+    avg_loss = loss.ewm(alpha=1 / 14, min_periods=14).mean()
     rs = avg_gain / avg_loss
-    df['rsi_14'] = 100 - (100 / (1 + rs))
+    df["rsi_14"] = 100 - (100 / (1 + rs))
 
     # MACD (12, 26, 9)
     try:
-        ema_fast = get_ema(df['close'], 12)
-        ema_slow = get_ema(df['close'], 26)
-        df['macd_line'] = ema_fast - ema_slow
-        df['macd_signal'] = get_ema(df['macd_line'], 9)
-        df['macd_histogram'] = df['macd_line'] - df['macd_signal']
+        ema_fast = get_ema(df["close"], 12)
+        ema_slow = get_ema(df["close"], 26)
+        df["macd_line"] = ema_fast - ema_slow
+        df["macd_signal"] = get_ema(df["macd_line"], 9)
+        df["macd_histogram"] = df["macd_line"] - df["macd_signal"]
     except Exception:
-        df['macd_line'] = None
-        df['macd_signal'] = None
-        df['macd_histogram'] = None
+        df["macd_line"] = None
+        df["macd_signal"] = None
+        df["macd_histogram"] = None
 
     # Bollinger Bands (20, 2)
     try:
-        sma20 = get_sma(df['close'], 20)
-        rstd = df['close'].rolling(window=20).std()
-        df['bb_upper_20_2'] = sma20 + (2 * rstd)
-        df['bb_middle_20_2'] = sma20
-        df['bb_lower_20_2'] = sma20 - (2 * rstd)
+        sma20 = get_sma(df["close"], 20)
+        rstd = df["close"].rolling(window=20).std()
+        df["bb_upper_20_2"] = sma20 + (2 * rstd)
+        df["bb_middle_20_2"] = sma20
+        df["bb_lower_20_2"] = sma20 - (2 * rstd)
     except Exception:
-        df['bb_upper_20_2'] = None
-        df['bb_middle_20_2'] = None
-        df['bb_lower_20_2'] = None
+        df["bb_upper_20_2"] = None
+        df["bb_middle_20_2"] = None
+        df["bb_lower_20_2"] = None
 
     # SMAs (20, 50, 200)
-    df['sma_20'] = get_sma(df['close'], 20)
-    df['sma_50'] = get_sma(df['close'], 50)
-    df['sma_200'] = get_sma(df['close'], 200)
+    df["sma_20"] = get_sma(df["close"], 20)
+    df["sma_50"] = get_sma(df["close"], 50)
+    df["sma_200"] = get_sma(df["close"], 200)
 
     # ATR 14
     try:
-        h_l = df['high'] - df['low']
-        h_pc = (df['high'] - df['close'].shift(1)).abs()
-        l_pc = (df['low'] - df['close'].shift(1)).abs()
+        h_l = df["high"] - df["low"]
+        h_pc = (df["high"] - df["close"].shift(1)).abs()
+        l_pc = (df["low"] - df["close"].shift(1)).abs()
         tr = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1)
-        df['atr_14'] = tr.ewm(alpha=1/14, min_periods=14).mean()
+        df["atr_14"] = tr.ewm(alpha=1 / 14, min_periods=14).mean()
     except Exception:
-        df['atr_14'] = None
+        df["atr_14"] = None
 
     return df

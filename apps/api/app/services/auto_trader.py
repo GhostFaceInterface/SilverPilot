@@ -41,7 +41,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         return
 
     is_blended = trade_data.get("strategy_name") == "blended"
-    
+
     if is_blended:
         regime_info = trade_data.get("regime_info", {})
         regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
@@ -50,9 +50,9 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
             regime_label = "Güçlü Yükseliş Trendi (TRENDING UP)"
         elif regime == "TRENDING_DOWN":
             regime_label = "Güçlü Düşüş Trendi (TRENDING DOWN)"
-            
+
         votes = trade_data.get("strategy_votes", {})
-        
+
         def format_vote(vote_dict):
             if not vote_dict:
                 return "⚪️ BEKLE"
@@ -66,7 +66,9 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         sma_vote = format_vote(votes.get("sma_cross"))
 
         arbiter_stance = trade_data.get("arbiter_decision", "NEUTRAL")
-        arbiter_emoji = "🟢 AL" if arbiter_stance == "BULLISH" else ("🔴 SAT" if arbiter_stance == "BEARISH" else "⚪️ BEKLE")
+        arbiter_emoji = (
+            "🟢 AL" if arbiter_stance == "BULLISH" else ("🔴 SAT" if arbiter_stance == "BEARISH" else "⚪️ BEKLE")
+        )
         arbiter_reason = trade_data.get("arbiter_reason", "Gerekçe belirtilmedi.")
 
         msg = (
@@ -81,13 +83,13 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
             f"📝 *Gerekçe:* {arbiter_reason}\n\n"
             f"🔄 *İşlem Durumu:* {status_emoji} {action_str}\n"
         )
-        
+
         if action in ("paper_buy", "paper_sell"):
             msg += (
                 f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.4f} XAG\n"
                 f"💰 *Net Tutar:* {trade_data.get('net_amount', 0.0):,.2f} USD\n"
             )
-        
+
         msg += f"💵 *Nakit Bakiyesi:* {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
         if "xag_balance" in trade_data:
             msg += f"🥈 *Gümüş Portföyü:* {trade_data['xag_balance']:,.4f} XAG\n"
@@ -152,7 +154,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
             chat_id=settings.telegram_chat_id,
             text=msg,
             parse_mode="Markdown",
-            disable_notification=disable_notification
+            disable_notification=disable_notification,
         )
         logger.info(f"Telegram notification sent successfully (silent={disable_notification}).")
     except Exception as e:
@@ -171,6 +173,7 @@ async def run_auto_trading(db: Session = None):
         await _run_auto_trading_impl(db, settings)
     else:
         from app.core.db import SessionLocal
+
         db_session = SessionLocal()
         try:
             await _run_auto_trading_impl(db_session, settings)
@@ -212,7 +215,9 @@ async def _run_auto_trading_impl(db: Session, settings):
     # Get matching PriceSnapshot for the latest indicator
     latest_snapshot = latest_indicator.price_snapshot
     if not latest_snapshot:
-        latest_snapshot = db.execute(select(PriceSnapshot).where(PriceSnapshot.id == latest_indicator.price_snapshot_id)).scalar_one_or_none()
+        latest_snapshot = db.execute(
+            select(PriceSnapshot).where(PriceSnapshot.id == latest_indicator.price_snapshot_id)
+        ).scalar_one_or_none()
 
     if not latest_snapshot:
         logger.error(f"PriceSnapshot not found for indicator ID {latest_indicator.id}")
@@ -242,12 +247,10 @@ async def _run_auto_trading_impl(db: Session, settings):
             has_open_position=has_open_position,
         )
         # Call Supreme Consensus Engine
-        consensus_event = await run_blended_consensus_resolution(
-            db, regime_info, strategy_votes, latest_snapshot
-        )
+        consensus_event = await run_blended_consensus_resolution(db, regime_info, strategy_votes, latest_snapshot)
         resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
         resolution_markdown = consensus_event.value_json.get("resolution_markdown", "No details.")
-        
+
         # Map stance to action: BULLISH -> BUY, BEARISH -> SELL, NEUTRAL -> HOLD
         if resolved_stance == "BULLISH":
             action = "BUY"
@@ -282,12 +285,14 @@ async def _run_auto_trading_impl(db: Session, settings):
         "bb_upper": float(latest_indicator.bb_upper_20_2) if latest_indicator.bb_upper_20_2 is not None else None,
     }
     if settings.strategy_name == "blended":
-        details.update({
-            "regime_info": regime_info,
-            "strategy_votes": strategy_votes,
-            "arbiter_decision": resolved_stance,
-            "arbiter_reason": resolution_markdown,
-        })
+        details.update(
+            {
+                "regime_info": regime_info,
+                "strategy_votes": strategy_votes,
+                "arbiter_decision": resolved_stance,
+                "arbiter_reason": resolution_markdown,
+            }
+        )
 
     signal = Signal(
         observed_at=latest_snapshot.observed_at,
@@ -296,7 +301,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         action=action,
         reason_code=reason_code,
         price_usd_oz=latest_snapshot.mid_price,
-        details_json=details
+        details_json=details,
     )
     db.add(signal)
     db.flush()
@@ -368,21 +373,24 @@ async def _run_auto_trading_impl(db: Session, settings):
             "decision": trade.risk_decision.decision,
             "reason_code": trade.risk_decision.reason_code,
             "risk_level": trade.risk_decision.risk_level,
-        } if (trade and trade.risk_decision) else None
+        }
+        if (trade and trade.risk_decision)
+        else None,
     }
 
     if settings.strategy_name == "blended":
-        notification_data.update({
-            "regime_info": regime_info,
-            "strategy_votes": strategy_votes,
-            "arbiter_decision": resolved_stance,
-            "arbiter_reason": resolution_markdown,
-        })
+        notification_data.update(
+            {
+                "regime_info": regime_info,
+                "strategy_votes": strategy_votes,
+                "arbiter_decision": resolved_stance,
+                "arbiter_reason": resolution_markdown,
+            }
+        )
 
     # Commit transactions
     db.commit()
 
     # 8. Send Telegram message
-    is_silent = (notification_data["action"] == "HOLD")
+    is_silent = notification_data["action"] == "HOLD"
     await send_telegram_notification(notification_data, settings, disable_notification=is_silent)
-
