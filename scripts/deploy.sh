@@ -172,10 +172,11 @@ for i in {1..10}; do
     if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
         break
     fi
-    echo "Waiting for HTTP Server to start (attempt \$i/10)..."
+    echo -e \"Waiting for HTTP Server to start (attempt \\\$i/10)...\"
     sleep 1
 done
 curl -fsS http://127.0.0.1:8000/health
+
 
 
 echo -e \"\${BLUE}[4.5/5] Running E2E Strategy & Backtest Verification Pipeline...\${NC}\"
