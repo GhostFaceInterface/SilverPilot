@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     risk_max_daily_loss_usd: Decimal = Field(default=Decimal("30.0"), gt=0)
     risk_max_weekly_loss_usd: Decimal = Field(default=Decimal("60.0"), gt=0)
     risk_min_expected_net_gain_percent: Decimal = Field(default=Decimal("0.0"), ge=0)
+    risk_ml_model_enabled: bool = True
+    risk_ml_min_probability: float = Field(default=0.50, ge=0.0, le=1.0)
+    risk_ml_model_path: str = "data/models/champion_model.pkl"
+
 
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"

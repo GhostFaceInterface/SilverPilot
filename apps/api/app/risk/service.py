@@ -124,7 +124,12 @@ def evaluate_paper_trade_risk(
     if expected_gain_decision is not None:
         return expected_gain_decision
 
+    ml_decision = _ml_model_block(db, request=request, asset_id=asset.id)
+    if ml_decision is not None:
+        return ml_decision
+
     if request.action == "paper_buy" and portfolio.cash_balance < amounts.net_amount:
+
         return _decision(
             db,
             decision="blocked",
@@ -519,7 +524,40 @@ def _expected_gain_block(
     )
 
 
+def _ml_model_block(db: Session, *, request: PaperTradeRequest, asset_id: int) -> RiskDecision | None:
+    settings = get_settings()
+    if not settings.risk_ml_model_enabled:
+        return None
+    if request.action != "paper_buy":
+        return None
+
+    try:
+        from app.ml.inference import predict_profitability
+        proba = predict_profitability(db, asset_id=asset_id)
+        if proba is None:
+            return None  # Graceful fallback: allow trade if inference fails / model missing
+
+        if proba < settings.risk_ml_min_probability:
+            return _decision(
+                db,
+                decision="blocked",
+                reason_code="ML_UNPROFITABLE_PREDICTION",
+                risk_level="medium",
+                details={
+                    "predicted_probability": f"{proba:.4f}",
+                    "min_probability_threshold": f"{settings.risk_ml_min_probability:.4f}",
+                    "asset_id": asset_id,
+                },
+            )
+    except Exception as e:
+        logger = logging.getLogger("silverpilot.ml.veto")
+        logger.error(f"Graceful bypass triggered in ML veto block due to exception: {e}")
+        
+    return None
+
+
 def _threshold_headroom_item(
+
     *,
     metric_name: str,
     reason_code: str,

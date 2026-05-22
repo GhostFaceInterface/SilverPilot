@@ -256,8 +256,9 @@ def build_dataset(version: str, dry_run: bool = False, drop_unlabeled: bool = Tr
         # Time-based rolling requires DatetimeIndex sorted ascending.
         df_price = df_price.set_index("observed_at", drop=False)
         df_price["volatility_24h"] = df_price["xag_return_15m"].rolling("24h").std()
-        df_price["volatility_7d"] = df_price["xag_return_15m"].rolling("7d").std()
+        df_price["volatility_7d"] = df_price["xag_return_15m"].rolling("7D").std()
         df_price = df_price.reset_index(drop=True)
+
 
         # C. USD/TRY Return over 24h
         df_price["usd_try_return_24h"] = np.nan
@@ -448,8 +449,12 @@ def build_dataset(version: str, dry_run: bool = False, drop_unlabeled: bool = Tr
             csv_path = os.path.join(dataset_dir, "dataset.csv")
             meta_path = os.path.join(dataset_dir, "metadata.json")
             
-            logger.info(f"Saving dataset parquet file to {parquet_path}...")
-            df_price.to_parquet(parquet_path, index=False)
+            try:
+                logger.info(f"Saving dataset parquet file to {parquet_path}...")
+                df_price.to_parquet(parquet_path, index=False)
+            except Exception as e:
+                logger.warning(f"Could not save parquet file (parquet engine missing?): {e}")
+
             
             logger.info(f"Saving dataset csv file to {csv_path}...")
             df_price.to_csv(csv_path, index=False)
