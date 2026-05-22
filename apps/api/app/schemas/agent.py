@@ -54,3 +54,7 @@ class ReportResponse(BaseModel):
         from_attributes = True
 
 
+class OrchestrateRunRequest(BaseModel):
+    signal_id: int | None = None
+
+

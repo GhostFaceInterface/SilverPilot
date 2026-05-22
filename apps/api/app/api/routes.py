@@ -36,7 +36,7 @@ from app.schemas.collectors import (
 from app.schemas.health import HealthResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 from app.schemas.risk import RiskPolicyStatusResponse
-from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse, RiskCritiqueRequest, ReportResponse
+from app.schemas.agent import LLMTraceCreate, LLMTraceResponse, AgentMemoryCreate, AgentMemoryResponse, RiskCritiqueRequest, ReportResponse, OrchestrateRunRequest
 
 router = APIRouter()
 
@@ -598,4 +598,38 @@ def get_active_model(
     """
     from app.ml.inference import get_active_model_metadata
     return get_active_model_metadata()
+
+
+async def run_orchestrate_background(signal_id: int | None = None) -> None:
+    from app.core.db import SessionLocal
+    from app.agents.orchestrator import run_multi_agent_analysis
+    import logging
+    
+    logger = logging.getLogger("silverpilot.agents.orchestrator.background")
+    db = SessionLocal()
+    try:
+        logger.info(f"Running multi-agent analysis background task for signal_id={signal_id}")
+        await run_multi_agent_analysis(db, signal_id=signal_id)
+        logger.info("Multi-agent analysis background task completed successfully")
+    except Exception as e:
+        logger.error(f"Error running multi-agent analysis in background: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+@router.post("/agent/orchestrate/run", status_code=202)
+async def trigger_orchestrator(
+    payload: OrchestrateRunRequest = OrchestrateRunRequest(),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    _: None = Depends(verify_agent_token)
+):
+    """
+    Triggers the multi-agent analysis orchestrator in the background.
+    """
+    background_tasks.add_task(run_orchestrate_background, payload.signal_id)
+    return {
+        "status": "accepted",
+        "message": "Multi-agent analysis triggered in background."
+    }
+
 

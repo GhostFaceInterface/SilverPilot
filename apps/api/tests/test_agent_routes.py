@@ -232,3 +232,16 @@ def test_agent_trigger_endpoints():
     )
     assert response_404.status_code == 404
     assert "not found" in response_404.json()["detail"]
+
+    # 4. Test POST /agent/orchestrate/run
+    assert client.post("/agent/orchestrate/run").status_code == 401
+    
+    from unittest.mock import patch
+    with patch("app.agents.orchestrator.run_multi_agent_analysis") as mock_orchestrator:
+        mock_orchestrator.return_value = {"status": "success"}
+        response = client.post("/agent/orchestrate/run", headers={"X-Agent-Token": "test_token"})
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "accepted"
+        assert "triggered in background" in data["message"]
+

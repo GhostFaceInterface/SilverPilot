@@ -159,6 +159,14 @@ def load_dashboard_data(api_base_url: str) -> dict[str, Any]:
         endpoints["llm_traces"] = "/agent/traces?limit=50"
         endpoints["news_memory"] = "/agent/memory?agent_name=news-agent&event_type=news_sentiment&limit=5"
         endpoints["risk_memory"] = "/agent/memory?agent_name=risk-agent&event_type=signal_critique&limit=5"
+        endpoints["orchestrator_disagreements"] = "/agent/memory?agent_name=orchestrator&event_type=agent_disagreement&limit=5"
+        endpoints["orchestrator_resolutions"] = "/agent/memory?agent_name=orchestrator&event_type=disagreement_resolution&limit=5"
+        endpoints["market_research_memory"] = "/agent/memory?agent_name=market-research-agent&event_type=market_trend&limit=5"
+        endpoints["ml_analyst_memory"] = "/agent/memory?agent_name=ml-analyst-agent&event_type=ml_analysis&limit=5"
+        endpoints["source_reliability_memory"] = "/agent/memory?agent_name=source-reliability-agent&event_type=source_reliability&limit=5"
+        endpoints["postmortem_memory"] = "/agent/memory?agent_name=postmortem-agent&event_type=postmortem_analysis&limit=5"
+        endpoints["auditor_memory"] = "/agent/memory?agent_name=auditor-agent&event_type=system_audit&limit=5"
+
         
     data: dict[str, Any] = {}
     errors: list[str] = []
@@ -700,6 +708,203 @@ def render_active_agents(data: dict[str, Any]) -> None:
             st.info("Click the button above to synthesize and compile a daily performance report.")
 
 
+def render_advanced_analysis(data: dict[str, Any]) -> None:
+    st.subheader("🤖 Advanced Multi-Agent Analysis & Orchestration Panel")
+    st.caption("Coordinate the sequence of specialized advisory agents (Market Research, ML Analyst, Source Reliability, Postmortem, and Auditor) and view conflict resolution by the Supreme Arbiter.")
+
+    token = os.getenv("AGENT_API_TOKEN", "")
+    if not token:
+        st.warning("⚠️ AGENT_API_TOKEN is not configured. Triggering agents and viewing memory events are disabled for security.")
+        return
+
+    # Trigger panel
+    st.markdown("### 🧠 Orchestration Execution")
+    col_in, col_btn = st.columns([2, 1])
+    with col_in:
+        signal_id_str = st.text_input("Signal ID (Optional - Leave empty to run overall system analysis)", key="orch_sig_input")
+    with col_btn:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("Run Multi-Agent Analysis Pipeline", key="trigger_orch_btn"):
+            payload = {}
+            if signal_id_str.strip().isdigit():
+                payload["signal_id"] = int(signal_id_str.strip())
+            with st.spinner("Executing full multi-agent sequence..."):
+                res, err = post_json("/agent/orchestrate/run", payload)
+                if err:
+                    st.error(f"Failed to trigger orchestrator: {err}")
+                else:
+                    st.success("Multi-agent analysis triggered in the background! Please wait a few seconds and refresh to view results.")
+                    st.cache_data.clear()
+
+    st.markdown("---")
+
+    # Supreme Arbiter Section
+    st.markdown("### ⚖️ Supreme Arbiter Conflict Resolutions")
+    
+    resolutions = data.get("orchestrator_resolutions") or []
+    disagreements = data.get("orchestrator_disagreements") or []
+
+    if resolutions:
+        latest_res = resolutions[0]
+        res_val = latest_res.get("value_json") or {}
+        resolved_stance = res_val.get("resolved_stance", "NEUTRAL")
+        confidence = res_val.get("confidence", 0.0)
+        resolution_md = res_val.get("resolution_markdown", "")
+        resolved_at = res_val.get("resolved_at", latest_res.get("created_at", "-"))
+
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.markdown(f"**Resolution Stamp:** {resolved_at[:19]}")
+            if resolved_stance in ("BULLISH", "ALLOW"):
+                st.success(f"📈 **{resolved_stance}**\n\nConfidence: {confidence:.1%}")
+            elif resolved_stance in ("BEARISH", "VETO"):
+                st.error(f"📉 **{resolved_stance}**\n\nConfidence: {confidence:.1%}")
+            else:
+                st.warning(f"➡️ **{resolved_stance}**\n\nConfidence: {confidence:.1%}")
+        with c2:
+            st.info("⚖️ **Arbiter Resolution Analysis**")
+            st.markdown(resolution_md)
+
+        # Show conflicts details
+        with st.expander("Inspect Detected Conflicts"):
+            if res_val.get("disagreements"):
+                for d in res_val["disagreements"]:
+                    st.markdown(f"- **Type:** `{d.get('type')}`  \n  **Description:** {d.get('description')}")
+            else:
+                st.info("No explicit conflicts were recorded in the resolution payload.")
+                
+        # Historic resolutions
+        if len(resolutions) > 1:
+            with st.expander("Show Resolution History"):
+                for r in resolutions[1:]:
+                    r_val = r.get("value_json") or {}
+                    st.markdown(f"**{r_val.get('resolved_at', r.get('created_at', ''))[:16]}** - `{r_val.get('resolved_stance')}` (Conf: {r_val.get('confidence', 0.0):.1%})")
+                    st.markdown(r_val.get("resolution_markdown", ""))
+                    st.markdown("---")
+    else:
+        st.info("No Supreme Arbiter resolutions found in memory. Run the pipeline when there are conflicting agent decisions to see the Arbiter in action.")
+
+    st.markdown("---")
+
+    # Advisory Agent outputs
+    st.markdown("### 🤖 Persisted Advisor Agent Insights")
+    
+    agent_tabs = st.tabs([
+        "📈 Market Research",
+        "🔬 ML Analyst",
+        "🔌 Source Reliability",
+        "🏥 Postmortem Diagnostics",
+        "📝 System Auditor"
+    ])
+
+    # Market Research
+    with agent_tabs[0]:
+        mr_mem = data.get("market_research_memory") or []
+        if mr_mem:
+            latest = mr_mem[0]
+            val = latest.get("value_json") or {}
+            sent = val.get("sentiment", "NEUTRAL")
+            conf = val.get("confidence", 0.0)
+            summary = val.get("summary_markdown", "")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
+                if sent == "BULLISH":
+                    st.success(f"📈 **BULLISH**  \nConfidence: {conf:.1%}")
+                elif sent == "BEARISH":
+                    st.error(f"📉 **BEARISH**  \nConfidence: {conf:.1%}")
+                else:
+                    st.warning(f"➡️ **NEUTRAL**  \nConfidence: {conf:.1%}")
+            with c2:
+                st.markdown("**Market Sentiment & Indicators Summary:**")
+                st.markdown(summary)
+        else:
+            st.info("No Market Research Agent reports found.")
+
+    # ML Analyst
+    with agent_tabs[1]:
+        ml_mem = data.get("ml_analyst_memory") or []
+        if ml_mem:
+            latest = ml_mem[0]
+            val = latest.get("value_json") or {}
+            rec = val.get("recommendation", "NEUTRAL")
+            conf = val.get("confidence", 0.0)
+            analysis = val.get("analysis_markdown", "")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
+                if rec == "APPROVE":
+                    st.success(f"✅ **APPROVE**  \nConfidence: {conf:.1%}")
+                elif rec == "VETO":
+                    st.error(f"❌ **VETO**  \nConfidence: {conf:.1%}")
+                else:
+                    st.warning(f"➡️ **NEUTRAL**  \nConfidence: {conf:.1%}")
+            with c2:
+                st.markdown("**ML Prediction & Signal Quality Critique:**")
+                st.markdown(analysis)
+        else:
+            st.info("No ML Analyst Agent reports found.")
+
+    # Source Reliability
+    with agent_tabs[2]:
+        sr_mem = data.get("source_reliability_memory") or []
+        if sr_mem:
+            latest = sr_mem[0]
+            val = latest.get("value_json") or {}
+            status = val.get("status", "healthy")
+            summary = val.get("summary_markdown", "")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
+                if status == "healthy":
+                    st.success(f"💚 **HEALTHY**")
+                elif status == "degraded":
+                    st.warning(f"⚠️ **DEGRADED**")
+                else:
+                    st.error(f"🚨 **CRITICAL**")
+            with c2:
+                st.markdown("**Source Integrity & Health Audit:**")
+                st.markdown(summary)
+        else:
+            st.info("No Source Reliability Agent reports found.")
+
+    # Postmortem
+    with agent_tabs[3]:
+        pm_mem = data.get("postmortem_memory") or []
+        if pm_mem:
+            latest = pm_mem[0]
+            val = latest.get("value_json") or {}
+            blocked_count = val.get("blocked_trades_count", 0)
+            details = val.get("details_markdown", "")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
+                st.metric("Blocked Trades Count", str(blocked_count))
+            with c2:
+                st.markdown("**Blocked/Failed Trades Incident Analysis:**")
+                st.markdown(details)
+        else:
+            st.info("No Postmortem Agent reports found.")
+
+    # Auditor
+    with agent_tabs[4]:
+        aud_mem = data.get("auditor_memory") or []
+        if aud_mem:
+            latest = aud_mem[0]
+            val = latest.get("value_json") or {}
+            audit = val.get("audit_markdown", "")
+            
+            st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
+            st.markdown("**Budget Guard & Telemetry Audit Report:**")
+            st.markdown(audit)
+        else:
+            st.info("No System Auditor Agent reports found.")
+
+
 st.title("SilverPilot")
 st.caption(f"Read-only dashboard from {API_BASE_URL} - loaded {utc_now_label()}")
 
@@ -710,13 +915,14 @@ if st.button("Refresh"):
 dashboard_data = load_dashboard_data(API_BASE_URL)
 
 # Premium Tabs Interface
-tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability, tab_active_agents = st.tabs([
+tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability, tab_active_agents, tab_advanced_analysis = st.tabs([
     "💼 Portfolio & Overview",
     "🛡️ Risk Diagnostics",
     "🔌 Collectors Health",
     "📊 Global XAG Samples",
     "👁️ LLM Observability",
-    "🤖 Active Financial Agents"
+    "🤖 Active Financial Agents",
+    "🧠 Advanced Multi-Agent Analysis"
 ])
 
 with tab_portfolio:
@@ -737,3 +943,7 @@ with tab_observability:
 
 with tab_active_agents:
     render_active_agents(dashboard_data)
+
+with tab_advanced_analysis:
+    render_advanced_analysis(dashboard_data)
+
