@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-21
+updated: 2026-05-22
 ---
 
 # Technical Stack & Architectural Decisions
@@ -70,3 +70,10 @@ updated: 2026-05-21
 - **Agent Veto Filters:** Strategy decisions (`BUY`) are filtered through historical agent decisions inside `StrategyRunner.apply_agent_filters`. Ham signals are vetoed to `HOLD` on `BEARISH` news sentiment or `REJECTED` risk critiques.
 - **Lookback Tolerance Window:** A 24-hour lookback window is implemented. If no cached agent decision exists in that window, the backtester gracefully falls back to baseline deterministic decisions (avoiding cold-start crashes).
 - **Argparse Python 3.14 Compatibility:** Replaced raw `%` signs with the word `"percent"` in script descriptions to prevent argparse crashes under Python 3.14.
+
+## 12. Advanced Multi-Agent Analysis & Supreme Arbiter (Phase 12 - May 2026)
+- **DeepSeek V4 Model Cascading:** Transitioned from legacy `deepseek-chat` and `deepseek-reasoner` to the official DeepSeek V4 model family:
+  - **`deepseek-v4-flash`** for lightweight sentiment, news-agent, market-research, and source-reliability advisory tasks.
+  - **`deepseek-v4-pro`** for deep cognitive evaluation, auditing, postmortem, and Supreme Arbiter dispute resolution.
+- **Supreme Arbiter (Yüce Hakem) Pattern:** Established a centralized conflict resolution orchestrator (`orchestrator.py`) that sequences 5 expert agents. If agent decisions or advisory outputs produce opposing trade sentiments or veto recommendations, the orchestrator escalates the analysis to a `deepseek-v4-pro` arbiter instance to dynamically synthesize a unified, risk-safe resolution.
+- **Port Isolation & Zero-Trust DB Interaction:** In strict compliance with TIER 0 guidelines, all new expert agents interact with the system database exclusively via FastAPI HTTP endpoints (securely wrapped in background threads using fresh `SessionLocal` contexts to avoid connection leaks) rather than direct TCP port connections.
