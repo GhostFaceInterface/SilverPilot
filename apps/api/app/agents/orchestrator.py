@@ -275,3 +275,113 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
         "resolution": resolution_event.id if resolution_event else None,
         "conflict_detected": len(disagreements) > 0,
     }
+
+
+async def run_blended_consensus_resolution(
+    db: Session, regime_info: dict, strategy_votes: dict, latest_snapshot
+) -> AgentMemoryEvent:
+    """
+    Blended Agentic Regime & Consensus Engine (Supreme Arbiter).
+    Weights and resolves votes based on current Market Regime using deepseek-v4-pro.
+    Saves the resolution into AgentMemoryEvent table under 'blended_consensus_resolution'.
+    """
+    from app.core.config import get_settings
+    settings = get_settings()
+    model = getattr(settings, "agent_risk_model", "deepseek-v4-pro") or "deepseek-v4-pro"
+
+    system_prompt = (
+        "You are the Supreme Financial Arbiter and Blended Consensus Engine for SilverPilot.\n"
+        "Your task is to weight and consolidate multiple strategy signals (RSI, Bollinger Bands, SMA Cross) "
+        "based on the detected Market Regime to determine a unified resolved stance.\n"
+        "Guideline weighting rules:\n"
+        "- In a SIDEWAYS regime, prioritize mean-reversion strategies like RSI and Bollinger Bands (e.g. 70-80% weight).\n"
+        "- In a TRENDING regime (TRENDING_UP / TRENDING_DOWN), prioritize trend-following strategies like SMA Cross (e.g. 70-80% weight).\n"
+        "You must output a unified consolidated resolved stance: BULLISH, BEARISH, or NEUTRAL.\n"
+        "You must respond ONLY with a raw JSON object containing exactly the following keys:\n"
+        '- "resolved_stance": string, must be one of "BULLISH", "BEARISH", or "NEUTRAL"\n'
+        '- "confidence": float, a confidence score between 0.0 and 1.0 representing your certainty\n'
+        '- "resolution_markdown": string, a highly-styled, comprehensive technical explanation of how you weighted the votes '
+        "in this market regime and your final justification.\n\n"
+        "Example response format:\n"
+        "{\n"
+        '  "resolved_stance": "BULLISH",\n'
+        '  "confidence": 0.85,\n'
+        '  "resolution_markdown": "Yatay piyasada (SIDEWAYS) RSI aşırı satım bölgesinde ve Bollinger alt bandına yakın. Trend zayıf olduğu için SMA sinyali göz ardı edildi."\n'
+        "}\n"
+        "Provide ONLY the JSON response without markdown code blocks, text wrapper, or explanations."
+    )
+
+    mid_p = float(latest_snapshot.mid_price) if latest_snapshot else 0.0
+    user_prompt = (
+        f"Consensus Resolution Inputs:\n\n"
+        f"Market Snapshot Price: {mid_p:.4f} USD/oz\n"
+        f"Detected Market Regime: {regime_info.get('regime', 'SIDEWAYS')} (ADX: {regime_info.get('adx', 0.0):.2f}, Bollinger Bandwidth: {regime_info.get('bb_bandwidth', 0.0):.4f})\n\n"
+        f"Strategy Votes:\n"
+        f"- RSI (14): {strategy_votes.get('rsi', {}).get('action')} ({strategy_votes.get('rsi', {}).get('reason')})\n"
+        f"- Bollinger Bands: {strategy_votes.get('bollinger', {}).get('action')} ({strategy_votes.get('bollinger', {}).get('reason')})\n"
+        f"- SMA Cross (20/50): {strategy_votes.get('sma_cross', {}).get('action')} ({strategy_votes.get('sma_cross', {}).get('reason')})\n"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    logger.info(f"Calling Supreme Consensus Arbiter using model: {model}")
+    try:
+        response = await DeepSeekGateway.generate_completion(
+            db=db,
+            agent_name="blended-consensus-arbiter",
+            model=model,
+            messages=messages,
+            temperature=0.1,
+        )
+        raw_content = response.get("content", "").strip()
+
+        # Clean markdown code wrapper if present
+        if raw_content.startswith("```"):
+            lines = raw_content.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw_content = "\n".join(lines).strip()
+
+        if "```json" in raw_content:
+            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_content:
+            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+
+        data = json.loads(raw_content)
+        resolved_stance = str(data.get("resolved_stance", "NEUTRAL")).upper()
+        if resolved_stance not in {"BULLISH", "BEARISH", "NEUTRAL"}:
+            resolved_stance = "NEUTRAL"
+        confidence = float(data.get("confidence", 0.5))
+        confidence = max(0.0, min(1.0, confidence))
+        resolution_markdown = str(data.get("resolution_markdown", "No details provided by arbiter."))
+
+    except Exception as e:
+        logger.error(f"Supreme Arbiter call failed in blended consensus: {e}", exc_info=True)
+        resolved_stance = "NEUTRAL"
+        confidence = 0.5
+        resolution_markdown = f"Consensus evaluation failed to run or parse: {e}"
+
+    now = datetime.now(timezone.utc)
+    timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+    event = AgentMemoryEvent(
+        agent_name="blended_consensus_orchestrator",
+        event_type="blended_consensus_resolution",
+        key=f"blended_{timestamp_str}",
+        value_json={
+            "resolved_stance": resolved_stance,
+            "confidence": confidence,
+            "resolution_markdown": resolution_markdown,
+            "regime_info": regime_info,
+            "strategy_votes": strategy_votes,
+            "recorded_at": now.isoformat(),
+        }
+    )
+    db.add(event)
+    db.flush()
+    logger.info(f"Blended Consensus Resolution event created: {event.id}")
+    return event

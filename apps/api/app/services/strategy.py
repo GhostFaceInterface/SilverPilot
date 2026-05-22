@@ -4,7 +4,7 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 
-StrategyType = Literal["rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents"]
+StrategyType = Literal["rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents", "blended"]
 
 
 class StrategyRunner:
@@ -127,6 +127,33 @@ class StrategyRunner:
         return "HOLD", "BB_NEUTRAL"
 
     @classmethod
+    def evaluate_blended_strategies(
+        cls,
+        close: Decimal | float | None,
+        rsi_14: Decimal | float | None,
+        sma_20: Decimal | float | None,
+        sma_50: Decimal | float | None,
+        prev_sma_20: Decimal | float | None,
+        prev_sma_50: Decimal | float | None,
+        bb_lower: Decimal | float | None,
+        bb_upper: Decimal | float | None,
+        has_open_position: bool,
+    ) -> dict:
+        """
+        Executes RSI, Bollinger, and SMA Cross strategies concurrently and returns their votes.
+        """
+        rsi_act, rsi_reason = cls.evaluate_rsi_strategy(rsi_14, has_open_position)
+        bb_act, bb_reason = cls.evaluate_bb_strategy(close, bb_lower, bb_upper, has_open_position)
+        sma_act, sma_reason = cls.evaluate_sma_cross_strategy(
+            sma_20, sma_50, prev_sma_20, prev_sma_50, has_open_position
+        )
+        return {
+            "rsi": {"action": rsi_act, "reason": rsi_reason},
+            "bollinger": {"action": bb_act, "reason": bb_reason},
+            "sma_cross": {"action": sma_act, "reason": sma_reason},
+        }
+
+    @classmethod
     def evaluate_all_strategies(
         cls,
         close: Decimal | float | None,
@@ -151,6 +178,19 @@ class StrategyRunner:
             )
         elif strategy_name == "bollinger":
             return cls.evaluate_bb_strategy(close, bb_lower, bb_upper, has_open_position)
+        elif strategy_name == "blended":
+            # For back-compatibility or simple non-agentic evaluation, return the majority action
+            votes = cls.evaluate_blended_strategies(
+                close, rsi_14, sma_20, sma_50, prev_sma_20, prev_sma_50, bb_lower, bb_upper, has_open_position
+            )
+            actions = [votes["rsi"]["action"], votes["bollinger"]["action"], votes["sma_cross"]["action"]]
+            buy_count = actions.count("BUY")
+            sell_count = actions.count("SELL")
+            if buy_count > sell_count and buy_count >= 1:
+                return "BUY", "BLENDED_MAJORITY"
+            elif sell_count > buy_count and sell_count >= 1:
+                return "SELL", "BLENDED_MAJORITY"
+            return "HOLD", "BLENDED_NEUTRAL"
         else:
             return "HOLD", "UNKNOWN_STRATEGY"
 

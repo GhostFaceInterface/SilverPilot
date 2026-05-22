@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import time
 from datetime import UTC, datetime
@@ -130,6 +131,7 @@ def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser(description="Run SilverPilot collector jobs.")
     parser.add_argument("--loop", action="store_true", help="Run continuously.")
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "900")))
