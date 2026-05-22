@@ -1,9 +1,20 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes import router
 from app.core.config import get_settings
+
+# Configure structured logging for silverpilot loggers
+logging.basicConfig(level=logging.INFO)
+silverpilot_logger = logging.getLogger("silverpilot")
+silverpilot_logger.setLevel(logging.INFO)
+if not silverpilot_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    silverpilot_logger.addHandler(handler)
+
 
 
 @asynccontextmanager
