@@ -1,48 +1,59 @@
-# Implementation Plan: Phase 13 - Telegram Portfolio & Diagnostics Bot
+# Implementation Plan: Phase 14 - Automated Paper-Trading Runner & Telegram Alerts
 
-Bu plan, SilverPilot projesinde **Phase 13: Telegram Portfolio & Diagnostics Bot** entegrasyonunun tasarım, güvenlik, test ve canlıya alma adımlarını detaylandırmaktadır. 
+Bu plan, SilverPilot projesinde **Phase 14: Automated Paper-Trading Runner & Telegram Alerts** entegrasyonunun tasarım, güvenlik, test ve canlıya alma adımlarını detaylandırmaktadır. Bu entegrasyon sayesinde, fiyat toplayıcı (collector) yeni bir gümüş spot fiyatı çektiğinde otomatik olarak teknik indikatörleri analiz edecek, aktif stratejiye (RSI/SMA) göre sinyaller üretecek, risk süzgecinden geçirip simüle alım/satım (paper-trade) işlemlerini otomatik gerçekleştirecek ve anında Telegram üzerinden bildirim gönderecektir.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
 - **Etkilenen Politikalar:**
-  - *Deterministic Risk Authority:* Telegram botu kesinlikle herhangi bir AL/SAT işlemi tetikleyemez, sadece salt okunur (read-only) durum raporlaması yapar.
-  - *Port Isolation:* Telegram botu veri tabanına doğrudan TCP portları üzerinden bağlanamaz. Tüm sorgulamalar local FastAPI endpoints veya FastAPI servis katmanı üzerinden yürütülecektir.
-  - *Zero-Trust Access Control (Sadece Size Özel):* Bot, dışarıdan gelebilecek güvenlik ihlallerini önlemek için yalnızca yapılandırılmış tek bir `TELEGRAM_CHAT_ID` üzerinden gelen komutlara yanıt verecektir. Farklı kişilerden gelen komutlar anında bloklanacak ve loglanacaktır.
+  - *Deterministic Risk Authority:* Tüm otomatik işlemler `evaluate_paper_trade_risk` süzgecinden geçecektir. Risk kurallarını aşan işlemler engellenerek `blocked` olarak kaydedilecek ve kullanıcıya risk uyarısı gönderilecektir.
+  - *Port Isolation:* Otomatik işlem döngüsü FastAPI veritabanı oturum katmanı (`SessionLocal()`) üzerinden yürütülecektir. Sızıntıları önlemek için context manager kullanılacaktır.
+  - *Zero-Trust Access Control:* Otomatik işlem bildirimleri yalnızca yapılandırılmış `TELEGRAM_CHAT_ID` değerine gönderilecektir.
+- **Etkilenen Şemalar:**
+  - `signals` (Yeni üretilen strateji sinyalleri kaydedilecek)
+  - `paper_trades` (Gerçekleşen veya engellenen otomatik simüle işlemler yazılacak)
+  - `portfolios` / `portfolio_snapshots` (Nakit bakiyesi ve gümüş miktarı güncellenecek)
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[x]` **Faz 1: Konfigürasyon ve Çevre Değişkenleri**
-  - `[x]` `.env` ve `apps/api/app/core/config.py` içerisine `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_MODE`, `TELEGRAM_WEBHOOK_URL` parametrelerinin eklenmesi (Ajan: `backend-architect` / `security-auditor`)
-  - *DoD (Tamamlanma Tanımı):* FastAPI başladığında yeni konfigürasyon değerlerinin hatasız okunabilmesi.
+- `[x]` **Faz 1: Konfigürasyon Güncellemesi**
+  - `[x]` `apps/api/app/core/config.py` içerisine `strategy_name: str = "rsi"` (kullanılacak varsayılan strateji) ve otomatik işlem bildirimlerini açıp kapatmak için `auto_trading_enabled: bool = True` parametrelerinin eklenmesi.
+  - *DoD (Tamamlanma Tanımı):* `get_settings()` çağrıldığında yeni parametrelerin varsayılan değerleriyle hatasız okunması.
 
-- `[x]` **Faz 2: Secure Webhook API Rotaları ve Güvenlik Filtresi**
-  - `[x]` FastAPI Webhook Rotası (`apps/api/app/api/routes.py`) `POST /agent/telegram/webhook` rotasını açmak.
-  - `[x]` Telegram İmza/Token Doğrulaması ve Chat ID Filtrelemesi eklemek.
-  - `[x]` Background Task entegrasyonu ile milisaniyeler içinde 200 OK dönmek.
-  - *DoD:* Gelen webhook isteklerine API'nin anında 200 OK dönmesi.
+- `[x]` **Faz 2: Otomatik Ticaret Servisi (Auto Trader Service)**
+  - `[x]` `apps/api/app/services/auto_trader.py` *[NEW]* dosyasının oluşturulması. Bu dosya:
+    - `run_auto_trading(db: Session)` fonksiyonunu içerir.
+    - `default-paper` portföyünü ve `XAG` gümüş varlığını çeker.
+    - `yahoo-si-f` kaynağından en son iki `TechnicalIndicator` kaydını sorgular.
+    - `StrategyRunner.evaluate_all_strategies` fonksiyonu ile sinyal (BUY/SELL/HOLD) üretir.
+    - Sinyal `BUY` ise ve pozisyon yoksa, cüzdandaki tüm nakitle (`cash_balance`) simüle alım yapar.
+    - Sinyal `SELL` ise ve açık gümüş pozisyonu varsa, tüm gümüşü simüle satar.
+    - İşlem gerçekleştiğinde veya risk engeline takıldığında Telegram (`TELEGRAM_CHAT_ID`) üzerinden anlık bildirim atar.
+  - *DoD:* Servis fonksiyonunun bağımsız Python çağrısıyla (mock verilerle) hatasız çalışması ve sinyal üretebilmesi.
 
-- `[x]` **Faz 3: Bot Komut İşleyicisi ve Port-Isolated Servis Tasarımı**
-  - `[x]` Command Parser & Formatters (`apps/api/app/agents/telegram_bot.py` *[NEW]*) oluşturmak.
-  - `[x]` `/durum`, `/cuzdan`, `/karzarar` ve `/ajanlar` komutlarını şık Markdown formatında yanıtlayacak fonksiyonların yazılması (Ajan: `backend-architect` / `data-engineer`).
-  - *DoD:* Servis fonksiyonlarının yerel mock veritabanı sorgularıyla hatasız markdown çıktısı üretmesi.
+- `[x]` **Faz 3: Collector Döngüsü Entegrasyonu**
+  - `[x]` `apps/api/app/collectors/runner.py` içindeki `run_once` fonksiyonunda `global-xag-usd` işi bittiğinde `auto_trader.py`'nin tetiklenmesi:
+    ```python
+    if selected_job == "global-xag-usd":
+        # ... global fiyat toplama ...
+        if settings.auto_trading_enabled:
+            import asyncio
+            from app.services.auto_trader import run_auto_trading
+            asyncio.run(run_auto_trading(db))
+    ```
+  - *DoD:* Fiyat toplama döngüsü çalıştığında arka planda otomatik strateji analizi ve işlem motorunun sorunsuz tetiklenmesi.
 
-- `[x]` **Faz 4: Lifespan Webhook Kaydı & Local Polling Geliştirici Modu**
-  - `[x]` FastAPI Lifespan Entegrasyonu (`apps/api/app/main.py`) webhook set/delete işlemlerinin eklenmesi (Ajan: `backend-architect`).
-  - `[x]` `asyncio.create_task` ile arka planda bağımsız bir polling döngüsü (long-polling loop) başlatılması.
-  - *DoD:* FastAPI yerelde polling moduyla başlatıldığında Telegram botunun ngrok olmadan çalışması, webhook modunda ise webhook kaydını başarıyla yapması.
-
-- `[x]` **Faz 5: Kalite Kontrol ve Doğrulama Suite**
-  - `[x]` Birim ve Entegrasyon Testleri (`apps/api/tests/test_telegram.py` *[NEW]*) ile webhook rotasını test etmek (Ajan: `quality-engineer`).
-  - `[x]` Pytest Regresyon Testi: Tüm test suite'inin (142 passed) sıfır hata ile yeşil geçmesini doğrulamak.
-  - `[x]` Otomatik Git Commit & Push: Değişiklikleri uzak depoya otomatik push etmek.
-  - *DoD:* `pytest` suite'indeki tüm testlerin (142 test) sıfır hata ile yeşil geçmesi.
+- `[x]` **Faz 4: Kalite Kontrol, Doğrulama ve Canlı Testler**
+  - `[x]` Birim test dosyası `apps/api/tests/test_auto_trader.py` *[NEW]* oluşturulması. Strateji sinyallerinin (oversold/overbought) otomatik alım/satım işlemlerini ve veritabanı kayıtlarını doğru tetiklediğinin mock veritabanı ile test edilmesi.
+  - `[x]` `pytest tests/test_auto_trader.py` komutunun tamamen yeşil geçmesi.
+  - `[x]` Değişikliklerin test edildikten sonra otomatik olarak git commit ve git push işlemlerinin yapılması.
+  - *DoD:* Bütün pytest test süitinin (143+ test) sıfır hata ile yeşil geçmesi.
 
 ---
 
 ## ❓ Açık Sorular & Kullanıcı Görüşü
 > [!IMPORTANT]
-> 1. **Telegram Token ve Chat ID:** Bu aşamada testleri yerelde mock veriyle yürüteceğimiz için gerçek Telegram token değerini `.env` içine yazmanız yeterlidir. Chat ID'nizi öğrenmek için Telegram'da `@userinfobot` botuna herhangi bir mesaj göndererek `Id:` kısmını alıp `.env` dosyasına `TELEGRAM_CHAT_ID=xxxxxx` olarak tanımlamanız gerekecektir.
-> 2. **Telegram Kütüphanesi:** Projeye hafiflik kazandırmak adına asenkron HTTP tabanlı `httpx` üzerinden minimal sarmalayıcı mı kullanalım, yoksa `python-telegram-bot` kütüphanesini `apps/api/requirements.txt` dosyasına ekleyelim mi? (Hafiflik ve sürdürülebilirlik açısından `python-telegram-bot` kütüphanesini kullanmak komut parse etme ve buton ekleme işlerimizi çok kolaylaştıracaktır).
+> 1. **Strateji Seçimi:** Otomatik alım-satım için varsayılan olarak **RSI** stratejisini (`RSI < 30` oversold iken BUY, `RSI > 70` overbought iken SELL) kullanacağız. Dilerseniz bunu `sma_cross` veya `bollinger` olarak da ayarlayabilirsiniz.
+> 2. **Telegram Bildirim Formatı:** Otomatik işlemler gerçekleştiğinde botunuzdan size gelecek bildirim mesajının Markdown formatında şık bir tasarımı olacaktır. Bu tasarımı onaylıyor musunuz?

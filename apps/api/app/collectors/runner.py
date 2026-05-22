@@ -59,6 +59,23 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
                 f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
                 flush=True,
             )
+            from app.core.config import get_settings
+            settings = get_settings()
+            if settings.auto_trading_enabled:
+                import asyncio
+                from app.services.auto_trader import run_auto_trading
+                try:
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+
+                    if loop and loop.is_running():
+                        asyncio.ensure_future(run_auto_trading(db))
+                    else:
+                        asyncio.run(run_auto_trading(db))
+                except Exception as e:
+                    print(f"Error running auto trading: {e}", flush=True)
             return run.status == "success"
         if selected_job == "tcmb-usd-try":
             run, raw_inserted = collect_tcmb_usd_try(db)

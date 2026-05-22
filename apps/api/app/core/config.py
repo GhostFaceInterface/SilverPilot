@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     risk_ml_min_probability: float = Field(default=0.50, ge=0.0, le=1.0)
     risk_ml_model_path: str = "data/models/champion_model.pkl"
 
+    strategy_name: str = "rsi"
+    auto_trading_enabled: bool = True
+
 
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"
