@@ -18,6 +18,7 @@ from app.models.entities import (
     TechnicalIndicator,
     LLMCallTrace,
     AgentMemoryEvent,
+    HistoricalAgentCache,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "TechnicalIndicator",
     "LLMCallTrace",
     "AgentMemoryEvent",
+    "HistoricalAgentCache",
 ]

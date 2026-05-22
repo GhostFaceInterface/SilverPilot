@@ -337,5 +337,16 @@ class AgentMemoryEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
+class HistoricalAgentCache(Base):
+    __tablename__ = "historical_agent_caches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_name: Mapped[str] = mapped_column(String(128), index=True)      # news-agent, risk-agent
+    event_type: Mapped[str] = mapped_column(String(64), index=True)       # news_sentiment, signal_critique
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True) # Eşleşen bar zamanı
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)          # Sentiment/Critique JSON payload
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 Index("ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at)
 
