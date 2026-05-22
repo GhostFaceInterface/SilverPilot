@@ -324,6 +324,36 @@ def run_backtest(
 
         total_records = len(records)
         if total_records == 0:
+            if timeframe == "1d":
+                print("\033[1;33m[INFO] No 1d price snapshots found. Trying fallback to 5m timeframe and 'yahoo-si-f' source...\033[0m")
+                timeframe = "5m"
+                source_name = "yahoo-si-f"
+                records = (
+                    db.query(PriceSnapshot, TechnicalIndicator)
+                    .join(TechnicalIndicator, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
+                    .filter(PriceSnapshot.asset_id == asset.id)
+                    .filter(PriceSnapshot.source == source_name)
+                    .filter(TechnicalIndicator.timeframe == timeframe)
+                    .order_by(PriceSnapshot.observed_at.asc())
+                    .all()
+                )
+                total_records = len(records)
+
+            if total_records == 0 and timeframe == "5m" and source_name == "yahoo-si-f-5m":
+                print("\033[1;33m[INFO] No yahoo-si-f-5m records found. Trying fallback to 'yahoo-si-f'...\033[0m")
+                source_name = "yahoo-si-f"
+                records = (
+                    db.query(PriceSnapshot, TechnicalIndicator)
+                    .join(TechnicalIndicator, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
+                    .filter(PriceSnapshot.asset_id == asset.id)
+                    .filter(PriceSnapshot.source == source_name)
+                    .filter(TechnicalIndicator.timeframe == timeframe)
+                    .order_by(PriceSnapshot.observed_at.asc())
+                    .all()
+                )
+                total_records = len(records)
+
+        if total_records == 0:
             print(f"\033[1;31m[ERROR] No price snapshot records found for source '{source_name}' and timeframe '{timeframe}'!\033[0m")
             return
 
