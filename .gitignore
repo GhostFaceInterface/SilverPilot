@@ -35,3 +35,4 @@ notebooks/*
 # Logs
 *.log
 logs/
+mlruns/
