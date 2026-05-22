@@ -41,7 +41,15 @@ def fixture_db_session():
     return TestingSessionLocal
 
 
-def seed_historical_data(db_session_class, prices: list[float], rsis: list[float]):
+def seed_historical_data(
+    db_session_class,
+    prices: list[float],
+    rsis: list[float | None] | None = None,
+    sma_20s: list[float | None] | None = None,
+    sma_50s: list[float | None] | None = None,
+    bb_lowers: list[float | None] | None = None,
+    bb_uppers: list[float | None] | None = None,
+):
     """Helper to seed mock price snapshots and indicators."""
     db = db_session_class()
     asset = db.query(Asset).filter(Asset.symbol == "XAG").first()
@@ -69,16 +77,17 @@ def seed_historical_data(db_session_class, prices: list[float], rsis: list[float
             bar_timestamp=observed_at,
             timeframe="1d",
             close_usd_oz=Decimal(str(price)),
-            rsi_14=Decimal(str(rsis[idx])) if rsis[idx] is not None else None,
-            sma_20=None,
-            sma_50=None,
-            bb_lower_20_2=None,
-            bb_upper_20_2=None,
+            rsi_14=Decimal(str(rsis[idx])) if rsis and rsis[idx] is not None else None,
+            sma_20=Decimal(str(sma_20s[idx])) if sma_20s and sma_20s[idx] is not None else None,
+            sma_50=Decimal(str(sma_50s[idx])) if sma_50s and sma_50s[idx] is not None else None,
+            bb_lower_20_2=Decimal(str(bb_lowers[idx])) if bb_lowers and bb_lowers[idx] is not None else None,
+            bb_upper_20_2=Decimal(str(bb_uppers[idx])) if bb_uppers and bb_uppers[idx] is not None else None,
         )
         db.add(ti)
         
     db.commit()
     db.close()
+
 
 
 def test_backtest_rsi_oversold_to_overbought(db_session):
@@ -218,3 +227,83 @@ def test_strategy_apply_agent_filters():
     action, reason = StrategyRunner.apply_agent_filters("SELL", "BEARISH", "REJECTED")
     assert action == "SELL"
     assert reason == ""
+
+
+def test_backtest_sma_cross_with_agents_veto(db_session):
+    # Prices start neutral, then we trigger a Golden Cross: SMA 20 crosses above SMA 50
+    # Day 1: SMA 20 = 28.0, SMA 50 = 30.0 (20 <= 50)
+    # Day 2: SMA 20 = 31.0, SMA 50 = 30.0 (20 > 50) -> Golden Cross BUY signal!
+    prices = [30.0, 31.0]
+    sma_20s = [28.0, 31.0]
+    sma_50s = [30.0, 30.0]
+    
+    seed_historical_data(db_session, prices=prices, sma_20s=sma_20s, sma_50s=sma_50s)
+    
+    # Add REJECTED risk-agent cache record for Day 2
+    from app.models.entities import HistoricalAgentCache
+    db = db_session()
+    cache_record = HistoricalAgentCache(
+        agent_name="risk-agent",
+        event_type="signal_critique",
+        timestamp=datetime(2026, 5, 2, 4, 0, tzinfo=UTC),
+        value_json={"decision": "REJECTED"},
+    )
+    db.add(cache_record)
+    db.commit()
+    db.close()
+    
+    with patch("scripts.backtest_engine.SessionLocal", db_session):
+        results = run_backtest(
+            strategy_name="sma_cross_with_agents",
+            timeframe="1d",
+            spread=0.02,
+            tax=0.002,
+            fee=0.05,
+            slippage=0.0005,
+            initial_cash=600.0,
+        )
+        
+        assert results is not None
+        # Veto should have blocked the BUY action, so trades_count should be 0!
+        assert results["trades_count"] == 0
+        assert results["ending_balance"] == 600.0
+
+
+def test_backtest_bollinger_with_agents_veto(db_session):
+    # Bollinger strategy triggers BUY when close <= bb_lower
+    # Day 1: close = 28.0, bb_lower = 29.0 -> close <= bb_lower -> BUY signal!
+    prices = [28.0]
+    bb_lowers = [29.0]
+    bb_uppers = [35.0]
+    
+    seed_historical_data(db_session, prices=prices, bb_lowers=bb_lowers, bb_uppers=bb_uppers)
+    
+    # Add BEARISH news-agent cache record for Day 1
+    from app.models.entities import HistoricalAgentCache
+    db = db_session()
+    cache_record = HistoricalAgentCache(
+        agent_name="news-agent",
+        event_type="news_sentiment",
+        timestamp=datetime(2026, 5, 1, 4, 0, tzinfo=UTC),
+        value_json={"sentiment": "BEARISH"},
+    )
+    db.add(cache_record)
+    db.commit()
+    db.close()
+    
+    with patch("scripts.backtest_engine.SessionLocal", db_session):
+        results = run_backtest(
+            strategy_name="bollinger_with_agents",
+            timeframe="1d",
+            spread=0.02,
+            tax=0.002,
+            fee=0.05,
+            slippage=0.0005,
+            initial_cash=600.0,
+        )
+        
+        assert results is not None
+        # Veto should have blocked the BUY action, so trades_count should be 0!
+        assert results["trades_count"] == 0
+        assert results["ending_balance"] == 600.0
+
