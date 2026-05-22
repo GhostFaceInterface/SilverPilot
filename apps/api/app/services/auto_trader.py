@@ -12,7 +12,7 @@ from app.schemas.paper_trading import PaperTradeRequest
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
 
-async def send_telegram_notification(trade: PaperTrade, portfolio: Portfolio, settings):
+async def send_telegram_notification(trade_data: dict, settings):
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         logger.warning("Telegram configuration missing. Notification skipped.")
         return
@@ -20,13 +20,14 @@ async def send_telegram_notification(trade: PaperTrade, portfolio: Portfolio, se
     # Check action to construct message
     action_str = ""
     status_emoji = ""
-    if trade.action == "paper_buy":
+    action = trade_data["action"]
+    if action == "paper_buy":
         action_str = "ALIM (BUY)"
         status_emoji = "🟢"
-    elif trade.action == "paper_sell":
+    elif action == "paper_sell":
         action_str = "SATIM (SELL)"
         status_emoji = "🔴"
-    elif trade.action == "blocked":
+    elif action == "blocked":
         action_str = "ENGELLENDİ (BLOCKED)"
         status_emoji = "⚠️"
     else:
@@ -35,22 +36,23 @@ async def send_telegram_notification(trade: PaperTrade, portfolio: Portfolio, se
 
     # Construct Markdown message
     risk_info = ""
-    if trade.risk_decision:
+    risk_decision = trade_data.get("risk_decision")
+    if risk_decision:
         risk_info = (
-            f"\n⚖️ *Risk Kararı:* {trade.risk_decision.decision.upper()}\n"
-            f"🔍 *Neden Kodu:* `{trade.risk_decision.reason_code}`\n"
-            f"📊 *Risk Seviyesi:* {trade.risk_decision.risk_level}\n"
+            f"\n⚖️ *Risk Kararı:* {risk_decision['decision'].upper()}\n"
+            f"🔍 *Neden Kodu:* `{risk_decision['reason_code']}`\n"
+            f"📊 *Risk Seviyesi:* {risk_decision['risk_level']}\n"
         )
 
     msg = (
         f"{status_emoji} *SilverPilot Auto-Trading Raporu*\n\n"
         f"🔄 *İşlem Tipi:* {action_str}\n"
         f"🥈 *Varlık:* XAG (Gümüş)\n"
-        f"🏷️ *İşlem Fiyatı:* {trade.price:,.4f} USD/oz\n"
-        f"📦 *Miktar:* {trade.quantity:,.4f} XAG\n"
-        f"💰 *Net Tutar:* {trade.net_amount:,.2f} USD\n"
-        f"💸 *Komisyon (Fees):* {trade.fees:,.2f} USD\n"
-        f"💵 *Yeni Nakit Bakiyesi:* {portfolio.cash_balance:,.2f} USD\n"
+        f"🏷️ *İşlem Fiyatı:* {trade_data['price']:,.4f} USD/oz\n"
+        f"📦 *Miktar:* {trade_data['quantity']:,.4f} XAG\n"
+        f"💰 *Net Tutar:* {trade_data['net_amount']:,.2f} USD\n"
+        f"💸 *Komisyon (Fees):* {trade_data['fees']:,.2f} USD\n"
+        f"💵 *Yeni Nakit Bakiyesi:* {trade_data['cash_balance']:,.2f} USD\n"
         f"{risk_info}"
     )
 
@@ -66,7 +68,7 @@ async def send_telegram_notification(trade: PaperTrade, portfolio: Portfolio, se
         logger.error(f"Failed to send Telegram notification: {e}", exc_info=True)
 
 
-async def run_auto_trading(db: Session):
+async def run_auto_trading(db: Session = None):
     logger.info("Starting run_auto_trading evaluation...")
     settings = get_settings()
 
@@ -74,6 +76,22 @@ async def run_auto_trading(db: Session):
         logger.info("Auto trading is disabled in settings.")
         return
 
+    if db is not None:
+        # Explicit session provided (e.g. from unit tests)
+        await _run_auto_trading_impl(db, settings)
+    else:
+        # Isolated connection block for background production threads/tasks
+        from app.core.db import SessionLocal
+        db_session = SessionLocal()
+        try:
+            await _run_auto_trading_impl(db_session, settings)
+        except Exception as e:
+            logger.error(f"Auto trading loop encountered a fatal exception: {e}", exc_info=True)
+        finally:
+            db_session.close()
+
+
+async def _run_auto_trading_impl(db: Session, settings):
     # 1. Fetch portfolio 'default-paper'
     portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
     if not portfolio:
@@ -174,6 +192,7 @@ async def run_auto_trading(db: Session):
                 trade, snapshot = execute_paper_trade(db, request)
                 logger.info(f"Auto trader BUY executed: trade_id={trade.id}, status={trade.action}")
             except Exception as e:
+                db.rollback()
                 logger.exception("Failed to execute auto trader BUY")
         else:
             logger.warning(f"Insufficient cash balance to buy: {cash}")
@@ -193,11 +212,30 @@ async def run_auto_trading(db: Session):
             trade, snapshot = execute_paper_trade(db, request)
             logger.info(f"Auto trader SELL executed: trade_id={trade.id}, status={trade.action}")
         except Exception as e:
+            db.rollback()
             logger.exception("Failed to execute auto trader SELL")
 
-    # 7. Final commit
+    # 7. Extract notification data prior to commit/close to avoid DetachedInstanceError
+    notification_data = None
+    if trade is not None and trade.action in ("paper_buy", "paper_sell", "blocked"):
+        notification_data = {
+            "action": trade.action,
+            "price": float(trade.price),
+            "quantity": float(trade.quantity),
+            "net_amount": float(trade.net_amount),
+            "fees": float(trade.fees),
+            "cash_balance": float(portfolio.cash_balance),
+            "risk_decision": {
+                "decision": trade.risk_decision.decision,
+                "reason_code": trade.risk_decision.reason_code,
+                "risk_level": trade.risk_decision.risk_level,
+            } if trade.risk_decision else None
+        }
+
+    # Commit transactions
     db.commit()
 
     # 8. Send Telegram message if trade was executed or blocked
-    if trade is not None and trade.action in ("paper_buy", "paper_sell", "blocked"):
-        await send_telegram_notification(trade, portfolio, settings)
+    if notification_data is not None:
+        await send_telegram_notification(notification_data, settings)
+

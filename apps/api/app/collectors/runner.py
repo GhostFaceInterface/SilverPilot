@@ -15,7 +15,6 @@ from app.collectors.public_sources import (
 )
 from app.collectors.service import ingest_manual_price
 from app.core.db import SessionLocal
-from app.core.config import Settings
 from app.schemas.collectors import ManualPriceIngestRequest
 
 JOB_CHOICES = ("manual", "kuveyt-silver", "global-xag-usd", "yahoo-usd-try", "kuveyt-usd-try", "tcmb-usd-try", "fed-rss", "fred-macro")
@@ -44,7 +43,8 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
             return run.status == "success"
 
         if selected_job == "kuveyt-usd-try":
-            run, raw_inserted = collect_kuveyt_usd_try(db, settings=Settings())
+            from app.core.config import get_settings
+            run, raw_inserted = collect_kuveyt_usd_try(db, settings=get_settings())
             print(
                 f"job={selected_job} collector_run_id={run.id} status={run.status} "
                 f"raw_inserted={raw_inserted}",
@@ -71,9 +71,9 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
                         loop = None
 
                     if loop and loop.is_running():
-                        asyncio.ensure_future(run_auto_trading(db))
+                        asyncio.ensure_future(run_auto_trading())
                     else:
-                        asyncio.run(run_auto_trading(db))
+                        asyncio.run(run_auto_trading())
                 except Exception as e:
                     print(f"Error running auto trading: {e}", flush=True)
             return run.status == "success"
