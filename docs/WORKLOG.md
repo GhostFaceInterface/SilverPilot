@@ -423,3 +423,15 @@ Phase 5 dashboard snapshot reviewed and local collector profile restored.
 - Pushed commit `07cb5d3`, pulled it on the VPS, rebuilt the dashboard profile, and smoke-tested dashboard health plus `/collectors/validation-gate` and `/risk/status`.
 - Validation passed: dashboard syntax compile, backend tests, Docker Compose config, diff check, dashboard container health, local validation-gate smoke, and VPS dashboard/gate/risk smoke.
 - No threshold change, backend risk-policy change, real-money execution, bank automation, LLM decisioning, OpenClaw implementation, or secret access was added.
+
+## 2026-05-22
+
+Phase 5.5, 6, 8, 9, 10, and 11 implementation completed.
+
+- **Phase 5.5 (Hybrid Strategy & Backtest Design & Integration):** Implemented historical strategy calculations, indicators (RSI, SMAs, MACD, Bollinger Bands, ATR), and developed backtesting engine simulating spreads, Turkish transaction taxes, and slippage.
+- **Phase 6 (DeepSeek Gateway & Port-Isolated Memory Layer):** Integrated DeepSeek client, Budget Guard ($1.00 max limit), telemetry database log decoraters, and secure FastAPI memory ingestion ports `/agent/memory`.
+- **Phase 8 (Agent-Assisted Strategy Backtesting):** Implemented offline-first historical pre-cached LLM decisions backtest tool (`HistoricalAgentCache`) and strategy veto evaluations.
+- **Phase 9 (ML Dataset Automation):** Constructed time-series ML feature-label dataset generator (`scripts/build_dataset.py`) ensuring zero data-leakage and token security.
+- **Phase 10 (First ML Model & Live Inference):** Trained LightGBM models locally (Off-VPS Training Rule). Integrated FastAPI real-time O(1) inference from pickled model weights, accompanied by pre-trade risk vetoes.
+- **Phase 11 (Model Registry & Scheduled Training):** Fully integrated local MLflow training and model registration tracking. Created automatic evaluation script (`scripts/evaluate_challenger.py`) comparing challenger vs champion. Implemented manual promotion CLI (`scripts/promote_model.py`) generating `champion_metadata.json` and git staging. Implemented token-secured `GET /api/v1/ml/model/active` API visibility endpoint. Fortified full E2E test suite to 133/133 passing green tests and pushed changes to main branch.
+
