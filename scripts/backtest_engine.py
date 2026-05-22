@@ -505,13 +505,13 @@ if __name__ == "__main__":
         "--spread",
         type=float,
         default=0.02,
-        help="Bank bid-ask spread ratio (e.g. 0.02 is 2%)",
+        help="Bank bid-ask spread ratio (e.g. 0.02 is 2 percent)",
     )
     parser.add_argument(
         "--tax",
         type=float,
         default=0.002,
-        help="Turkish transaction sell tax (e.g. 0.002 is 0.2%)",
+        help="Turkish transaction sell tax (e.g. 0.002 is 0.2 percent)",
     )
     parser.add_argument(
         "--fee",
@@ -523,7 +523,7 @@ if __name__ == "__main__":
         "--slippage",
         type=float,
         default=0.0005,
-        help="Latency slippage drag (e.g. 0.0005 is 0.05%)",
+        help="Latency slippage drag (e.g. 0.0005 is 0.05 percent)",
     )
     parser.add_argument(
         "--initial-cash",
