@@ -157,3 +157,64 @@ def test_backtest_drawdown_calculation():
             max_drawdown = dd
             
     assert max_drawdown == 0.25
+
+
+def test_backtest_rsi_with_agents_veto(db_session):
+    # Prices start high, go down (RSI oversold - would trigger BUY), but agent is BEARISH
+    prices = [35.0, 32.0, 25.0]
+    rsis = [65.0, 50.0, 25.0]
+    
+    seed_historical_data(db_session, prices, rsis)
+    
+    # Add BEARISH news-agent cache record
+    from app.models.entities import HistoricalAgentCache
+    db = db_session()
+    cache_record = HistoricalAgentCache(
+        agent_name="news-agent",
+        event_type="news_sentiment",
+        timestamp=datetime(2026, 5, 3, 4, 0, tzinfo=UTC),
+        value_json={"sentiment": "BEARISH"},
+    )
+    db.add(cache_record)
+    db.commit()
+    db.close()
+    
+    with patch("scripts.backtest_engine.SessionLocal", db_session):
+        results = run_backtest(
+            strategy_name="rsi_with_agents",
+            timeframe="1d",
+            spread=0.02,
+            tax=0.002,
+            fee=0.05,
+            slippage=0.0005,
+            initial_cash=600.0,
+        )
+        
+        assert results is not None
+        # Veto should have blocked the BUY action, so trades_count should be 0!
+        assert results["trades_count"] == 0
+        assert results["ending_balance"] == 600.0
+
+
+def test_strategy_apply_agent_filters():
+    from app.services.strategy import StrategyRunner
+    
+    # Test BUY vetoed by news_sentiment
+    action, reason = StrategyRunner.apply_agent_filters("BUY", "BEARISH", "APPROVED")
+    assert action == "HOLD"
+    assert reason == "AGENT_VETO_BEARISH_NEWS"
+    
+    # Test BUY vetoed by risk_decision
+    action, reason = StrategyRunner.apply_agent_filters("BUY", "BULLISH", "REJECTED")
+    assert action == "HOLD"
+    assert reason == "AGENT_VETO_RISK_REJECTED"
+    
+    # Test BUY approved when news is BULLISH and risk is APPROVED
+    action, reason = StrategyRunner.apply_agent_filters("BUY", "BULLISH", "APPROVED")
+    assert action == "BUY"
+    assert reason == ""
+    
+    # Test non-BUY actions are untouched
+    action, reason = StrategyRunner.apply_agent_filters("SELL", "BEARISH", "REJECTED")
+    assert action == "SELL"
+    assert reason == ""

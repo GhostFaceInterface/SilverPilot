@@ -4,7 +4,7 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 
-StrategyType = Literal["rsi", "sma_cross", "bollinger"]
+StrategyType = Literal["rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents"]
 
 
 class StrategyRunner:
@@ -153,6 +153,22 @@ class StrategyRunner:
             return cls.evaluate_bb_strategy(close, bb_lower, bb_upper, has_open_position)
         else:
             return "HOLD", "UNKNOWN_STRATEGY"
+
+    @classmethod
+    def apply_agent_filters(
+        cls, action: str, news_sentiment: str | None, risk_decision: str | None
+    ) -> tuple[str, str]:
+        """
+        Applies agent filters (news sentiment and risk decision) to the strategy action.
+        Vetoes BUY action to HOLD if news_sentiment is BEARISH or risk_decision is REJECTED.
+        """
+        if action == "BUY":
+            if news_sentiment == "BEARISH":
+                return "HOLD", "AGENT_VETO_BEARISH_NEWS"
+            if risk_decision == "REJECTED":
+                return "HOLD", "AGENT_VETO_RISK_REJECTED"
+        return action, ""
+
 
 
 async def trigger_risk_critique_hook(db: Session, signal_id: int) -> "AgentMemoryEvent":
