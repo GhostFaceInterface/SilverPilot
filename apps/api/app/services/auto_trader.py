@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from telegram import Bot
 
 from app.core.config import get_settings
-from app.models import Asset, PriceSnapshot, TechnicalIndicator, Portfolio, Signal, PaperTrade
+from app.models import Asset, PriceSnapshot, TechnicalIndicator, Portfolio, Signal
 from app.services.strategy import StrategyRunner
 from app.paper_trading.service import execute_paper_trade, calculate_position
 from app.schemas.paper_trading import PaperTradeRequest
@@ -323,7 +323,7 @@ async def _run_auto_trading_impl(db: Session, settings):
             try:
                 trade, snapshot = execute_paper_trade(db, request)
                 logger.info(f"Auto trader BUY executed: trade_id={trade.id}, status={trade.action}")
-            except Exception as e:
+            except Exception:
                 db.rollback()
                 logger.exception("Failed to execute auto trader BUY")
         else:
@@ -343,7 +343,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         try:
             trade, snapshot = execute_paper_trade(db, request)
             logger.info(f"Auto trader SELL executed: trade_id={trade.id}, status={trade.action}")
-        except Exception as e:
+        except Exception:
             db.rollback()
             logger.exception("Failed to execute auto trader SELL")
 

@@ -1,4 +1,3 @@
-import csv
 import json
 import time
 from email.utils import parsedate_to_datetime
@@ -7,13 +6,7 @@ from dataclasses import dataclass
 import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-
-logger = logging.getLogger(__name__)
-
-class HardAnomalyError(ValueError):
-    pass
 from html import unescape
-from io import StringIO
 from typing import Protocol
 from urllib.parse import urljoin
 from xml.etree import ElementTree
@@ -34,6 +27,11 @@ from app.collectors.service import (
 )
 from app.core.config import Settings, get_settings
 from app.models import CollectorRun, PriceSnapshot, RawFxRate
+
+logger = logging.getLogger(__name__)
+
+class HardAnomalyError(ValueError):
+    pass
 
 KUVEYT_PARSER_VERSION = "kuveyt-public-finance-portal-v2"
 YAHOO_FINANCE_CHART_PARSER_VERSION = "yahoo-finance-chart-v1"

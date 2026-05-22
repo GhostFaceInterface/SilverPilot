@@ -1,7 +1,10 @@
 import math
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from app.models.entities import AgentMemoryEvent
 
 
 StrategyType = Literal["rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents", "blended"]
@@ -216,8 +219,6 @@ async def trigger_risk_critique_hook(db: Session, signal_id: int) -> "AgentMemor
     Integration hook/helper that triggers the Risk Agent's signal critique.
     Imports run_signal_critique locally to prevent circular dependencies.
     """
-    from sqlalchemy.orm import Session
-    from app.models.entities import AgentMemoryEvent
     from app.agents.risk import run_signal_critique
 
     return await run_signal_critique(db, signal_id=signal_id)

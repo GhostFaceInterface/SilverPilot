@@ -2,7 +2,7 @@ import os
 import pickle
 import logging
 from datetime import datetime, timedelta, UTC
-from typing import Optional, Tuple
+from typing import Optional
 import pandas as pd
 import numpy as np
 from sqlalchemy import select, desc
@@ -21,7 +21,7 @@ logger = logging.getLogger("silverpilot.ml.inference")
 
 # Defensive import logic to prevent crashes if ML libraries are not available on VPS
 try:
-    import lightgbm as lgb
+    import lightgbm  # noqa: F401
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     logger.warning("LightGBM library is not installed in this environment. ML predictions will be disabled (graceful fallback).")
@@ -128,8 +128,6 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
     Ensures absolute mathematical consistency with scripts/build_dataset.py.
     """
     try:
-        now_utc = datetime.now(UTC)
-
         # 1. Fetch the latest PriceSnapshot as anchor T
         stmt_latest_price = (
             select(PriceSnapshot)
