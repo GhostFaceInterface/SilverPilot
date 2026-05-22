@@ -4,7 +4,7 @@ This file is the canonical delivery roadmap for SilverPilot. It should describe 
 
 ## Current Position
 
-SilverPilot is in Phase 5: dashboard visibility. Initial Phase 5 work is a read-only Streamlit dashboard over existing backend endpoints. Phase 4 has deterministic paper-trade risk decisions deployed. After dashboard review, the immediate next steps are retrofitting the data collectors (Phase 3.4 through 3.9) to replace unreliable global sources with Yahoo Finance SI=F, implement a Technical Indicator Engine, add multi-layer anomaly controls for Kuveyt Türk, and establish a backfill strategy. Agent orchestration via Hermes (primary) or OpenClaw (optional) will start in Phase 6 foundation work. Real-money trading, bank automation, LLM decisions, and ML remain out of scope.
+SilverPilot has successfully completed Phase 6: VPS Hardening (zero-trust API port isolation) and Phase 7: Active Financial Agents Integration (with official DeepSeek V4 modernization, News Agent, Risk Agent signal critiques, Report Agent daily performance logs, and a premium interactive Streamlit dashboard). The test suite is fully fortified with 123/123 green passing tests. The immediate next step is Phase 8: Agent-Assisted Strategy Backtesting & Refinement to integrate LLM sentiment and risk audits into our walk-forward simulator with an offline-first cache strategy. Real-money trading, bank automation, and live execution remain out of scope.
 
 ## Non-Negotiable Rules
 
@@ -970,4 +970,5 @@ Validation gate:
 
 ## Immediate Next Step
 
-Immediate next is retrofitting the data collectors (Phase 3.4 through 3.9). We will introduce the Yahoo Finance collector for SI=F and USDTRY=X, implement the Technical Indicator Engine with Backfill strategies, and harden the Kuveyt Türk collection with 4-layer anomaly controls. Once the data pipeline is fully hardened, we will implement Phase 5.5 Deterministic Signal Engine and Backtest Engine, followed by Phase 6 Hermes integration, Phase 6.5 Simplified Runtime Memory, and Phase 7 First Agents. Direct BLS, TCMB EVDS, TÜİK automation, paid market-data APIs, and external graph-memory frameworks remain backlog unless explicitly approved.
+Immediate next is Phase 8: Agent-Assisted Strategy Backtesting & Refinement. We will implement Option A: Offline-First pre-cached LLM, introducing a historical LLM agent cache (`historical_agent_cache` table or `AgentMemoryEvent` query fallback) to store pre-computed/cached news sentiment and risk critique events. We will modify the backtest engine to fetch and utilize these cached LLM results during simulations without incurring real LLM API latency or financial cost, and write a detailed strategy analyzer comparing deterministic indicators, simulated LLM sentiment signals, and basic "buy and hold" benchmarks. Once validated, we will progress to Phase 9: ML Dataset Automation and Phase 10: First ML Model.
+

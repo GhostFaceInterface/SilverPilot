@@ -1,113 +1,85 @@
-# Implementation Plan: Phase 7 - Active Financial Agents Integration (with DeepSeek V4 Modernization)
+# Implementation Plan: Phase 8 - Agent-Assisted Strategy Backtesting & Refinement (Option A: Offline-First Pre-cached LLM)
 
-Bu plan, **Option C: Hybrid Selective Execution & User-Driven Triggers** mimarisi uyarınca, **News Agent**, **Risk Agent** ve **Report Agent**'larının sisteme entegre edilmesi için hazırlanmıştır. Ajanlarımızın tamamı harici API'ler üzerinden çalışacak ve zero-trust güvenlik modelini korumak amacıyla veritabanı işlemlerini FastAPI uç noktaları üzerinden `X-Agent-Token` yetkilendirmesiyle gerçekleştirecektir.
+Bu plan, **Option A: Offline-First Pre-cached LLM (Tarihsel Önbellek & Geriye Dönük Walk-Forward Simülasyonu)** mimarisi uyarınca, News Agent ve Risk Agent kararlarının geriye dönük walk-forward strateji simülasyonlarına entegre edilmesi için hazırlanmıştır. 
+
+Tarihsel simülasyonlar sırasında binlerce bar için canlı LLM (DeepSeek) çağrısı yapmak aşırı API gecikmelerine, zaman aşımlarına ve devasa finansal maliyetlere yol açacaktır. Bu sorunu aşmak için, gümüş fiyatlarının tarihsel periyotlarına karşılık gelen haber sentimentlerini ve risk critique kararlarını veritabanında pre-cache (tarihsel önbellek) olarak saklayacağız. Backtest motorumuz, simülasyon sırasında canlı LLM'e gitmek yerine bu yerel önbellekten sorgulama yapacaktır.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
 - **Etkilenen Politikalar:**
-  - [docs/ARCHITECTURE.md](file:///Users/boe747/SilverPilot/docs/ARCHITECTURE.md) (Option C: Agents do not trade, hybrid execution rules).
-  - [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Zero-trust token authorization, data-privacy).
+  - [docs/ARCHITECTURE.md](file:///Users/boe747/SilverPilot/docs/ARCHITECTURE.md) (Deterministic accounting rules, agent signal critique boundary).
+  - [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (No real-money operations, local budget guard rules).
 - **Etkilenen Dosyalar:**
-  - `apps/api/app/llm/gateway.py` *(DeepSeek model tanımları, aliaslar ve fiyatlandırma güncellemesi)*
-  - `apps/api/app/agents/` *(Yeni oluşturulacak haber, risk ve rapor servisleri için)*
-  - `apps/api/app/api/routes.py` *(Yeni ajan uç noktaları)*
-  - `apps/api/app/services/strategy.py` *(Strateji sinyal üretimi sonrasında Risk Agent hook tetiklenmesi)*
-  - `apps/dashboard/streamlit_app.py` *(Manuel tetikleme ve görselleştirme sekmesi)*
-  - `apps/api/app/core/config.py` *(Ajan modelleri ve parametreleri)*
-
----
-
-## 💡 Model Rol Dağıtımı & Resmi DeepSeek V4 API Geçişi
-Yapılan internet araştırması ve resmi DeepSeek API dökümantasyonu doğrultusunda, Temmuz 2026'da kaldırılacak olan eski model isimleri (`deepseek-chat` / `deepseek-reasoner`) yerine resmi modern **DeepSeek V4** modellerine geçiş yapılacaktır:
-
-1. **DeepSeek-V4-Flash (`deepseek-v4-flash`):**
-   - **Kullanım Alanı:** Basit, hızlı ve ekonomik işler (News Agent haber özetlemesi, Report Agent günlük bakiye/performans markdown raporu).
-   - **API Fiyatlandırması:** Input: $0.14 / 1M tokens ($0.00000014), Output: $0.28 / 1M tokens ($0.00000028).
-2. **DeepSeek-V4-Pro (`deepseek-v4-pro`):**
-   - **Kullanım Alanı:** Kritik akıl yürütme, agentic mantık ve yüksek finansal değere sahip kararlar (Risk Agent Strateji Critique & Audit).
-   - **API Fiyatlandırması:** Input: $0.435 / 1M tokens ($0.000000435), Output: $0.87 / 1M tokens ($0.00000087) (Promosyonlu güncel tarife).
+  - `apps/api/app/models/entities.py` *(Yeni `HistoricalAgentCache` tablosunun tanımlanması)*
+  - `apps/api/app/services/strategy.py` *(Strateji değerlendirmesine Ajan filtrelerinin entegre edilmesi)*
+  - `scripts/backtest_engine.py` *(Simülasyon döngüsünün ajan verilerini okuyacak şekilde güncellenmesi ve karşılaştırma raporu)*
+  - `scripts/seed_agent_cache.py` *[NEW]* *(Tarihsel fiyat barlarına denk gelen ajan kararlarının ve sentimentlerinin tohumlanması / seeder)*
+  - `apps/api/tests/test_backtest.py` *(Yeni ajanlı backtest senaryolarının test edilmesi)*
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-### **Faz 1: DeepSeek Gateway Modernizasyonu ve Ajan Ayarları** [/]
-- **Açıklama:** API Gateway'i resmi `deepseek-v4-pro` ve `deepseek-v4-flash` modellerine göre güncelleyecek ve ajanların model ayarlarını tanımlayacağız.
+### **Faz 1: Veritabanı Modeli ve Alembic Migrasyonu**
+- **Açıklama:** Geriye dönük ajan kararlarını saklayacağımız `historical_agent_caches` tablosunu tanımlayacak ve Alembic migrasyonu ile veritabanına uygulayacağız.
 - **Yapılacaklar:**
-  - [ ] `apps/api/app/llm/gateway.py` içerisindeki `DEEPSEEK_PRICING` yapısını modern DeepSeek V4 modellerine göre güncelleyin:
+  - [ ] `apps/api/app/models/entities.py` dosyasına `HistoricalAgentCache` tablosunu ekleyin (Ajan: `backend-architect`):
     ```python
-    DEEPSEEK_PRICING = {
-        "deepseek-v4-flash": {
-            "input": Decimal("0.00000014"),
-            "output": Decimal("0.00000028")
-        },
-        "deepseek-v4-pro": {
-            "input": Decimal("0.000000435"),
-            "output": Decimal("0.00000087")
-        }
-    }
+    class HistoricalAgentCache(Base):
+        __tablename__ = "historical_agent_caches"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        agent_name: Mapped[str] = mapped_column(String(128), index=True)      # news-agent, risk-agent
+        event_type: Mapped[str] = mapped_column(String(64), index=True)       # news_sentiment, signal_critique
+        timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True) # Eşleşen bar zamanı
+        value_json: Mapped[dict] = mapped_column(JSON, default=dict)          # Sentiment/Critique JSON payload
+        created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ```
-  - [ ] Gateway içindeki model bazlı parametre istisnalarını (`temperature` vb.) yeni modelleri kapsayacak şekilde güncelleyin.
-  - [ ] `apps/api/app/core/config.py` içerisindeki `Settings` sınıfına ajan model tanımlarını ekleyin:
-    - `agent_news_model: str = "deepseek-v4-flash"`
-    - `agent_report_model: str = "deepseek-v4-flash"`
-    - `agent_risk_model: str = "deepseek-v4-pro"`
-  - [ ] `apps/api/app/api/routes.py` içerisine yeni ajan POST uç noktalarını `verify_agent_token` korumasıyla ekleyin:
-    - `POST /agent/news/trigger` (News Agent)
-    - `POST /agent/report/trigger` (Report Agent)
-    - `POST /agent/risk/critique` (Risk Agent Critique)
-- **DoD (Tamamlanma Tanımı):** `/agent/*` yeni uç noktalarının yetkisiz erişime 401, geçerli token ile 200/201 (boş veya mock veriyle) dönmesi.
+  - [ ] Alembic migrasyonu oluşturun: `docker-compose exec api alembic revision --autogenerate -m "add historical agent cache"`
+  - [ ] Migrasyonu test edin ve veritabanına uygulayın: `docker-compose exec api alembic upgrade head`
+- **DoD (Tamamlanma Tanımı):** `historical_agent_caches` tablosunun veritabanında başarıyla şemaya eklenmesi.
 
-### **Faz 2: News Agent Entegrasyonu (Duyarlılık & Haber Analizi)**
-- **Açıklama:** `RawNews` tablosundaki son 24 saatlik haberleri okuyup ekonomik `deepseek-v4-flash` modeli ile finansal sentiment (duyarlılık) analizi yapan News Agent'ı kodlayacağız.
+### **Faz 2: Tarihsel Ajan Kararı Tohumlama Scripti (Seeder)**
+- **Açıklama:** Backtest simülasyonunun testi ve çalışması için geriye dönük fiyat snapshot barlarına karşılık gelen gerçekçi Ajan kararlarını (News Sentiment: BULLISH/BEARISH/NEUTRAL, Risk Critique: APPROVED/REJECTED/CAUTION) veritabanına tohumlayacak scripti yazacağız.
 - **Yapılacaklar:**
-  - [ ] `apps/api/app/agents/news.py` modülünü oluşturun (Ajan: `data-engineer`):
-    - `RawNews` tablosundan son haber başlıklarını sorgulayın.
-    - DeepSeek gateway (`deepseek-v4-flash`) ile haberlerin gümüş (XAG) ve piyasa üzerindeki etkisini analiz edin.
-    - Analiz neticesini `AgentMemoryEvent` tablosuna `event_type="news_sentiment"` ve `key="latest_analysis"` olacak şekilde kaydedin.
-  - [ ] `POST /agent/news/trigger` endpoint'ini bu servis ile bağlayın.
-- **DoD:** News agent tetiklendiğinde DeepSeek API'ye başarılı bir çağrı yapıp çıktıyı `agent_memory` tablosuna yazması.
+  - [ ] `scripts/seed_agent_cache.py` seeder scriptini oluşturun (Ajan: `data-engineer`):
+    - Gümüş fiyatlarının `observed_at` tarihsel barlarını listelesin.
+    - Her bara karşılık gelecek şekilde gerçekçi ve tutarlı (fiyat yükselirken BULLISH/APPROVED, düşerken BEARISH/REJECTED) veya stokastik ajan sentimentleri/kararları üreterek `HistoricalAgentCache` tablosuna yazsın.
+    - Script doğrudan terminalden çalıştırılabilmelidir.
+- **DoD:** `python scripts/seed_agent_cache.py` çalıştırıldığında barlar için önbelleğin başarıyla dolması.
 
-### **Faz 3: Risk Agent Entegrasyonu (Signal Critique - On-Demand)**
-- **Açıklama:** Strateji motorundan BUY/SELL sinyali üretildiğinde, güçlü `deepseek-v4-pro` modeli ile tetiklenerek bu kararı eleştirmesini (critique) ve audit etmesini sağlayacağız.
+### **Faz 3: Strategy Runner ve Ajan Filtre Entegrasyonu**
+- **Açıklama:** Mevcut deterministik stratejilerimizin (RSI, SMA Cross, Bollinger) ürettiği BUY/SELL sinyallerini, Ajan önbelleğinden çekilecek sentiment ve kritik kararlarına göre veto edebilecek veya onaylayacak logic yapısını kuracağız.
 - **Yapılacaklar:**
-  - [ ] `apps/api/app/agents/risk.py` modülünü oluşturun (Ajan: `backend-architect`):
-    - Girdi olarak gelen sinyal detayını, mevcut portföy durumunu ve son `TechnicalIndicator` verilerini alsın.
-    - DeepSeek gateway (`deepseek-v4-pro`) ile sinyali eleştirsin (örn: "RSI aşırı satımda ama FOMO riski var mı?", "Spread durumu uygun mu?").
-    - Critique çıktısını `agent_memory` tablosuna `event_type="signal_critique"` olarak kaydatsın.
-  - [ ] `apps/api/app/services/strategy.py` içinde strateji sinyal üretimi sonrasında Risk Agent critique API hook'unu tetikleyecek mekanizmayı kurun.
-- **DoD:** Bir strateji sinyali üretildiğinde, Risk Agent'ın otomatik/elle tetiklenip bu sinyali eleştiren audit logunu `agent_memory` tablosuna yazması.
+  - [ ] `apps/api/app/services/strategy.py` içerisindeki `StrategyRunner` sınıfına ajan filtresi mantığını ekleyin (Ajan: `backend-architect`):
+    - `apply_agent_filters(action: str, news_sentiment: str | None, risk_decision: str | None) -> tuple[str, str]` metodunu ekleyin.
+    - Eğer deterministik karar `BUY` ise ve en son `news_sentiment` değeri `BEARISH` ise veya `risk_decision` değeri `REJECTED` ise, işlemi engellesin (`action = "HOLD"`, `reason = "AGENT_VETO_BEARISH_NEWS"` veya `AGENT_VETO_RISK_REJECTED`).
+    - Eğer karar `SELL` ise ve ajan kararları tehlikeli bir durum gösteriyorsa (örneğin aşırı riskli bir piyasa haberi veya trend dönüşü tespiti), satışı hızlandıracak veya destekleyecek veto kuralları tasarlayın.
+- **DoD:** Ajan kararlarına göre deterministik sinyallerin başarıyla veto edilip "HOLD" durumuna çekilmesi.
 
-### **Faz 4: Report Agent Entegrasyonu (Gece Yarısı & Manuel Rapor)**
-- **Açıklama:** Günlük bakiye, kâr/zarar ve işlem geçmişini özetleyen Report Agent logic'ini ekonomik `deepseek-v4-flash` ile kodlayacağız.
+### **Faz 4: Backtest Engine Güncellemesi ve Karşılaştırma Raporu**
+- **Açıklama:** `scripts/backtest_engine.py` simülasyon döngüsünü, barların zaman damgasına en yakın tarihsel ajan kararlarını sorgulayacak, ajanlı strateji varyantlarını destekleyecek ve premium karşılaştırma raporu sunacak şekilde güncelleyeceğiz.
 - **Yapılacaklar:**
-  - [ ] `apps/api/app/agents/report.py` modülünü oluşturun (Ajan: `data-engineer` / `backend-architect`):
-    - `PortfolioSnapshot` ve `PaperTrade` tablolarını sorgulayarak son 24 saatlik işlem özetini çıkarsın.
-    - DeepSeek gateway (`deepseek-v4-flash`) ile performansı yorumlayıp Markdown formatında şık bir günlük rapor üretsin.
-    - Rapor çıktısını mevcut `Report` modelini kullanarak veritabanına `report_type="daily"` olacak şekilde kaydatsın.
-  - [ ] `POST /agent/report/trigger` endpoint'ini bu servis ile bağlayın.
-- **DoD:** `/reports/daily/latest` endpoint'inin Report Agent tarafından üretilen en son markdown raporunu başarıyla dönmesi.
+  - [ ] `scripts/backtest_engine.py` simülasyon motorunu güncelleyin (Ajan: `backend-architect`):
+    - Her simülasyon barında, o barın `observed_at` tarihine ait (veya son 24 saat içindeki en taze) `HistoricalAgentCache` kayıtlarını çeksin.
+    - Yeni ajan destekli strateji tiplerini desteklesin: `rsi_with_agents`, `sma_cross_with_agents`, `bollinger_with_agents`.
+    - Ajan veto kararlarını ve override nedenlerini trading loguna ve ekrana yazdırsın.
+    - Simülasyon sonunda, **Baseline Deterministik Strateji** ile **Ajan Destekli Strateji** ve **Buy & Hold Benchmark'ını** yan yana koyup Net Alpha, Max Drawdown, Kazanma Oranı ve İşlem Maliyeti (Cost Drag) farklarını gösteren premium renkli bir karşılaştırma raporu bassın.
+- **DoD:** Simülatörün ajan destekli stratejileri sıfır canlı LLM çağrısıyla, tamamen veritabanı önbelleğinden beslenerek saniyeler içinde çalıştırıp karşılaştırma raporunu basması.
 
-### **Faz 5: Streamlit "🤖 Active Financial Agents" UI Entegrasyonu**
-- **Açıklama:** Dashboard üzerinde ajanları izleyeceğimiz, elle tetikleyeceğimiz ve analiz sonuçlarını göreceğimiz premium arayüzü inşa edeceğiz.
+### **Faz 5: Kalite Kontrol, E2E Testler ve Doğrulama**
+- **Açıklama:** Ajanlı backtest mantığını tamamen test edecek kapsamlı pytest testlerini yazacağız ve tüm test süitinin hatasız çalıştığını doğrulayacağız.
 - **Yapılacaklar:**
-  - [ ] `apps/dashboard/streamlit_app.py` dosyasına yeni bir `"🤖 Active Financial Agents"` sekmesi (tab) ekleyin (Ajan: `frontend-architect`):
-    - **Haber Sekmesi:** En son "News Sentiment" analiz raporunu render etsin ve "News Agent Tetikle" butonu koysun.
-    - **Risk Sekmesi:** En son üretilen strateji sinyal eleştirilerini (`signal_critique`) listelesin.
-    - **Rapor Sekmesi:** En son günlük markdown raporu (`/reports/daily/latest`) şık bir şekilde render etsin ve "Günlük Rapor Üret" butonu koysun.
-- **DoD:** Butonlara basıldığında ajanların arka planda tetiklenmesi ve sonuçların anında Streamlit üzerinde görsel olarak WOW etkisi oluşturacak şekilde render edilmesi.
-
-### **Faz 6: Kalite Kontrol, E2E Testler ve Güvenlik Denetimi**
-- **Açıklama:** Yazılan tüm ajan logic'lerini ve API entegrasyonlarını test edip VPS ortamına deploy edeceğiz.
-- **Yapılacaklar:**
-  - [ ] `apps/api/tests/` altında `test_agents.py` dosyasını oluşturun ve uç nokta çağrılarını test edin (Ajan: `quality-engineer`).
-  - [ ] `safety-gatekeeper` ile kodların statik güvenlik ve regresyon analizini gerçekleştirin.
-  - [ ] `git commit` & `git push` ile kodları uzak sunucuya dağıtıp deploy edin.
-- **DoD:** Tüm pytest test süitinin 100% yeşil olması ve VPS üzerinde ajan tetiklemelerinin başarıyla çalışması.
+  - [ ] `apps/api/tests/test_backtest.py` dosyasına yeni test senaryoları ekleyin (Ajan: `quality-engineer`):
+    - Ajan verisi tohumlanmış SQLite in-memory ortamında backtestin çalıştırılması.
+    - `BEARISH` haber sentimentinin veya `REJECTED` risk kararının BUY işlemini başarıyla bloke ettiğini (veto ettiğini) doğrulayan iddialar (assertions).
+    - Önbellekte ajan verisi olmadığında stratejinin deterministik kurallarla çökmeden (graceful fallback) devam ettiğinin doğrulanması.
+  - [ ] Tüm test süitini `.venv/bin/pytest` ile koşturarak regresyon olmadığını doğrulayın.
+- **DoD:** Tüm pytest test süitinin 100% yeşil olması ve ajan vetolarının testler altında doğrulanması.
 
 ---
 
 ## ❓ Açık Sorular ve Kararlar
 > [!IMPORTANT]
-> - **Gateway Modernizasyonu:** Temmuz 2026'da kaldırılacak olan legacy model alias'ları yerine doğrudan modern resmi `deepseek-v4-pro` ve `deepseek-v4-flash` API kod adlarına geçiş yapılacaktır. Bu mimari karar onayınızda mıdır?
+> - **Zaman Pencereleri:** Tarihsel ajan cache verisini sorgularken, tam zaman damgası eşleşmesi yerine (çünkü haberler ve fiyat barları saniye saniye denk gelmeyebilir), fiyattan önceki **son 24 saatlik en taze kararı** baz alan bir `observed_at` penceresi kullanmayı planlıyoruz. Bu tolerans aralığı tasarımı onayınızda mıdır?
