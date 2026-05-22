@@ -24,6 +24,7 @@ from app.risk.service import RiskStatusError, risk_policy_status
 from app.agents.news import run_news_sentiment_analysis
 from app.agents.risk import run_signal_critique
 from app.agents.report import run_daily_performance_report
+from app.agents.telegram_bot import process_telegram_update
 from app.schemas.collectors import (
     CollectorHealthResponse,
     CollectorQualityResponse,
@@ -631,5 +632,23 @@ async def trigger_orchestrator(
         "status": "accepted",
         "message": "Multi-agent analysis triggered in background."
     }
+
+
+@router.post("/agent/telegram/webhook")
+async def telegram_webhook(
+    update: dict,
+    background_tasks: BackgroundTasks,
+    settings: Settings = Depends(get_settings)
+):
+    """
+    Telegram webhook endpoint. Receives incoming updates asynchronously.
+    Runs verification and processing in a background task to prevent timeouts.
+    """
+    if not settings.telegram_bot_token:
+        return {"status": "ignored", "reason": "bot not configured"}
+        
+    background_tasks.add_task(process_telegram_update, update, settings)
+    return {"status": "accepted"}
+
 
 

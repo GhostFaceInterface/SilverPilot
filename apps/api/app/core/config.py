@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # Agent Security Settings
     agent_api_token: str = ""
 
+    # Telegram Bot Settings
+    telegram_bot_token: str = ""
+    telegram_chat_id: int = 0
+    telegram_bot_mode: str = "webhook"
+    telegram_webhook_url: str = ""
+
     agent_news_model: str = "deepseek-v4-flash"
     agent_report_model: str = "deepseek-v4-flash"
     agent_risk_model: str = "deepseek-v4-pro"
