@@ -375,3 +375,45 @@ def test_ml_risk_blocking_on_unprofitable_prediction(monkeypatch):
         
     finally:
         db.close()
+
+
+def test_get_active_model_endpoint(monkeypatch, tmp_path):
+    client, TestingSession = make_test_client()
+    
+    # 1. Unauthenticated request must return 401
+    resp = client.get("/ml/model/active")
+    assert resp.status_code == 401
+    
+    # 2. Authenticated request with no metadata file on disk must return uninitialized
+    mock_settings = Settings(
+        agent_api_token="test_token",
+        risk_ml_model_enabled=True,
+        risk_ml_model_path=str(tmp_path / "data/models/champion_model.pkl")
+    )
+    monkeypatch.setattr("app.ml.inference.get_settings", lambda: mock_settings)
+    monkeypatch.setattr("app.api.routes.get_settings", lambda: mock_settings)
+    
+    resp = client.get("/ml/model/active", headers={"X-Agent-Token": "test_token"})
+    assert resp.status_code == 200
+    assert resp.json() == {"model_status": "uninitialized"}
+    
+    # 3. Write a mock metadata file to the expected path
+    metadata_dir = tmp_path / "data/models"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    metadata_file = metadata_dir / "champion_metadata.json"
+    
+    mock_metadata = {
+        "run_id": "mock_run_12345",
+        "model_status": "active",
+        "promoted_at": "2026-05-22T12:00:00Z",
+        "training_date": "2026-05-22T11:00:00Z",
+        "features": ["bank_spread_percent", "xag_return_15m"],
+        "metrics": {"mean_precision": 0.55}
+    }
+    import json
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(mock_metadata, f)
+        
+    resp = client.get("/ml/model/active", headers={"X-Agent-Token": "test_token"})
+    assert resp.status_code == 200
+    assert resp.json() == mock_metadata

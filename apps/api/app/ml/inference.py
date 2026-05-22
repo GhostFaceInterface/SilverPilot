@@ -82,6 +82,45 @@ def load_model() -> Optional[object]:
         return None
 
 
+def get_active_model_metadata() -> dict:
+    """
+    Reads the static champion_metadata.json file if available.
+    Returns a dict with metadata, or a default dict if missing/uninitialized (fail-secure).
+    """
+    settings = get_settings()
+    
+    # Deriving metadata path based on model path
+    model_path = settings.risk_ml_model_path
+    metadata_path = model_path.replace("champion_model.pkl", "champion_metadata.json")
+    if metadata_path == model_path:
+        metadata_path = os.path.splitext(model_path)[0] + "_metadata.json"
+        
+    model_paths_to_try = [
+        metadata_path,
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), metadata_path),
+        os.path.abspath(metadata_path)
+    ]
+    
+    resolved_path = None
+    for p in model_paths_to_try:
+        if os.path.exists(p):
+            resolved_path = p
+            break
+            
+    if not resolved_path:
+        logger.warning(f"ML metadata file not found at any expected path: {model_paths_to_try}.")
+        return {"model_status": "uninitialized"}
+        
+    try:
+        import json
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        logger.error(f"Error reading champion model metadata: {e}.")
+        return {"model_status": "uninitialized"}
+
+
 def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
     """
     Extracts the 11 ML features on-the-fly for the given asset from active database tables.

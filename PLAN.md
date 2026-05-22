@@ -1,61 +1,63 @@
-# Implementation Plan: Phase 10 - First ML Model
+# Implementation Plan: Phase 11 - Model Registry and Scheduled Training
 
-This plan outlines the design, training, and integration of our first conservative Machine Learning model (`LightGBMClassifier`) for SilverPilot. It guarantees off-VPS training compliance, zero-leakage live inference feature extraction, robust timezone-aware SQLite/PostgreSQL handling, and graceful fallback execution.
+This implementation plan outlines the design, automated workflows, and integration pipelines for **Phase 11: Model Registry and Scheduled Training** in SilverPilot. It guarantees strict compliance with the **Off-VPS Training Rule**, integrates MLflow tracking, designs automated challenger-vs-champion backtest evaluations, implements a secure manual promotion gate, and exposes active model version metrics via a lightweight, zero-migration API endpoint.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
-- **Off-VPS ML Training Rule:** VPS resources must be protected. All model training runs locally; only serialized weight assets (`.pkl`) are loaded on the production VPS for O(1) inference.
-- **Graceful Fallback:** If the model file is missing or if ML dependencies fail, the inference engine must catch exceptions, log warnings, and return `None` (bypassing the ML veto) rather than crashing the API.
-- **Feature Consistency:** Live feature extraction at time `T` must mathematically match the offline Pandas-based calculations in `scripts/build_dataset.py`.
-- **Database Compatibility:** Features must be calculated using timezone-aware (UTC) queries compatible with both SQLite (for tests) and PostgreSQL (for live execution).
+- **Etkilenen Politikalar (docs/RISK_POLICY.md):** 
+  - *Off-VPS Training Rule:* Sunucu (VPS) kaynaklarının korunması amacıyla ML training ve MLflow sunucusu VPS üzerinde çalıştırılamaz. Tüm eğitim, MLflow kayıtları ve rakip model değerlendirmeleri sadece lokalde veya CI hatlarında (GitHub Actions) gerçekleştirilir.
+  - *Inference Only:* VPS ortamı sadece önceden eğitilmiş model ağırlıklarını (`.pkl`) ve metaveri özetini (`.json`) yükleyip hafif O(1) çıkarım yapar.
+- **Etkilenen Şemalar:** 
+  - Veri tabanı migrasyon risklerini (SQLite vs PostgreSQL uyumsuzluğu) önlemek amacıyla, aktif şampiyon modelin sürüm ve başarı bilgileri veritabanı tabloları yerine, model dosyası ile birlikte sunucuya iletilen statik bir `champion_metadata.json` dosyasında tutulur. Bu sayede veritabanı şema değişikliği yapılmaz, performans ve taşınabilirlik maksimize edilir.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[x]` **Faz 1: Geliştirme Bağımlılıkları & Altyapı Hazırlığı**
-  - [ ] `apps/api/requirements.txt` dosyasını güncelleyerek `lightgbm`, `scikit-learn` ve `pyarrow` kütüphanelerini eklemek (Ajan: `backend-architect`).
-  - [ ] `apps/api/app/core/config.py` içine ML parametrelerini eklemek:
-    - `RISK_ML_MODEL_ENABLED`: bool (default `true`)
-    - `RISK_ML_MIN_PROBABILITY`: float (default `0.50`)
-    - `RISK_ML_MODEL_PATH`: str (default `"data/models/champion_model.pkl"`)
-  - *DoD (Tamamlanma Tanımı):* Bağımlılıkların lokal sanal ortama kurulabilmesi ve konfigürasyon testlerinin yeşil geçmesi.
+- `[x]` **Faz 1: Lokal/CI MLflow Entegrasyonu & Denetlenebilir Eğitim**
+  - [x] `apps/api/requirements.txt` dosyasını güncelleyerek `mlflow` paketini eklemek.
+  - [x] `scripts/train_model.py` dosyasını güncelleyerek MLflow izlemeyi entegre etmek:
+    - `mlflow.start_run()` ile her eğitim oturumunu başlatmak.
+    - Hiperparametreleri loglamak (`mlflow.log_params`).
+    - Fold bazlı hassasiyet (`precision`), duyarlılık (`recall`), doğruluk (`accuracy`) ve Buy & Hold Win Rate metriklerini loglamak (`mlflow.log_metric`).
+    - Eğitilen son challenger modelini MLflow Model Registry'ye kaydetmek (`mlflow.lightgbm.log_model` & `mlflow.register_model`).
+  - *DoD (Tamamlanma Tanımı):* `python scripts/train_model.py` betiğinin lokalde başarıyla çalışıp `mlruns/` dizinini oluşturması, parametre ve metriklerin MLflow'a yazılması. (Ajanlar: `data-engineer` / `backend-architect`)
 
-- `[x]` **Faz 2: Yerel Model Eğitim ve Değerlendirme Betiği**
-  - [ ] `scripts/train_model.py` dosyasını oluşturmak (Ajan: `data-engineer` / `quality-engineer`):
-    - `data/datasets/v1.0.0/dataset.parquet` dosyasını yüklemek.
-    - Zaman serisi yürüyen doğrulama (Walk-Forward Time-Series Split) kurmak.
-    - `LightGBMClassifier` modelini 11 girdi özelliğiyle `profitable_after_costs_3d` sınıflandırma hedefi için eğitmek.
-    - Performansı (Win Rate, precision, recall, MDD) Buy & Hold benchmark'ı ile karşılaştırmak.
-    - Eğitilen champion model ağırlıklarını `data/models/champion_model.pkl` olarak kaydetmek.
-  - *DoD:* `python scripts/train_model.py` betiğinin hatasız çalışması ve model ağırlık dosyası ile eğitim metriklerini diske yazması.
+- `[x]` **Faz 2: Otomatik Şampiyon / Challenger Karşılaştırma Motoru**
+  - [x] `scripts/evaluate_challenger.py` *[NEW]* betiğini oluşturmak:
+    - MLflow'da yeni eğitilen challenger modelini yüklemek.
+    - `scripts/backtest_engine.py` simülasyon motorunu arka planda çağırarak hem mevcut şampiyon modelin hem de yeni rakip modelin backtest metriklerini (Ending Balance, Net PnL, Max Drawdown, Profit Factor, Alpha) hesaplamak.
+    - İki modeli yan yana karşılaştıran bir rapor üretmek ve bu raporu MLflow run'ına artifact olarak yüklemek.
+    - Challenger modelin fold hassasiyetinin (mean fold precision) veya backtest net kârının mevcut şampiyondan daha iyi olup olmadığını belirten bir geçiş onay kararı üretmek.
+  - *DoD:* `python scripts/evaluate_challenger.py` komutunun hatasız çalışarak iki model arasındaki performans farkını ve doğrulama metriklerini raporlaması. (Ajanlar: `data-engineer` / `quality-engineer`)
 
-- `[x]` **Faz 3: Çıkarım Motoru (Inference Service) ve Özellik Çıkarıcı**
-  - [ ] `apps/api/app/ml/inference.py` *[NEW]* dosyasını oluşturmak (Ajan: `backend-architect` / `data-engineer`):
-    - `data/models/champion_model.pkl` dosyasını yükleyen thread-safe, caching model yükleyici yazmak.
-    - Canlı veri tabanından (UTC duyarlı olarak hem PostgreSQL hem SQLite uyumlu) en son snapshots, fx rate, technical indicators ve news sentiment verilerini çekip 11 girdi özelliğini birebir hesaplayan `extract_live_features` fonksiyonunu yazmak.
-    - O(1) düşük gecikmeli olasılık tahmini üreten ve model eksikliğinde/hatalarında `None` dönen hata toleranslı `predict_profitability` fonksiyonunu implemente etmek.
-  - *DoD:* Servis unit testlerinin yeşil geçmesi.
+- `[x]` **Faz 3: Manuel Onay Kapısı (Promotion CLI)**
+  - [x] `scripts/promote_model.py` *[NEW]* CLI betiğini oluşturmak:
+    - Belirli bir MLflow `run_id` parametresini girdi olarak almak (`--run-id`).
+    - Seçilen model dosyasını MLflow kayıt dizininden kopyalayarak `data/models/champion_model.pkl` konumuna yazmak.
+    - Modelin tüm denetlenebilir metriklerini (Run ID, eğitim tarihi, fold precision, backtest PnL, versiyon) `data/models/champion_metadata.json` olarak kaydetmek.
+    - Bu iki dosyayı Git'e stage etmek için `git add` komutunu hazırlamak.
+  - *DoD:* `python scripts/promote_model.py --run-id <run_id>` komutunun hedef pkl ve JSON metaveri dosyalarını disk üzerinde eksiksiz ve hatasız güncellemesi. (Ajan: `backend-architect`)
 
-- `[x]` **Faz 4: Risk Politika Motoru Entegrasyonu**
-  - [ ] `apps/api/app/risk/service.py` dosyasını güncellemek (Ajan: `backend-architect`):
-    - Yeni bir `_ml_model_block` engelleme kuralı entegre etmek.
-    - Eğer `RISK_ML_MODEL_ENABLED` aktifse ve işlem `paper_buy` ise, çıkarım motorunu çağırarak karlık olasılığını hesaplamak.
-    - Olasılık `settings.risk_ml_min_probability` eşiğinin altındaysa işlemi `ML_UNPROFITABLE_PREDICTION` koduyla **engellemek (blocked)**.
-    - Karar detaylarını (`details_json`) tahmini içerecek şekilde `RiskDecision` tablosuna kaydetmek.
-  - *DoD:* FastAPI mock model altında `POST /paper-trades` taleplerine 200 OK dönmesi ve engelleme mantığının doğrulanması.
+- `[x]` **Faz 4: API Katmanı ve Aktif Model Görünürlüğü**
+  - [x] `apps/api/app/ml/inference.py` içine `champion_metadata.json` dosyasını güvenli şekilde okuyan `get_active_model_metadata()` fonksiyonunu eklemek.
+  - [x] `apps/api/app/api/routes.py` dosyasına `GET /api/v1/ml/model/active` API ucunu eklemek:
+    - Token doğrulama (`verify_agent_token`) koruması altına almak.
+    - Sunucudaki aktif şampiyon modelin run ID, eğitim tarihi, fold precision ve backtest metriklerini JSON formatında dönmek.
+    - Hata durumunda API'nin çökmesini engelleyerek varsayılan veya boş değerleri dönmek (Fail-Secure).
+  - *DoD:* `GET /api/v1/ml/model/active` API talebinin 200 OK ile güncel metaveriyi şeffaf bir şekilde listelemesi. (Ajan: `backend-architect`)
 
-- `[x]` **Faz 5: Kalite Kontrol ve Pytest Doğrulama**
-  - [ ] `apps/api/tests/test_ml.py` *[NEW]* test süitini oluşturmak (Ajan: `quality-engineer` / `safety-gatekeeper`):
-    - SQLite in-memory DB üzerinde mock verilerle canlı özellik çıkarımının doğruluğunu test etmek.
-    - Model dosyası eksik olduğunda hata toleransının (graceful bypass) çalıştığını doğrulamak.
-    - Düşük kar tahminlerinde risk motorunun işlemi doğru şekilde engellediğini doğrulamak.
-  - *DoD:* `pytest apps/api/tests/test_ml.py` komutunun %100 yeşil geçmesi ve tüm proje testlerinin (130+ test) sıfır regresyon ile tamamlanması.
+- `[/]` **Faz 5: Kalite Kontrol ve Pytest Entegrasyonu**
+  - [x] `apps/api/tests/test_ml.py` dosyasına `/api/v1/ml/model/active` endpoint testlerini eklemek (Arrange-Act-Assert standardında).
+  - [x] Mock metadata dosyası oluşturarak API'nin okuma kararlılığını doğrulamak.
+  - [/] Tüm test süitini sıfır regresyon doğrulaması için lokalde çalıştırmak.
+  - [ ] Değişiklikleri Git'e ekleyip `main` dalına commit ve push yaparak VPS'e otomatik dağıtılmasını sağlamak.
+  - *DoD:* `pytest` test süitinin tamamen yeşil geçmesi ve git push işleminin başarıyla tamamlanması. (Ajanlar: `quality-engineer` / `safety-gatekeeper`)
 
 ---
 
 ## ❓ Açık Sorular & Kararlar
 > [!NOTE]
-> 1. **Model Kayıt Dizin Güvenliği:** Model ağırlıklarını `.gitignore` kapsamında olan `data/models/` dizininde saklayacağız. VPS dağıtımları için CI/CD veya manuel deploy hattı üzerinden bu model dosyası VPS sunucusuna yüklenecektir.
-> 2. **Kütüphane Bulunamazsa Çökme Önleme (Graceful Fallback):** FastAPI uygulamasında, `lightgbm` kütüphanesinin import edilemediği sunucu ortamlarında (VPS dependencies missing gibi uç senaryolarda), `inference.py` içe aktarım hatasını yakalayacak (ImportError/ModuleNotFoundError) ve log uyarısı vererek çıkarımı sessizce devre dışı bırakacaktır.
+> 1. **Dosya Tabanlı Metaveri Tercihi:** Model bilgilerini DB tablosunda tutmak yerine `champion_metadata.json` dosyasından okumak, veri tabanları arası (SQLite/PostgreSQL) migrasyon yükünü sıfıra indirir. Bu yaklaşım projenin minimalist felsefesiyle tam olarak örtüşmektedir.
+> 2. **GitHub Actions / Local Trigger:** Haftalık zamanlanmış eğitim görevi, sunucu dışında lokal bir cron timer veya GitHub Actions workflow tetikleyicisi aracılığıyla tetiklenebilir.

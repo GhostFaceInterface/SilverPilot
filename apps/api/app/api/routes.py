@@ -588,3 +588,14 @@ def list_datasets_endpoint(
                     
     return datasets
 
+
+@router.get("/ml/model/active")
+def get_active_model(
+    _: None = Depends(verify_agent_token)
+):
+    """
+    Returns the metadata of the active champion model from disk (fail-secure).
+    """
+    from app.ml.inference import get_active_model_metadata
+    return get_active_model_metadata()
+
