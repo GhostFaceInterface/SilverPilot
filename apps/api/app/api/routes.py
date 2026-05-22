@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from sqlalchemy import desc, select, text, func
 from sqlalchemy.orm import Session
 
@@ -524,3 +524,67 @@ async def critique_risk_agent(
         return await run_signal_critique(db, signal_id=payload.signal_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def run_dataset_build_task(version: str) -> None:
+    """Helper to run the dataset pipeline in a background task thread."""
+    try:
+        from scripts.build_dataset import build_dataset
+        build_dataset(version=version, dry_run=False)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("silverpilot.ml.dataset")
+        logger.error(f"Error building dataset version {version}: {e}", exc_info=True)
+
+
+@router.post("/datasets/build")
+def build_dataset_endpoint(
+    background_tasks: BackgroundTasks,
+    version: str = "1.0.0",
+    _: None = Depends(verify_agent_token)
+):
+    """Triggers the ML dataset generation pipeline in the background."""
+    background_tasks.add_task(run_dataset_build_task, version)
+    return {
+        "status": "accepted",
+        "message": f"Dataset build for version {version} started in background."
+    }
+
+
+@router.get("/datasets/list")
+def list_datasets_endpoint(
+    _: None = Depends(verify_agent_token)
+):
+    """Lists metadata for all built datasets."""
+    import os
+    import json
+    
+    # Locate project root dynamically
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    root_path = current_dir
+    for _ in range(10):
+        if os.path.exists(os.path.join(root_path, "apps")) or os.path.exists(os.path.join(root_path, "data")):
+            break
+        root_path = os.path.dirname(root_path)
+
+    datasets_dir = os.path.join(root_path, "data", "datasets")
+    if not os.path.exists(datasets_dir):
+        return []
+
+    datasets = []
+    for item in os.listdir(datasets_dir):
+        item_path = os.path.join(datasets_dir, item)
+        if os.path.isdir(item_path):
+            meta_path = os.path.join(item_path, "metadata.json")
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r") as f:
+                        meta_data = json.load(f)
+                    datasets.append(meta_data)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger("silverpilot.ml.dataset")
+                    logger.warning(f"Failed to read metadata for {item}: {e}")
+                    
+    return datasets
+

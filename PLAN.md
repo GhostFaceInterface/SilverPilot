@@ -1,85 +1,54 @@
-# Implementation Plan: Phase 8 - Agent-Assisted Strategy Backtesting & Refinement (Option A: Offline-First Pre-cached LLM)
+# Implementation Plan: Phase 9 - ML Dataset Automation
 
-Bu plan, **Option A: Offline-First Pre-cached LLM (Tarihsel Önbellek & Geriye Dönük Walk-Forward Simülasyonu)** mimarisi uyarınca, News Agent ve Risk Agent kararlarının geriye dönük walk-forward strateji simülasyonlarına entegre edilmesi için hazırlanmıştır. 
-
-Tarihsel simülasyonlar sırasında binlerce bar için canlı LLM (DeepSeek) çağrısı yapmak aşırı API gecikmelerine, zaman aşımlarına ve devasa finansal maliyetlere yol açacaktır. Bu sorunu aşmak için, gümüş fiyatlarının tarihsel periyotlarına karşılık gelen haber sentimentlerini ve risk critique kararlarını veritabanında pre-cache (tarihsel önbellek) olarak saklayacağız. Backtest motorumuz, simülasyon sırasında canlı LLM'e gitmek yerine bu yerel önbellekten sorgulama yapacaktır.
+This plan outlines the design and implementation of the ML Dataset Automation pipeline for SilverPilot. It ensures zero-leakage feature generation, robust future label calculations, secure FastAPI integration, and high test coverage under SQLite.
 
 ---
 
-## 🛡️ Risk ve Bağlam Analizi
-- **Etkilenen Politikalar:**
-  - [docs/ARCHITECTURE.md](file:///Users/boe747/SilverPilot/docs/ARCHITECTURE.md) (Deterministic accounting rules, agent signal critique boundary).
-  - [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (No real-money operations, local budget guard rules).
-- **Etkilenen Dosyalar:**
-  - `apps/api/app/models/entities.py` *(Yeni `HistoricalAgentCache` tablosunun tanımlanması)*
-  - `apps/api/app/services/strategy.py` *(Strateji değerlendirmesine Ajan filtrelerinin entegre edilmesi)*
-  - `scripts/backtest_engine.py` *(Simülasyon döngüsünün ajan verilerini okuyacak şekilde güncellenmesi ve karşılaştırma raporu)*
-  - `scripts/seed_agent_cache.py` *[NEW]* *(Tarihsel fiyat barlarına denk gelen ajan kararlarının ve sentimentlerinin tohumlanması / seeder)*
-  - `apps/api/tests/test_backtest.py` *(Yeni ajanlı backtest senaryolarının test edilmesi)*
+## 🛡️ Risk & Context Analysis
+- **Zero-Leakage Requirement:** Features must only look backward or at the exact present moment of `observed_at`. Labels look into the future.
+- **Off-VPS ML Training Rule:** Do not write training routines. Focus entirely on dataset generation.
+- **Access Control:** The API endpoints must be fully secured using the `verify_agent_token` dependency.
+- **Affected Files:**
+  - `scripts/build_dataset.py` *[NEW]*: Main pipeline script.
+  - `apps/api/app/api/routes.py`: API endpoints integration.
+  - `apps/api/tests/test_dataset.py` *[NEW]*: Unit and integration tests.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-### **Faz 1: Veritabanı Modeli ve Alembic Migrasyonu**
-- **Açıklama:** Geriye dönük ajan kararlarını saklayacağımız `historical_agent_caches` tablosunu tanımlayacak ve Alembic migrasyonu ile veritabanına uygulayacağız.
-- **Yapılacaklar:**
-  - [ ] `apps/api/app/models/entities.py` dosyasına `HistoricalAgentCache` tablosunu ekleyin (Ajan: `backend-architect`):
-    ```python
-    class HistoricalAgentCache(Base):
-        __tablename__ = "historical_agent_caches"
-
-        id: Mapped[int] = mapped_column(primary_key=True)
-        agent_name: Mapped[str] = mapped_column(String(128), index=True)      # news-agent, risk-agent
-        event_type: Mapped[str] = mapped_column(String(64), index=True)       # news_sentiment, signal_critique
-        timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True) # Eşleşen bar zamanı
-        value_json: Mapped[dict] = mapped_column(JSON, default=dict)          # Sentiment/Critique JSON payload
-        created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    ```
-  - [ ] Alembic migrasyonu oluşturun: `docker-compose exec api alembic revision --autogenerate -m "add historical agent cache"`
-  - [ ] Migrasyonu test edin ve veritabanına uygulayın: `docker-compose exec api alembic upgrade head`
-- **DoD (Tamamlanma Tanımı):** `historical_agent_caches` tablosunun veritabanında başarıyla şemaya eklenmesi.
-
-### **Faz 2: Tarihsel Ajan Kararı Tohumlama Scripti (Seeder)**
-- **Açıklama:** Backtest simülasyonunun testi ve çalışması için geriye dönük fiyat snapshot barlarına karşılık gelen gerçekçi Ajan kararlarını (News Sentiment: BULLISH/BEARISH/NEUTRAL, Risk Critique: APPROVED/REJECTED/CAUTION) veritabanına tohumlayacak scripti yazacağız.
-- **Yapılacaklar:**
-  - [ ] `scripts/seed_agent_cache.py` seeder scriptini oluşturun (Ajan: `data-engineer`):
-    - Gümüş fiyatlarının `observed_at` tarihsel barlarını listelesin.
-    - Her bara karşılık gelecek şekilde gerçekçi ve tutarlı (fiyat yükselirken BULLISH/APPROVED, düşerken BEARISH/REJECTED) veya stokastik ajan sentimentleri/kararları üreterek `HistoricalAgentCache` tablosuna yazsın.
-    - Script doğrudan terminalden çalıştırılabilmelidir.
-- **DoD:** `python scripts/seed_agent_cache.py` çalıştırıldığında barlar için önbelleğin başarıyla dolması.
-
-### **Faz 3: Strategy Runner ve Ajan Filtre Entegrasyonu**
-- **Açıklama:** Mevcut deterministik stratejilerimizin (RSI, SMA Cross, Bollinger) ürettiği BUY/SELL sinyallerini, Ajan önbelleğinden çekilecek sentiment ve kritik kararlarına göre veto edebilecek veya onaylayacak logic yapısını kuracağız.
-- **Yapılacaklar:**
-  - [ ] `apps/api/app/services/strategy.py` içerisindeki `StrategyRunner` sınıfına ajan filtresi mantığını ekleyin (Ajan: `backend-architect`):
-    - `apply_agent_filters(action: str, news_sentiment: str | None, risk_decision: str | None) -> tuple[str, str]` metodunu ekleyin.
-    - Eğer deterministik karar `BUY` ise ve en son `news_sentiment` değeri `BEARISH` ise veya `risk_decision` değeri `REJECTED` ise, işlemi engellesin (`action = "HOLD"`, `reason = "AGENT_VETO_BEARISH_NEWS"` veya `AGENT_VETO_RISK_REJECTED`).
-    - Eğer karar `SELL` ise ve ajan kararları tehlikeli bir durum gösteriyorsa (örneğin aşırı riskli bir piyasa haberi veya trend dönüşü tespiti), satışı hızlandıracak veya destekleyecek veto kuralları tasarlayın.
-- **DoD:** Ajan kararlarına göre deterministik sinyallerin başarıyla veto edilip "HOLD" durumuna çekilmesi.
-
-### **Faz 4: Backtest Engine Güncellemesi ve Karşılaştırma Raporu**
-- **Açıklama:** `scripts/backtest_engine.py` simülasyon döngüsünü, barların zaman damgasına en yakın tarihsel ajan kararlarını sorgulayacak, ajanlı strateji varyantlarını destekleyecek ve premium karşılaştırma raporu sunacak şekilde güncelleyeceğiz.
-- **Yapılacaklar:**
-  - [ ] `scripts/backtest_engine.py` simülasyon motorunu güncelleyin (Ajan: `backend-architect`):
-    - Her simülasyon barında, o barın `observed_at` tarihine ait (veya son 24 saat içindeki en taze) `HistoricalAgentCache` kayıtlarını çeksin.
-    - Yeni ajan destekli strateji tiplerini desteklesin: `rsi_with_agents`, `sma_cross_with_agents`, `bollinger_with_agents`.
-    - Ajan veto kararlarını ve override nedenlerini trading loguna ve ekrana yazdırsın.
-    - Simülasyon sonunda, **Baseline Deterministik Strateji** ile **Ajan Destekli Strateji** ve **Buy & Hold Benchmark'ını** yan yana koyup Net Alpha, Max Drawdown, Kazanma Oranı ve İşlem Maliyeti (Cost Drag) farklarını gösteren premium renkli bir karşılaştırma raporu bassın.
-- **DoD:** Simülatörün ajan destekli stratejileri sıfır canlı LLM çağrısıyla, tamamen veritabanı önbelleğinden beslenerek saniyeler içinde çalıştırıp karşılaştırma raporunu basması.
-
-### **Faz 5: Kalite Kontrol, E2E Testler ve Doğrulama**
-- **Açıklama:** Ajanlı backtest mantığını tamamen test edecek kapsamlı pytest testlerini yazacağız ve tüm test süitinin hatasız çalıştığını doğrulayacağız.
-- **Yapılacaklar:**
-  - [ ] `apps/api/tests/test_backtest.py` dosyasına yeni test senaryoları ekleyin (Ajan: `quality-engineer`):
-    - Ajan verisi tohumlanmış SQLite in-memory ortamında backtestin çalıştırılması.
-    - `BEARISH` haber sentimentinin veya `REJECTED` risk kararının BUY işlemini başarıyla bloke ettiğini (veto ettiğini) doğrulayan iddialar (assertions).
-    - Önbellekte ajan verisi olmadığında stratejinin deterministik kurallarla çökmeden (graceful fallback) devam ettiğinin doğrulanması.
-  - [ ] Tüm test süitini `.venv/bin/pytest` ile koşturarak regresyon olmadığını doğrulayın.
-- **DoD:** Tüm pytest test süitinin 100% yeşil olması ve ajan vetolarının testler altında doğrulanması.
+- `[x]` **Faz 1: Dataset Pipeline & Core Utility Builder**
+  - [x] Implement `scripts/build_dataset.py` with full type hints, docstrings, and a CLI parser supporting `--dry-run` and `--version` (Ajan: `data-engineer`).
+  - [x] **Feature Engineering (Strict Zero-Leakage):**
+    - `bank_spread_percent`: PriceSnapshot `spread_percent` if not null/zero, else `(buy_price - sell_price) / mid_price`.
+    - `xag_return_15m`, `xag_return_1h`, `xag_return_24h` using historical lookbacks.
+    - `usd_try_return_24h` from `RawFxRate` table (USD/TRY).
+    - `volatility_24h`, `volatility_7d`: rolling standard deviation of 15m returns over past 24 hours/7 days.
+    - `xau_xag_ratio`: closest `TechnicalIndicator.xau_xag_ratio` prior to or equal to `observed_at`.
+    - `news_sentiment_score`: closest sentiment from `HistoricalAgentCache` or `AgentMemoryEvent` (within last 24h). Map BULLISH=1.0, NEUTRAL=0.0, BEARISH=-1.0. Default = 0.0.
+    - `hour_of_day`, `day_of_week` (UTC).
+  - [x] **Labels Calculation (Future-Looking):**
+    - `net_profit_1d`, `net_profit_3d`, `net_profit_7d` returns.
+    - `profitable_after_costs_3d`: binary 1 if future `sell_price(t + 3d) > buy_price(t)` else 0.
+    - `max_drawdown_3d`: max peak-to-trough drop from current `mid_price` over next 3 days.
+  - [x] Save to `data/datasets/v{version}/dataset.parquet` and `dataset.csv`. Write `metadata.json` detailing row counts, features, and timestamps.
+  - *DoD (Tamamlanma Tanımı):* `python scripts/build_dataset.py --dry-run --version 1.0.0` runs successfully and demonstrates correct feature calculations on local DB.
+ 
+- `[x]` **Faz 2: Dataset API Integration & Security**
+  - [x] Add `POST /datasets/build` protected by `verify_agent_token` executing the dataset builder in `BackgroundTasks` (Ajan: `backend-architect`).
+  - [x] Add `GET /datasets/list` protected by `verify_agent_token` returning metadata of created datasets under `data/datasets/`.
+  - *DoD:* FastAPI starts and routes are accessible under API docs with X-Agent-Token authorization required.
+ 
+- `[x]` **Faz 3: Quality Control & Pytest Validation**
+  - [x] Create `apps/api/tests/test_dataset.py` test suite (Ajan: `quality-engineer`).
+  - [x] Test features to ensure absolute zero future-lookahead leakage.
+  - [x] Test correct calculation of `profitable_after_costs_3d` and `max_drawdown_3d`.
+  - [x] Test that endpoints return 401 Unauthorized without a valid `X-Agent-Token` header.
+  - *DoD:* Running `pytest apps/api/tests/test_dataset.py` passes with 100% success.
 
 ---
 
-## ❓ Açık Sorular ve Kararlar
-> [!IMPORTANT]
-> - **Zaman Pencereleri:** Tarihsel ajan cache verisini sorgularken, tam zaman damgası eşleşmesi yerine (çünkü haberler ve fiyat barları saniye saniye denk gelmeyebilir), fiyattan önceki **son 24 saatlik en taze kararı** baz alan bir `observed_at` penceresi kullanmayı planlıyoruz. Bu tolerans aralığı tasarımı onayınızda mıdır?
+## ❓ Open Questions & Decisions
+> [!NOTE]
+> 1. **Time-series Matching Tolerance:** When looking up `RawFxRate` or `TechnicalIndicator` values at exact historical points, we will use a rolling historical matching approach (i.e. `pandas.merge_asof` with direction="backward") to ensure zero look-ahead and robust matching.
+> 2. **Max Drawdown Calculation:** We will compute max drawdown as the maximum peak-to-trough decline (as a positive float, e.g. `0.05` for a 5% drop) in the 3-day future window.
