@@ -168,7 +168,15 @@ echo -e \"\${BLUE}[3/5] Running Alembic Database migrations...\${NC}\"
 docker compose --env-file .env.production run --rm api alembic upgrade head
 
 echo -e \"\${BLUE}[4/5] Executing smoke check on HTTP Server...\${NC}\"
+for i in {1..10}; do
+    if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+        break
+    fi
+    echo "Waiting for HTTP Server to start (attempt \$i/10)..."
+    sleep 1
+done
 curl -fsS http://127.0.0.1:8000/health
+
 
 echo -e \"\${BLUE}[4.5/5] Running E2E Strategy & Backtest Verification Pipeline...\${NC}\"
 docker compose --env-file .env.production run --rm -v /opt/silverpilot/SilverPilot/scripts:/app/scripts api python scripts/verify_execution_pipeline.py
