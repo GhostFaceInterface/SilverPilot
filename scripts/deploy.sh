@@ -162,7 +162,7 @@ git pull --ff-only
 
 echo -e \"\${BLUE}[2/5] Building and updating Docker services...\${NC}\"
 docker compose --env-file .env.production config >/dev/null
-docker compose --env-file .env.production up -d --build
+docker compose --env-file .env.production --profile collector --profile dashboard up -d --build
 
 echo -e \"\${BLUE}[3/5] Running Alembic Database migrations...\${NC}\"
 docker compose --env-file .env.production run --rm api alembic upgrade head
