@@ -15,6 +15,20 @@ from app.agents.orchestrator import run_blended_consensus_resolution
 logger = logging.getLogger("silverpilot.services.auto_trader")
 
 
+def sanitize_markdown(text: str) -> str:
+    """Escapes markdown control characters and converts ** to * for Telegram Markdown V1."""
+    if not text:
+        return ""
+    # Convert standard double-asterisk bold (**) to Markdown V1 single-asterisk bold (*)
+    text = text.replace("**", "*")
+    # Escape underscores to prevent them from starting italic blocks
+    text = text.replace("\\_", "_").replace("_", "\\_")
+    # Escape brackets to prevent unmatched link structures
+    text = text.replace("\\[", "[").replace("[", "\\[")
+    text = text.replace("\\]", "]").replace("]", "\\]")
+    return text
+
+
 async def send_telegram_notification(trade_data: dict, settings, disable_notification: bool = False):
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         logger.warning("Telegram configuration missing. Notification skipped.")
@@ -58,8 +72,9 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
                 return "⚪️ BEKLE"
             act = vote_dict.get("action", "HOLD")
             reason = vote_dict.get("reason", "")
+            reason_safe = reason.replace("_", " ") if reason else ""
             emoji = "🟢 AL" if act == "BUY" else ("🔴 SAT" if act == "SELL" else "⚪️ BEKLE")
-            return f"{emoji} ({reason})" if reason else emoji
+            return f"{emoji} ({reason_safe})" if reason_safe else emoji
 
         rsi_vote = format_vote(votes.get("rsi"))
         bb_vote = format_vote(votes.get("bollinger"))
@@ -69,7 +84,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         arbiter_emoji = (
             "🟢 AL" if arbiter_stance == "BULLISH" else ("🔴 SAT" if arbiter_stance == "BEARISH" else "⚪️ BEKLE")
         )
-        arbiter_reason = trade_data.get("arbiter_reason", "Gerekçe belirtilmedi.")
+        arbiter_reason = sanitize_markdown(trade_data.get("arbiter_reason", "Gerekçe belirtilmedi."))
 
         msg = (
             f"📊 *SilverPilot Canlı Analiz Raporu*\n\n"

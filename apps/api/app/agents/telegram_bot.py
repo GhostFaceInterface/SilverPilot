@@ -14,6 +14,20 @@ from app.paper_trading.service import calculate_position
 logger = logging.getLogger("silverpilot.telegram.bot")
 
 
+def sanitize_markdown(text: str) -> str:
+    """Escapes markdown control characters and converts ** to * for Telegram Markdown V1."""
+    if not text:
+        return ""
+    # Convert standard double-asterisk bold (**) to Markdown V1 single-asterisk bold (*)
+    text = text.replace("**", "*")
+    # Escape underscores to prevent them from starting italic blocks
+    text = text.replace("\\_", "_").replace("_", "\\_")
+    # Escape brackets to prevent unmatched link structures
+    text = text.replace("\\[", "[").replace("[", "\\[")
+    text = text.replace("\\]", "]").replace("]", "\\]")
+    return text
+
+
 def handle_telegram_command(command: str, db: Session) -> str:
     parts = command.strip().split()
     if not parts:
@@ -200,7 +214,7 @@ def get_ajanlar_text(db: Session) -> str:
     resolutions = (
         db.execute(
             select(AgentMemoryEvent)
-            .where(AgentMemoryEvent.event_type == "disagreement_resolution")
+            .where(AgentMemoryEvent.event_type.in_(["disagreement_resolution", "blended_consensus_resolution"]))
             .order_by(desc(AgentMemoryEvent.created_at))
             .limit(3)
         )
@@ -219,7 +233,8 @@ def get_ajanlar_text(db: Session) -> str:
             time_str = dis.created_at.strftime("%Y-%m-%d %H:%M")
             lines.append(f"• *[{time_str}]* Stances: `{stances_str}`")
             for d in val.get("disagreements", []):
-                lines.append(f"  └─ `{d.get('type')}`: {d.get('description')}")
+                desc_safe = sanitize_markdown(d.get("description", ""))
+                lines.append(f"  └─ `{d.get('type')}`: {desc_safe}")
     else:
         lines.append("_Yakın zamanda bir uyuşmazlık tespit edilmedi._")
 
@@ -233,7 +248,8 @@ def get_ajanlar_text(db: Session) -> str:
             time_str = res.created_at.strftime("%Y-%m-%d %H:%M")
             lines.append(f"• *[{time_str}]* Karar: *{resolved_stance}* (Güven: {confidence:.2f})")
             short_res = resolution_markdown[:150] + "..." if len(resolution_markdown) > 150 else resolution_markdown
-            lines.append(f"  └─ {short_res}")
+            short_res_safe = sanitize_markdown(short_res)
+            lines.append(f"  └─ {short_res_safe}")
     else:
         lines.append("_Henüz çözümlenmiş bir arbiter kararı bulunmuyor._")
 
