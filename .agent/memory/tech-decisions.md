@@ -1,8 +1,9 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-22
+updated: 2026-05-25
 ---
+
 
 # Technical Stack & Architectural Decisions
 
@@ -84,3 +85,12 @@ updated: 2026-05-22
 - **Hybrid Local Long-Polling Loop:** Built a startup long-polling thread inside the FastAPI lifespan context manager (`app.main`). If `TELEGRAM_BOT_MODE == "polling"`, the system runs a polling loop locally without requiring ngrok or public VPS deployment.
 - **Compact Scoped Database Sessions:** Enforced strict Port Isolation by opening and closing scoped PostgreSQL database connections (`with SessionLocal() as db:`) dynamically inside the background Telegram consumer thread, eliminating connection leaks.
 - **Beautiful Markdown Response Engine:** Implemented `/durum`, `/cuzdan`, `/karzarar`, and `/ajanlar` commands to render real-time paper portfolio metrics, growth margins vs. original $600 USD balance, spot price deviations, and Supreme Arbiter verdicts in clean Telegram Markdown.
+
+## 14. Local-IDE & Remote VPS Hybrid Developer Workflow (Phase 14 - May 2026)
+- **Zero-Local-Docker Policy:** To prevent local machine CPU/RAM starvation and clean up persistent volume issues, all active Docker compose profiles (PostgreSQL, Streamlit, API, Collector) are permanently shut down and disabled on the local developer machine.
+- **Isolated Local Mock Testing:** Code editing runs locally in the developer's IDE, with rapid, high-coverage testing executed using fast in-memory SQLite and mocks (`pytest apps/api/tests` passing 150/150).
+- **Automated Git & Remote Deploy:** Complete VPS migration is orchestrated by a local command `./scripts/deploy.sh` which:
+  1. Stages, commits, and pushes current changes to GitHub `origin main`.
+  2. Securely connects to `silverpilot-vps` via SSH and pulls the latest main.
+  3. Triggers `scripts/vps_smoke.sh` on the VPS to rebuild services, run Alembic migrations, test collectors, and run E2E live database tests (`verify_execution_pipeline.py`).
+- **Direct VPS Edit Ban:** Direct live-patching or editing of codebase files directly on the VPS is strictly prohibited to ensure Git history consistency, prevent syntax errors, and maintain zero-trust boundaries.
