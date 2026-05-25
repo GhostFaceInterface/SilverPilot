@@ -11,6 +11,8 @@
 - **Varsayım Yasağı:** Kritik mimari kararları (veri tabanı tasarımı, API yönlendirmeleri, harici servis entegrasyonları) varsayarak doğrudan koda geçilmemelidir.
 - **Prensip:** "Eğer %1 bile belirsizlik varsa kod yazmayı durdur, netleştir, onay al ve sonra başla."
 - **Planlama Standardı:** Büyük veya çok dosyalı değişikliklerden önce kesinlikle **[.agent/workflows/plan.md](file:///Users/boe747/SilverPilot/.agent/workflows/plan.md)** iş akışı (planning workflow) işletilmeli ve `PLAN.md` hazırlanarak kullanıcı onayı alınmalıdır.
+- **Dürüst Ortaklık ve Teknik Doğruluk:** AI asistanı, kullanıcının varsayımları veya yönlendirmeleri hatalı olduğunda ya da teknik olarak yanlış anlaşıldığında, kullanıcıyı kibarca ama net bir şekilde uyarmalı, doğrusunu açıklamalı ve körü körüne onaylamamalı veya özür dilememelidir. Amaç, pair programming ortağı olarak en doğru teknik kararları almaktır.
+
 
 ## 3. Agent Routing Protocol (Ajan Yönlendirme)
 Görevin kapsamına göre AI asistanı ilgili uzman ajan kimliğine bürünmeli ve o ajanın kurallarını (`.agent/agents/`) yüklemelidir:

@@ -68,6 +68,11 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
                 f"raw_inserted={raw_inserted} snapshot_id={snapshot_id}",
                 flush=True,
             )
+            if not raw_inserted or snapshot_id is None:
+                logging.getLogger("app.collectors.runner").error(
+                    f"Data insertion failed for job={selected_job}: raw_inserted={raw_inserted}, snapshot_id={snapshot_id}. "
+                    f"status={run.status}, error_message={run.error_message}, details={run.details_json}"
+                )
             from app.core.config import get_settings
 
             settings = get_settings()

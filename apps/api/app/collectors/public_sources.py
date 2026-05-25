@@ -629,7 +629,7 @@ class YahooXagUsdProvider:
             retries=settings.yahoo_xag_usd_retries,
             backoff_seconds=settings.yahoo_xag_usd_backoff_seconds,
             source=self.source,
-            params={"range": "1d", "interval": "5m"},
+            params={"range": "5d", "interval": "5m"},
         )
         parsed = parse_yahoo_finance_chart_json(
             raw_payload,
