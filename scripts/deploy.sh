@@ -186,7 +186,7 @@ echo -e \"\${BLUE}[5/5] Running all collector sanity jobs...\${NC}\"
 echo \"Running: tcmb-usd-try\"
 docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job tcmb-usd-try
 echo \"Running: global-xag-usd\"
-docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job global-xag-usd
+docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job global-xag-usd || echo \"Global XAG/USD is stale or closed (expected during off-market hours or holidays).\"
 echo \"Running: kuveyt-silver\"
 docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver
 echo \"Running: fed-rss\"

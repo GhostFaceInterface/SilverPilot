@@ -128,7 +128,7 @@ jobs:
             done && \
             curl -fsS http://127.0.0.1:8000/health && \
             docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job tcmb-usd-try && \
-            docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job global-xag-usd && \
+            (docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job global-xag-usd || true) && \
             docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver && \
             docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fed-rss && \
             docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fred-macro && \
