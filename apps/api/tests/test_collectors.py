@@ -718,6 +718,91 @@ def test_global_xag_fallback_uses_metals_dev_when_yahoo_times_out():
         db.close()
 
 
+def test_gold_api_xag_usd_collector_writes_global_price_and_snapshot():
+    _, testing_session = make_client()
+    observed_at = datetime.now(UTC) - timedelta(minutes=1)
+
+    gold_json = {
+        "currency": "USD",
+        "currencySymbol": "$",
+        "exchangeRate": 1.0,
+        "name": "Silver",
+        "price": 28.55,
+        "symbol": "XAG",
+        "updatedAt": observed_at.isoformat().replace("+00:00", "Z"),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=gold_json)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        run, raw_inserted, snapshot = collect_global_xag_usd(
+            db,
+            settings=Settings(global_xag_source_priority="gold-api-xag-usd"),
+            client=client,
+        )
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert str(snapshot.mid_price) == "28.550000"
+        raw = db.query(RawGlobalPrice).one()
+        assert raw.source == "gold-api-xag-usd"
+        assert raw.raw_payload_hash
+        assert raw.parser_version == "gold-api-xag-usd-v1"
+    finally:
+        client.close()
+        db.close()
+
+
+def test_global_xag_fallback_uses_gold_api_when_yahoo_fails():
+    _, testing_session = make_client()
+    observed_at = datetime.now(UTC) - timedelta(minutes=1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "SI=F" in str(request.url):
+            # Simulate blocked IP: returns non-JSON HTML with 200 OK
+            return httpx.Response(200, text="<html>Blocked by Yahoo Finance consent portal</html>")
+        return httpx.Response(
+            200,
+            json={
+                "currency": "USD",
+                "price": 28.60,
+                "symbol": "XAG",
+                "updatedAt": observed_at.isoformat().replace("+00:00", "Z"),
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    db = testing_session()
+    try:
+        run, raw_inserted, snapshot = collect_global_xag_usd(
+            db,
+            settings=Settings(
+                global_xag_source_priority="yahoo-si-f,gold-api-xag-usd",
+                yahoo_xag_usd_retries=0,
+                yahoo_xag_usd_backoff_seconds=0,
+            ),
+            client=client,
+        )
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert run.details_json["selected_global_xag_source"] == "gold-api-xag-usd"
+        assert db.query(RawGlobalPrice).one().source == "gold-api-xag-usd"
+        failed_yahoo = db.execute(
+            select(CollectorRun).where(CollectorRun.collector_name == "yahoo_xag_usd")
+        ).scalar_one()
+        assert failed_yahoo.status == "failed"
+        assert failed_yahoo.details_json["failure_reason_code"] == "PARSE_ERROR"
+    finally:
+        client.close()
+        db.close()
+
+
 def test_yahoo_usd_try_collector_writes_fx_rate():
     _, testing_session = make_client()
     observed_at = datetime.now(UTC) - timedelta(minutes=1)

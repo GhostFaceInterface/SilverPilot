@@ -255,7 +255,7 @@ def ingest_global_price(
 # Technical Indicator helper (Phase 3.6)
 # ---------------------------------------------------------------------------
 _INDICATOR_HISTORY_BARS = 200
-_INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f"}
+_INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"}
 
 
 def _try_compute_and_store_indicator(

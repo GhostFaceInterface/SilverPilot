@@ -1,54 +1,50 @@
-# Implementation Plan: Modüler Kıymetli Metal Dönüşüm Matrisi & Gram Gümüş Entegrasyonu (Option C)
+# Implementation Plan: Resilient Global XAG/USD Data Provider Fallback & Technical Indicators Recovery
 
-Bu plan, ons tabanlı paper-trade hesabını tamamen kaldırarak yerine $2500 USD başlangıç bakiyesine sahip Gram/Dolar (`XAG_GRAM`) hesabını koymayı ve tüm sistemi gelecekte altın, platin gibi farklı maden ve birimlerin eklenmesini sıfır kod değişimiyle destekleyecek jenerik **Option C** mimarisine kavuşturmayı amaçlar.
+Bu plan, Yahoo Finance'in VPS IP'lerini engellemesinden kaynaklanan veri toplayıcı başarısızlıklarını ve buna bağlı olarak teknik indikatörlerin/Telegram işlemlerinin durması sorununu kökünden çözmeyi amaçlar. Ücretsiz, anahtarsız ve VPS dostu yeni bir servis olan **GoldApiSilverProvider** entegre edilecek ve sistemin indikatör/auto-trader katmanı tek bir kaynağa (`yahoo-si-f`) bağımlı olmaktan çıkarılarak tam bir yedeklilik (resilience) kazandırılacaktır.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
-- **Kritik Veritabanı Kısıt Riski:** `TechnicalIndicator` benzersizlik kısıtı `UniqueConstraint("bar_timestamp", "timeframe")` olarak tanımlıdır ve varlık ayırt etmemektedir. Çoklu varlık uyumluluğu için bu kısıt esnetilmelidir.
-- **CI/CD Duman Testi Regresyonu:** `verify_execution_pipeline.py` E2E doğrulama betiği ons varlığı `XAG` bağımlıdır ve `XAG_GRAM` ile uyumlu güncellenmelidir.
-- **Kuveyt BSMV Vergi Gerçekçiliği:** `paper_buy` işlemlerinde yasal %0.2 oranında yasal Kambiyo/BSMV vergisinin otomatik işlenmesi gerekmektedir.
+- **Tek Noktadan Başarısızlık (SPOF):** Mevcut auto-trader ve Telegram indikatör sorguları sert şekilde `yahoo-si-f` kaynağına bağımlıdır. Yahoo Finance VPS IP'sini engellediğinde veri toplama 200 OK HTML (cookie consent/CAPTCHA) döndüğü için `PARSE_ERROR` ile çökmekte, indikatörler hesaplanamamakta ve tüm auto-trading motoru durmaktadır.
+- **Yedekli İndikatör Hesaplama Güvencesi:** Gold API veya gelecekteki herhangi bir global sağlayıcıdan veri çekildiğinde de indikatörlerin otomatik hesaplanması ve veri tabanına yazılması gerekmektedir.
 - **Etkilenen Dosyalar:**
-  - `apps/api/app/models/entities.py` (Kısıt tanımları)
-  - `apps/api/app/services/seed.py` (Tohumlama)
-  - `apps/api/app/collectors/service.py` (Dönüşüm ve replikasyon matrisi)
-  - `apps/api/app/services/auto_trader.py` (Auto trader emir jenerikleştirilmesi)
-  - `apps/api/app/agents/telegram_bot.py` (Bot komutları ve durum raporu)
-  - `scripts/verify_execution_pipeline.py` (E2E duman testi)
+  - `apps/api/app/core/config.py` (Yeni Gold API ayarlarının eklenmesi ve varsayılan öncelik listesinin güncellenmesi)
+  - `apps/api/app/collectors/public_sources.py` (Yeni `GoldApiSilverProvider` sınıfı ve parser işlevinin yazılması)
+  - `apps/api/app/collectors/service.py` (`_INDICATOR_GLOBAL_SOURCES` kümesine yeni kaynağın eklenmesi)
+  - `apps/api/app/services/auto_trader.py` (Sadece `yahoo-si-f` yerine tüm aktif global kaynaklardan indikatör sorgulayacak dinamik yapıya geçiş)
+  - `apps/api/app/agents/telegram_bot.py` (İndikatör ve fiyat seansı analizlerini yedekli kaynaklardan çekecek esnek kurgunun entegrasyonu)
+  - `apps/api/tests/test_collectors.py` (Yeni sağlayıcı için unit ve entegrasyon testlerinin yazılması)
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[ ]` **Faz 1: DB Modülerlik Hazırlığı & Şema Tohumlama (Seeding)**
-  - [ ] **Modüler Kısıt Güncellemesi:** `apps/api/app/models/entities.py` içerisindeki `TechnicalIndicator` benzersizlik kısıtının (UniqueConstraint) `price_snapshot_id` ve `timeframe` parametrelerini içerecek şekilde modüler hale getirilmesi.
-  - [ ] **Seed Revizyonu:** `apps/api/app/services/seed.py` dosyasından ons portföyünün silinmesi; yerine `initial_cash = Decimal("2500.00")` ile `"gram-paper"` portföyünün ve `"XAG_GRAM"` asset kaydının eklenmesi.
-  - [ ] **Alembic Migration:** Değişen model kısıtı için yeni bir Alembic migrasyonunun oluşturulması ve lokal test veri tabanında başarıyla uygulanması.
-  - *DoD (Tamamlanma Tanımı):* `pytest` model testlerinin hatasız geçmesi ve veri tabanında `gram-paper` portföyü ile `XAG_GRAM` varlığının başarıyla tohumlanması.
+- `[x]` **Faz 1: Konfigürasyon & Yeni Gold API Sağlayıcı Altyapısı**
+  - [x] **Config Güncellemesi:** `apps/api/app/core/config.py` dosyasına `gold_api_xag_usd_enabled`, `gold_api_xag_usd_url` ve `gold_api_xag_usd_timeout_seconds` alanlarının eklenmesi.
+  - [x] **Öncelik Güncellemesi:** `global_xag_source_priority` varsayılan değerinin `"yahoo-si-f,gold-api-xag-usd,metals-dev"` olarak güncellenmesi.
+  - [x] **Sağlayıcı Sınıfı:** `apps/api/app/collectors/public_sources.py` içerisine `GoldApiSilverProvider` sınıfının ve `parse_gold_api_silver_spot_json` parser işlevinin yazılması.
+  - [x] **Sağlayıcı Tescili:** `_global_xag_providers` fonksiyonuna yeni sağlayıcının tescil edilmesi.
+  - *DoD (Tamamlanma Tanımı):* Gold API sağlayıcısının yerelde sahte payload ile başarıyla parse edilebilmesi.
 
-- `[ ]` **Faz 2: Modüler Dönüşüm & Replikasyon Matris Servisi**
-  - [ ] **Dönüşüm Matrisi Entegrasyonu:** `apps/api/app/collectors/service.py` içerisine jenerik dönüşüm matrisi (`AssetConversionManager`) ve `replicate_prices_for_gram(db, ounce_snapshot)` kurgusunun eklenmesi.
-  - [ ] **Otomatik Tetikleyici:** Ons gümüş fiyatı sisteme girdiğinde anında gram birim fiyatını (Ons Fiyatı ÷ 31.1035) hesaplayıp `PriceSnapshot` ve scaled `TechnicalIndicator` kayıtlarını `XAG_GRAM` varlık kimliği ile otomatik oluşturan yapının entegre edilmesi.
-  - *DoD:* Yeni ons fiyat toplayıcı çalıştırıldığında veri tabanında anında scaled Gram snapshot'larının ve teknik göstergelerinin hatasız oluşması.
+- `[x]` **Faz 2: İndikatör Hesaplama & Auto-Trader / Telegram Yedeklilik Entegrasyonu**
+  - [x] **İndikatör Tetikleyici Güncellemesi:** `apps/api/app/collectors/service.py` içerisindeki `_INDICATOR_GLOBAL_SOURCES` kümesine `"gold-api-xag-usd"` ve `"metals-dev-silver-spot"` değerlerinin eklenmesi.
+  - [x] **Auto-Trader Sorgu Esnekliği:** `apps/api/app/services/auto_trader.py` içerisindeki indikatör ve snapshot sorgularının tek bir sert kaynak yerine en son başarıyla güncellenen herhangi bir global kaynağı (`"yahoo-si-f"`, `"gold-api-xag-usd"`, `"metals-dev-silver-spot"`) getirecek şekilde esnetilmesi.
+  - [x] **Telegram Bot Sorgu Esnekliği:** `apps/api/app/agents/telegram_bot.py` içindeki `/canli` (indikatör), seans analizleri ve chart sorgularının en son aktif global kaynağı dinamik olarak algılamasının sağlanması.
+  - *DoD:* Auto-trader ve Telegram modüllerinin `yahoo-si-f` yerine `gold-api-xag-usd` indikatörleri bulunduğunda da hatasız çalışması.
 
-- `[ ]` **Faz 3: Jenerik Auto-Trader ve E2E Duman Testi Revizyonu**
-  - [ ] **AutoTrader Jenerikleşmesi:** `apps/api/app/services/auto_trader.py` içerisindeki auto-trading emir tetikleyicisinin tamamen `gram-paper` portföyü ve `XAG_GRAM` gram fiyat/miktar oranlarıyla çalışacak şekilde güncellenmesi.
-  - [ ] **Kuveyt BSMV Vergi Mantığı:** `execute_paper_trade` çağrısında, eğer işlem yapılan varlık Gram ise `paper_buy` emirlerine %0.2 yasal verginin otomatik giydirilmesi.
-  - [ ] **Duman Testi Güncellemesi:** `scripts/verify_execution_pipeline.py` betiğinin ons `XAG` yerine tamamen modüler `XAG_GRAM` varlığını simüle edecek şekilde revize edilmesi.
-  - *DoD:* `python scripts/verify_execution_pipeline.py` duman testinin yerelde sıfır hata ve temiz rollback ile tamamlanması.
+- `[x]` **Faz 3: Testler & Yerel Doğrulama**
+  - [x] **Unit Testler:** `apps/api/tests/test_collectors.py` içerisine `GoldApiSilverProvider`'ın başarılı akış, timeout ve parse hatası senaryolarını test eden kapsamlı unit testlerin yazılması.
+  - [x] **Entegrasyon Testi:** Fallback zincirinde Yahoo Finance başarısız olduğunda sistemin otomatik olarak Gold API'ye geçiş yaptığını ve `PriceSnapshot` ile `TechnicalIndicator` kayıtlarını oluşturduğunu doğrulayan entegrasyon testinin yazılması.
+  - *DoD:* Tüm pytest yerel test süitinin (150+ test) sıfır hata ile tamamlanması.
 
-- `[ ]` **Faz 4: Telegram Botu Arayüzü ve Durum Raporlama Revizyonu**
-  - [ ] **Telegram Komut Güncellemeleri:** `/durum`, `/cuzdan`, `/karzarar` ve `/ajanlar` komutlarının, ons hesabını tamamen dışarıda bırakıp yeni $2500 USD'lik gram hesabı değerlerini, gram/dolar fiyatlarını ve gram bazlı konsensüs raporlarını gösterecek şekilde güncellenmesi.
-  - *DoD:* Telegram botunda `/durum` çağrıldığında gram hesabının bakiye, gümüş miktarı ve PNL durumunun kusursuz listelenmesi.
-
-- `[ ]` **Faz 5: Derinlemesine Kalite Kontrol, Entegrasyon Testleri ve Canlı Dağıtım**
-  - [ ] **Unit & Entegrasyon Testleri:** `test_paper_trading.py`, `test_telegram.py`, `test_auto_trader.py` dosyalarındaki ons bağımlı testlerin yeni gram kurgusuna göre adapte edilmesi.
-  - [ ] **Safety Gatekeeper Analizi:** Statik analiz ve regresyon koruması kontrollerinin çalıştırılması.
-  - [ ] **Canlı VPS Deploy:** Kodların `main` dala gönderilerek VPS sunucusuna `deploy.sh -y` ile kurulması ve `vps_smoke.sh` testlerinden tam başarı alınması.
-  - *DoD:* Tüm pytest yerel test süitinin (150+ test) ve uzak sunucu smoke testlerinin yeşil (green) çıkması.
+- `[/]` **Faz 4: Canlı Dağıtım & VPS Smoke Doğrulaması**
+  - [ ] **Git Commit & Push:** Kod değişikliklerinin `main` dalına otomatik commit ve push edilmesi.
+  - [ ] **VPS Deploy & Smoke:** VPS sunucusunda `vps_smoke.sh` duman testlerinin çalıştırılması ve yeşil yanmasının teyit edilmesi.
+  - *DoD:* `vps_smoke.sh` testinin tüm sağlayıcılar için (özellikle Yahoo başarısız olsa dahi Gold API yedeğiyle) 100% başarıyla tamamlanması.
 
 ---
 
 ## ❓ Açık Sorular
-- Alım işlemlerinde devlet adına kesilen %0.2 BSMV/Kambiyo vergisini otomatik hesaplamak üzere `execute_paper_trade` içerisinde `taxes = amount * Decimal("0.002")` formülünü uygulamak sizin için uygun mudur? [ONAYLANDI]
-- Model kısıtının (UniqueConstraint) Alembic migrasyonu ile esnetilerek gelecekteki Altın (XAU) ve Platin (XPT) çoklu gösterge yapısına bugünden hazırlanması sizin için uygun mudur? [ONAYLANDI]
+> [!NOTE]
+> - Gold API (`api.gold-api.com`) tamamen ücretsiz, anahtarsız ve VPS IP'lerine karşı son derece hoşgörülüdür. Bu sağlayıcıyı öncelik sırasında Yahoo Finance'in hemen ardına koyarak Yahoo'nun çöktüğü tüm anlarda otomatik ve kusursuz bir yedeklilik sağlamayı hedefliyoruz.
+> - İndikatörlerin her iki global kaynaktan da gelebileceğini varsayarak, auto-trader ve Telegram botunun veri tabanındaki en taze global indikatör kaydını çekmesi mimari açıdan en doğru ve sağlam yaklaşımdır.

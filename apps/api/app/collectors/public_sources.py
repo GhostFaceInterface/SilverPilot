@@ -38,6 +38,7 @@ class HardAnomalyError(ValueError):
 KUVEYT_PARSER_VERSION = "kuveyt-public-finance-portal-v2"
 YAHOO_FINANCE_CHART_PARSER_VERSION = "yahoo-finance-chart-v1"
 METALS_DEV_PARSER_VERSION = "metals-dev-silver-spot-v1"
+GOLD_API_PARSER_VERSION = "gold-api-xag-usd-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
 FED_RSS_PARSER_VERSION = "fed-rss-v1"
 FRED_OBSERVATIONS_PARSER_VERSION = "fred-observations-v1"
@@ -711,6 +712,42 @@ class MetalsDevSilverProvider:
         return parsed
 
 
+class GoldApiSilverProvider:
+    source = "gold-api-xag-usd"
+    collector_name = "gold_api_xag_usd"
+    parser_version = GOLD_API_PARSER_VERSION
+
+    def enabled(self, settings: Settings) -> bool:
+        return getattr(settings, "gold_api_xag_usd_enabled", True)
+
+    def fetch(
+        self,
+        *,
+        settings: Settings,
+        fetched_at: datetime,
+        client: httpx.Client | None,
+    ) -> NormalizedGlobalSilverPrice:
+        url = getattr(settings, "gold_api_xag_usd_url", "https://api.gold-api.com/price/XAG")
+        timeout = getattr(settings, "gold_api_xag_usd_timeout_seconds", 10.0)
+        raw_payload = _fetch_with_retry(
+            url,
+            settings=settings,
+            client=client,
+            timeout_seconds=timeout,
+            retries=1,
+            backoff_seconds=1.0,
+            source=self.source,
+        )
+        parsed = parse_gold_api_silver_spot_json(
+            raw_payload,
+            fetched_at=fetched_at,
+            source=self.source,
+            parser_version=self.parser_version,
+        )
+        _reject_stale_global_quote(parsed.observed_at, fetched_at, settings=settings, source=self.source)
+        return parsed
+
+
 def parse_yahoo_finance_chart_json(
     raw_payload: str,
     *,
@@ -913,6 +950,58 @@ def parse_metals_dev_silver_spot_json(raw_payload: str, *, fetched_at: datetime)
             "source_type": "free_api_key_json_api",
             "access_tier": "free_api_key_optional",
             "reliability_tier": "approved_optional_fallback",
+        },
+    )
+
+
+def parse_gold_api_silver_spot_json(
+    raw_payload: str,
+    *,
+    fetched_at: datetime,
+    source: str,
+    parser_version: str,
+) -> NormalizedGlobalSilverPrice:
+    try:
+        body = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} response is not valid JSON") from exc
+
+    price_val = body.get("price")
+    if price_val is None:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} response missing price")
+
+    try:
+        price = Decimal(str(price_val))
+    except (ValueError, InvalidOperation) as exc:
+        raise GlobalSilverProviderError("PARSE_ERROR", f"{source} returned invalid price: {price_val}") from exc
+
+    currency = str(body.get("currency") or "USD").upper()
+    symbol = str(body.get("symbol") or "XAG").upper()
+
+    updated_at_str = body.get("updatedAt")
+    if updated_at_str:
+        try:
+            observed_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            observed_at = fetched_at
+    else:
+        observed_at = fetched_at
+
+    return NormalizedGlobalSilverPrice(
+        source=source,
+        symbol=symbol,
+        price=price,
+        currency=currency,
+        unit="oz",
+        observed_at=observed_at,
+        fetched_at=fetched_at,
+        raw_payload=raw_payload,
+        parser_version=parser_version,
+        bid=price,
+        ask=price,
+        metadata={
+            "source_type": "free_no_auth_json_api",
+            "reliability_tier": "approved_free_fallback",
         },
     )
 
@@ -1247,6 +1336,8 @@ def _global_xag_providers(settings: Settings) -> list[GlobalSilverPriceProvider]
     available: dict[str, GlobalSilverPriceProvider] = {
         "yahoo-si-f": YahooXagUsdProvider(),
         "yahoo_si_f": YahooXagUsdProvider(),
+        "gold-api-xag-usd": GoldApiSilverProvider(),
+        "gold_api_xag_usd": GoldApiSilverProvider(),
         "metals-dev": MetalsDevSilverProvider(),
         "metalsdev": MetalsDevSilverProvider(),
     }

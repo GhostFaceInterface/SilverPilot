@@ -288,7 +288,7 @@ def generate_daily_price_chart(db: Session) -> io.BytesIO | None:
             select(PriceSnapshot)
             .where(
                 PriceSnapshot.asset_id == asset.id,
-                PriceSnapshot.source == "yahoo-si-f",
+                PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]),
                 PriceSnapshot.observed_at >= twenty_four_hours_ago,
             )
             .order_by(PriceSnapshot.observed_at.asc())
@@ -426,7 +426,7 @@ def generate_daily_price_caption(db: Session) -> str:
             select(PriceSnapshot)
             .where(
                 PriceSnapshot.asset_id == asset.id,
-                PriceSnapshot.source == "yahoo-si-f",
+                PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]),
                 PriceSnapshot.observed_at >= twenty_four_hours_ago,
             )
             .order_by(PriceSnapshot.observed_at.asc())
@@ -512,7 +512,7 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     stmt = (
         select(TechnicalIndicator)
         .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
-        .where(PriceSnapshot.source == "yahoo-si-f")
+        .where(PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]))
         .where(PriceSnapshot.asset_id == asset.id)
         .order_by(TechnicalIndicator.bar_timestamp.desc())
         .limit(2)

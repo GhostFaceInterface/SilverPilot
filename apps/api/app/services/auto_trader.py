@@ -211,17 +211,20 @@ async def _run_auto_trading_impl(db: Session, settings):
         logger.error("Asset 'XAG_GRAM' not found")
         return
 
-    # 3. Fetch two latest indicators from source 'yahoo-si-f' for XAG_GRAM
+    # 3. Fetch two latest indicators from any global source for XAG_GRAM
     stmt = (
         select(TechnicalIndicator)
         .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
-        .where(PriceSnapshot.source == "yahoo-si-f", PriceSnapshot.asset_id == asset.id)
+        .where(
+            PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]),
+            PriceSnapshot.asset_id == asset.id
+        )
         .order_by(TechnicalIndicator.bar_timestamp.desc())
         .limit(2)
     )
     indicators = db.execute(stmt).scalars().all()
     if not indicators:
-        logger.warning("No technical indicators found for XAG_GRAM source yahoo-si-f")
+        logger.warning("No technical indicators found for XAG_GRAM from any global source")
         return
 
     latest_indicator = indicators[0]
