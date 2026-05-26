@@ -23,6 +23,20 @@ def seed_development_data() -> None:
 
         if old_asset:
             db.execute(text("DELETE FROM paper_trades WHERE asset_id = :aid"), {"aid": old_asset.id})
+            # Clean up signals referencing these indicators to prevent Foreign Key constraint errors
+            db.execute(
+                text(
+                    "DELETE FROM signals WHERE indicator_id IN (SELECT id FROM technical_indicators WHERE price_snapshot_id IN (SELECT id FROM price_snapshots WHERE asset_id = :aid))"
+                ),
+                {"aid": old_asset.id},
+            )
+            # Also clean up signals referencing the price snapshots
+            db.execute(
+                text(
+                    "DELETE FROM signals WHERE price_snapshot_id IN (SELECT id FROM price_snapshots WHERE asset_id = :aid)"
+                ),
+                {"aid": old_asset.id},
+            )
             db.execute(
                 text(
                     "DELETE FROM technical_indicators WHERE price_snapshot_id IN (SELECT id FROM price_snapshots WHERE asset_id = :aid)"
