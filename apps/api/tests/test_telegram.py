@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db import Base, get_db
 from app.main import create_app
 from app.core.config import get_settings, Settings
-from app.models import Asset, Portfolio, PriceSnapshot, AgentMemoryEvent
+from app.models import Asset, Portfolio, PriceSnapshot, AgentMemoryEvent, PaperTrade
 from app.agents.telegram_bot import handle_telegram_command, process_telegram_update
 
 
@@ -192,7 +192,7 @@ async def test_process_telegram_update_filtering():
 
             mock_handle.assert_called_once_with("/durum", mock_db)
             mock_bot_instance.send_message.assert_called_once_with(
-                chat_id=987654, text="Mock Reply Content", parse_mode="Markdown"
+                chat_id=987654, text="Mock Reply Content", parse_mode="HTML"
             )
 
 
@@ -223,7 +223,7 @@ async def test_process_telegram_update_on_demand():
         mock_canli_report.assert_called_once_with(mock_db, settings)
 
         mock_bot_instance.send_message.assert_any_call(
-            chat_id=987654, text="Mock Canli Report Content", parse_mode="Markdown"
+            chat_id=987654, text="Mock Canli Report Content", parse_mode="HTML"
         )
 
     # 2. Test /analiz
@@ -255,5 +255,231 @@ async def test_process_telegram_update_on_demand():
         mock_caption.assert_called_once_with(mock_db)
 
         mock_bot_instance.send_photo.assert_called_once_with(
-            chat_id=987654, photo=dummy_buffer, caption="Mock Caption Content", parse_mode="Markdown"
+            chat_id=987654, photo=dummy_buffer, caption="Mock Caption Content", parse_mode="HTML"
         )
+
+
+def test_escape_html_response():
+    from app.agents.telegram_bot import escape_html_response
+    assert escape_html_response("") == ""
+    assert escape_html_response(None) == ""
+    
+    # HTML characters escaping
+    assert escape_html_response("hello <world> & brand") == "hello &lt;world&gt; &amp; brand"
+    
+    # Bold conversion
+    assert escape_html_response("this is **bold** text") == "this is <b>bold</b> text"
+    
+    # Italic conversion
+    assert escape_html_response("this is *italic* text") == "this is <i>italic</i> text"
+    
+    # Mix
+    assert escape_html_response("Check **bold** and *italic* with <brackets>") == "Check <b>bold</b> and <i>italic</i> with &lt;brackets&gt;"
+
+
+def test_telegram_html_tag_balance_audit():
+    from app.agents.telegram_bot import get_durum_text, get_cuzdan_text, get_karzarar_text, get_ajanlar_text, handle_telegram_command
+    import re
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+
+    # Seed XAG_GRAM
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+    db.add(asset)
+    portfolio = Portfolio(
+        name="gram-paper",
+        base_currency="USD",
+        initial_cash=Decimal("2500.00"),
+        cash_balance=Decimal("2500.00"),
+        is_real_money=False,
+    )
+    db.add(portfolio)
+    db.commit()
+
+    # Helper to audit tags balance
+    def assert_html_balanced(html_str):
+        # Extract all HTML tags
+        tags = re.findall(r'</?[a-zA-Z0-9]+>', html_str)
+        stack = []
+        for tag in tags:
+            if tag.startswith('</'):
+                tag_name = tag[2:-1]
+                assert len(stack) > 0, f"Closing tag {tag} with no opening tag in:\n{html_str}"
+                last_open = stack.pop()
+                assert last_open == tag_name, f"Mismatched tags: open {last_open}, close {tag_name} in:\n{html_str}"
+            else:
+                tag_name = tag[1:-1]
+                # If it's a self closing tag like <br/>, ignore
+                if not tag.endswith('/>'):
+                    stack.append(tag_name)
+        assert len(stack) == 0, f"Unclosed tags: {stack} in:\n{html_str}"
+
+    # 1. Audit /durum
+    durum = get_durum_text(db)
+    assert_html_balanced(durum)
+    assert "Gümüş &amp; Portföy Durumu" in durum or "Gümüş & Portföy Durumu" in durum
+    assert "Nakitteki Bakiye:" in durum
+
+    # 2. Audit /cuzdan
+    cuzdan = get_cuzdan_text(db)
+    assert_html_balanced(cuzdan)
+    assert "Cüzdan Değişim Özeti" in cuzdan
+    assert "Başlangıç Bakiyesi" in cuzdan
+
+    # 3. Audit /karzarar (empty state)
+    karzarar_empty = get_karzarar_text(db)
+    assert_html_balanced(karzarar_empty)
+    assert "Açık Pozisyon ve Kar/Zarar Durumu" in karzarar_empty
+    assert "Henüz bir paper-trade işlemi bulunmuyor." in karzarar_empty
+
+    # 4. Audit /karzarar (with trades)
+    trade = PaperTrade(
+        portfolio_id=portfolio.id,
+        asset_id=asset.id,
+        action="paper_buy",
+        quantity=Decimal("10.0"),
+        price=Decimal("25.0"),
+        gross_amount=Decimal("250.0"),
+        fees=Decimal("0.5"),
+        taxes=Decimal("0.5"),
+        net_amount=Decimal("251.0"),
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(trade)
+    db.commit()
+    karzarar_filled = get_karzarar_text(db)
+    assert_html_balanced(karzarar_filled)
+    assert "Son 5 Paper Trade İşlemi:" in karzarar_filled
+    assert "Miktar: 10.0000" in karzarar_filled
+
+    # 5. Audit /ajanlar (empty state)
+    ajanlar_empty = get_ajanlar_text(db)
+    assert_html_balanced(ajanlar_empty)
+    assert "Ajan Teşhis &amp; Supreme Arbiter Kararları" in ajanlar_empty or "Ajan Teşhis & Supreme Arbiter Kararları" in ajanlar_empty
+
+    # 6. Audit /help
+    help_msg = handle_telegram_command("/help", db)
+    assert_html_balanced(help_msg)
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+
+
+def test_telegram_canli_report_html_safety_merciless():
+    from app.agents.telegram_bot import run_canli_analysis_report
+    from app.models import TechnicalIndicator, PriceSnapshot
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+
+    # Seed Asset XAG_GRAM
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+    db.add(asset)
+    db.flush()
+
+    portfolio = Portfolio(
+        name="gram-paper",
+        base_currency="USD",
+        initial_cash=Decimal("2500.00"),
+        cash_balance=Decimal("2500.00"),
+        is_real_money=False,
+    )
+    db.add(portfolio)
+    db.flush()
+
+    # Seed snapshot & technical indicator with adversarial LLM reason containing raw HTML & Markdown
+    snapshot = PriceSnapshot(
+        asset_id=asset.id,
+        source="yahoo-si-f",
+        buy_price=Decimal("29.50"),
+        sell_price=Decimal("29.50"),
+        mid_price=Decimal("29.50"),
+        currency="USD",
+        spread_absolute=Decimal("0.0"),
+        spread_percent=Decimal("0.0"),
+        observed_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(snapshot)
+    db.flush()
+
+    indicator = TechnicalIndicator(
+        price_snapshot_id=snapshot.id,
+        bar_timestamp=datetime.datetime.now(datetime.timezone.utc),
+        timeframe="1d",
+        close_usd_oz=Decimal("29.50"),
+        rsi_14=Decimal("25.0"),
+        sma_20=Decimal("30.0"),
+        sma_50=Decimal("31.0"),
+    )
+    db.add(indicator)
+    db.flush()
+
+    # Add mock consensus event with adversarial HTML characters
+    disagreement_res = AgentMemoryEvent(
+        agent_name="orchestrator",
+        event_type="blended_consensus_resolution",
+        key="resolution_canli_test",
+        value_json={
+            "resolved_stance": "BULLISH",
+            "resolution_markdown": "We should **BUY** gümüş now because RSI is < 30 and price is near **bb_lower** & volatility is high.",
+        },
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(disagreement_res)
+    db.commit()
+
+    import re
+    # Run the canli analysis report and check it escapes tags properly
+    # Using magic mocks for background API scrapers
+    mock_consensus_event = MagicMock()
+    mock_consensus_event.value_json = {
+        "resolved_stance": "BULLISH",
+        "resolution_markdown": "We should **BUY** gümüş now because RSI is < 30 and price is near **bb_lower** & volatility is high.",
+    }
+
+    with (
+        patch("app.collectors.public_sources.collect_kuveyt_public_silver"),
+        patch("app.collectors.public_sources.collect_global_xag_usd"),
+        patch("app.agents.orchestrator.run_blended_consensus_resolution", new_callable=AsyncMock) as mock_consensus,
+    ):
+        mock_consensus.return_value = mock_consensus_event
+        settings = MagicMock()
+        settings.telegram_bot_token = "dummy"
+        settings.telegram_chat_id = 987654
+
+        import sys
+        if sys.version_info >= (3, 8):
+            # run_canli_analysis_report is async
+            import asyncio
+            report = asyncio.run(run_canli_analysis_report(db, settings))
+            
+            # Verify tag balance of report
+            tags = re.findall(r'</?[a-zA-Z0-9]+>', report)
+            stack = []
+            for tag in tags:
+                if tag.startswith('</'):
+                    stack.pop()
+                elif not tag.endswith('/>'):
+                    stack.append(tag[1:-1])
+            assert len(stack) == 0, f"Unbalanced tags in /canli report: {stack}"
+            
+            # Verify the adversarial HTML was escaped but bold tags are rendered as <b>
+            assert "is &lt; 30" in report
+            assert "<b>BUY</b>" in report
+            assert "<b>bb_lower</b>" in report
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)

@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import io
+import html
+import re
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 import matplotlib
@@ -21,18 +23,17 @@ from app.paper_trading.service import calculate_position
 logger = logging.getLogger("silverpilot.telegram.bot")
 
 
-def sanitize_markdown(text: str) -> str:
-    """Escapes markdown control characters and converts ** to * for Telegram Markdown V1."""
+def escape_html_response(text: str) -> str:
+    """Escapes HTML special characters and converts markdown **bold** and *italic* to HTML tags."""
     if not text:
         return ""
-    # Convert standard double-asterisk bold (**) to Markdown V1 single-asterisk bold (*)
-    text = text.replace("**", "*")
-    # Escape underscores to prevent them from starting italic blocks
-    text = text.replace("\\_", "_").replace("_", "\\_")
-    # Escape brackets to prevent unmatched link structures
-    text = text.replace("\\[", "[").replace("[", "\\[")
-    text = text.replace("\\]", "]").replace("]", "\\]")
-    return text
+    # Escape HTML special characters (&, <, >) first
+    escaped = html.escape(text)
+    # Safely convert double-asterisk bold to <b>...</b>
+    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    # Safely convert single-asterisk italic to <i>...</i>
+    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    return escaped
 
 
 def handle_telegram_command(command: str, db: Session) -> str:
@@ -51,15 +52,15 @@ def handle_telegram_command(command: str, db: Session) -> str:
         return get_ajanlar_text(db)
     elif cmd in ("/start", "/help"):
         return (
-            "🤖 *SilverPilot Telegram Portföy & Teşhis Botuna Hoş Geldiniz!*\n\n"
+            "🤖 <b>SilverPilot Telegram Portföy & Teşhis Botuna Hoş Geldiniz!</b>\n\n"
             "Aşağıdaki komutları kullanabilirsiniz:\n"
-            "📊 /durum - Gümüş & Portföy bakiyelerini ve dağılımını gösterir.\n"
-            "💼 /cuzdan - $2500 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir.\n"
-            "📈 /karzarar - Açık pozisyon PNL ve son 5 paper-trade işlemini özetler.\n"
-            "🤖 /ajanlar - Son Supreme Arbiter uyuşmazlık ve çözümlenmiş kararları listeler."
+            "📊 <b>/durum</b> - Gümüş & Portföy bakiyelerini ve dağılımını gösterir.\n"
+            "💼 <b>/cuzdan</b> - $2500 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir.\n"
+            "📈 <b>/karzarar</b> - Açık pozisyon PNL ve son 5 paper-trade işlemini özetler.\n"
+            "🤖 <b>/ajanlar</b> - Son Supreme Arbiter uyuşmazlık ve çözümlenmiş kararları listeler."
         )
     else:
-        return f"Bilinmeyen komut: {cmd}\nYardım için /help yazabilirsiniz."
+        return f"Bilinmeyen komut: {html.escape(cmd)}\nYardım için /help yazabilirsiniz."
 
 
 def get_durum_text(db: Session) -> str:
@@ -71,7 +72,7 @@ def get_durum_text(db: Session) -> str:
 
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "❌ Gümüş (XAG\\_GRAM) varlığı bulunamadı."
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
 
     position = calculate_position(db, portfolio.id, asset.id)
 
@@ -93,12 +94,12 @@ def get_durum_text(db: Session) -> str:
     cash_ratio = Decimal("100") - ratio
 
     return (
-        "📊 *Gümüş & Portföy Durumu*\n\n"
-        f"💵 *Nakitteki Bakiye:* {cash_balance:,.2f} USD\n"
-        f"🥈 *Gümüş Miktarı:* {silver_qty:,.4f} XAG\\_GRAM\n"
-        f"💰 *Gümüş Değeri:* {silver_value:,.2f} USD\n"
-        f"📈 *Toplam Portföy Değeri:* {portfolio_value:,.2f} USD\n"
-        f"⚖️ *Portföy Dağılımı:* %{ratio:.2f} Gümüş / %{cash_ratio:.2f} Nakit"
+        "📊 <b>Gümüş & Portföy Durumu</b>\n\n"
+        f"💵 <b>Nakitteki Bakiye:</b> {cash_balance:,.2f} USD\n"
+        f"🥈 <b>Gümüş Miktarı:</b> {silver_qty:,.4f} XAG_GRAM\n"
+        f"💰 <b>Gümüş Değeri:</b> {silver_value:,.2f} USD\n"
+        f"📈 <b>Toplam Portföy Değeri:</b> {portfolio_value:,.2f} USD\n"
+        f"⚖️ <b>Portföy Dağılımı:</b> %{ratio:.2f} Gümüş / %{cash_ratio:.2f} Nakit"
     )
 
 
@@ -111,7 +112,7 @@ def get_cuzdan_text(db: Session) -> str:
 
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "❌ Gümüş (XAG\\_GRAM) varlığı bulunamadı."
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
 
     position = calculate_position(db, portfolio.id, asset.id)
     snapshot = db.execute(
@@ -135,10 +136,10 @@ def get_cuzdan_text(db: Session) -> str:
     sign = "+" if pnl >= 0 else ""
 
     return (
-        "💼 *Cüzdan Değişim Özeti*\n\n"
-        f"💵 *Başlangıç Bakiyesi:* $2500.00 USD\n"
-        f"📈 *Anlık Portföy Değeri:* ${portfolio_value:,.2f} USD\n"
-        f"📊 *Toplam Kar/Zarar (PNL):* {sign}${pnl:,.2f} USD ({sign}{pnl_pct:.2f}%)"
+        "💼 <b>Cüzdan Değişim Özeti</b>\n\n"
+        f"💵 <b>Başlangıç Bakiyesi:</b> $2500.00 USD\n"
+        f"📈 <b>Anlık Portföy Değeri:</b> ${portfolio_value:,.2f} USD\n"
+        f"📊 <b>Toplam Kar/Zarar (PNL):</b> {sign}${pnl:,.2f} USD ({sign}{pnl_pct:.2f}%)"
     )
 
 
@@ -151,7 +152,7 @@ def get_karzarar_text(db: Session) -> str:
 
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "❌ Gümüş (XAG\\_GRAM) varlığı bulunamadı."
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
 
     position = calculate_position(db, portfolio.id, asset.id)
     snapshot = db.execute(
@@ -194,15 +195,15 @@ def get_karzarar_text(db: Session) -> str:
                 f"{idx}. {action_emoji} | Miktar: {trade.quantity:,.4f} @ {trade.price:,.4f} USD ({time_str})\n"
             )
     else:
-        trades_str = "_Henüz bir paper-trade işlemi bulunmuyor._"
+        trades_str = "<i>Henüz bir paper-trade işlemi bulunmuyor.</i>"
 
     return (
-        "📈 *Açık Pozisyon ve Kar/Zarar Durumu*\n\n"
-        f"🥈 *Açık Pozisyon:* {silver_qty:,.4f} XAG\\_GRAM\n"
-        f"🏷️ *Ortalama Alış Maliyeti:* {avg_buy_cost:,.4f} USD/gram\n"
-        f"💸 *Anlık Gümüş Fiyatı:* {mid_price:,.4f} USD/gram\n"
-        f"📊 *Açık Pozisyon Kar/Zarar:* {sign}${unrealized_pnl:,.2f} USD\n\n"
-        f"🔄 *Son 5 Paper Trade İşlemi:*\n{trades_str}"
+        "📈 <b>Açık Pozisyon ve Kar/Zarar Durumu</b>\n\n"
+        f"🥈 <b>Açık Pozisyon:</b> {silver_qty:,.4f} XAG_GRAM\n"
+        f"🏷️ <b>Ortalama Alış Maliyeti:</b> {avg_buy_cost:,.4f} USD/gram\n"
+        f"💸 <b>Anlık Gümüş Fiyatı:</b> {mid_price:,.4f} USD/gram\n"
+        f"📊 <b>Açık Pozisyon Kar/Zarar:</b> {sign}${unrealized_pnl:,.2f} USD\n\n"
+        f"🔄 <b>Son 5 Paper Trade İşlemi:</b>\n{trades_str}"
     )
 
 
@@ -229,23 +230,23 @@ def get_ajanlar_text(db: Session) -> str:
         .all()
     )
 
-    lines = ["🤖 *Ajan Teşhis & Supreme Arbiter Kararları*"]
+    lines = ["🤖 <b>Ajan Teşhis & Supreme Arbiter Kararları</b>"]
 
-    lines.append("\n🚨 *Son Uyuşmazlıklar (Agent Disagreements):*")
+    lines.append("\n🚨 <b>Son Uyuşmazlıklar (Agent Disagreements):</b>")
     if disagreements:
         for dis in disagreements:
             val = dis.value_json or {}
             stances = val.get("stances", {})
             stances_str = ", ".join(f"{k}: {v}" for k, v in stances.items())
             time_str = dis.created_at.strftime("%Y-%m-%d %H:%M")
-            lines.append(f"• *[{time_str}]* Stances: `{stances_str}`")
+            lines.append(f"• <b>[{time_str}]</b> Stances: <code>{html.escape(stances_str)}</code>")
             for d in val.get("disagreements", []):
-                desc_safe = sanitize_markdown(d.get("description", ""))
-                lines.append(f"  └─ `{d.get('type')}`: {desc_safe}")
+                desc_safe = escape_html_response(d.get("description", ""))
+                lines.append(f"  └─ <code>{html.escape(d.get('type', ''))}</code>: {desc_safe}")
     else:
-        lines.append("_Yakın zamanda bir uyuşmazlık tespit edilmedi._")
+        lines.append("<i>Yakın zamanda bir uyuşmazlık tespit edilmedi.</i>")
 
-    lines.append("\n⚖️ *Son Arbiter Kararları (Resolutions):*")
+    lines.append("\n⚖️ <b>Son Arbiter Kararları (Resolutions):</b>")
     if resolutions:
         for res in resolutions:
             val = res.value_json or {}
@@ -253,12 +254,12 @@ def get_ajanlar_text(db: Session) -> str:
             confidence = val.get("confidence", 0.5)
             resolution_markdown = val.get("resolution_markdown", "")
             time_str = res.created_at.strftime("%Y-%m-%d %H:%M")
-            lines.append(f"• *[{time_str}]* Karar: *{resolved_stance}* (Güven: {confidence:.2f})")
+            lines.append(f"• <b>[{time_str}]</b> Karar: <b>{resolved_stance}</b> (Güven: {confidence:.2f})")
             short_res = resolution_markdown[:150] + "..." if len(resolution_markdown) > 150 else resolution_markdown
-            short_res_safe = sanitize_markdown(short_res)
+            short_res_safe = escape_html_response(short_res)
             lines.append(f"  └─ {short_res_safe}")
     else:
-        lines.append("_Henüz çözümlenmiş bir arbiter kararı bulunmuyor._")
+        lines.append("<i>Henüz çözümlenmiş bir arbiter kararı bulunmuyor.</i>")
 
     return "\n".join(lines)
 
@@ -408,7 +409,7 @@ def generate_daily_price_caption(db: Session) -> str:
 
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "📊 *Seanslık Fiyat Analiz Özeti*\nVeri bulunamadı."
+        return "📊 <b>Seanslık Fiyat Analiz Özeti</b>\nVeri bulunamadı."
 
     stmt = (
         select(PriceSnapshot)
@@ -434,7 +435,7 @@ def generate_daily_price_caption(db: Session) -> str:
         snapshots = db.execute(stmt).scalars().all()
 
     if not snapshots:
-        return "📊 *Seanslık Fiyat Analiz Özeti*\nVeri bulunamadı."
+        return "📊 <b>Seanslık Fiyat Analiz Özeti</b>\nVeri bulunamadı."
 
     tr_tz = timezone(timedelta(hours=3))
 
@@ -475,14 +476,14 @@ def generate_daily_price_caption(db: Session) -> str:
     sign = "+" if daily_change >= 0 else ""
 
     caption = (
-        "📊 *SilverPilot Günlük Seans & Fiyat Raporu*\n\n"
-        f"🥈 *Son Fiyat (Canlı):* {latest_price:.4f} USD/gram\n"
-        f"📈 *Günlük Değişim:* {sign}{daily_change:.4f} USD ({sign}{daily_change_pct:.2f}%)\n"
-        f"⚖️ *Günlük Aralık:* {overall_min:.4f} - {overall_max:.4f} USD/gram\n\n"
-        "🕰️ *Seanslık Değerler (USD/gram):*\n"
-        f"• *Sabah (00:00 - 08:00):*\n  `{sabah_str}`\n"
-        f"• *Öğle-Avrupa (08:00 - 16:00):*\n  `{ogle_str}`\n"
-        f"• *Akşam-Amerika (16:00 - 24:00):*\n  `{aksam_str}`\n"
+        "📊 <b>SilverPilot Günlük Seans & Fiyat Raporu</b>\n\n"
+        f"🥈 <b>Son Fiyat (Canlı):</b> {latest_price:.4f} USD/gram\n"
+        f"📈 <b>Günlük Değişim:</b> {sign}{daily_change:.4f} USD ({sign}{daily_change_pct:.2f}%)\n"
+        f"⚖️ <b>Günlük Aralık:</b> {overall_min:.4f} - {overall_max:.4f} USD/gram\n\n"
+        "🕰️ <b>Seanslık Değerler (USD/gram):</b>\n"
+        f"• <b>Sabah (00:00 - 08:00):</b>\n  <code>{sabah_str}</code>\n"
+        f"• <b>Öğle-Avrupa (08:00 - 16:00):</b>\n  <code>{ogle_str}</code>\n"
+        f"• <b>Akşam-Amerika (16:00 - 24:00):</b>\n  <code>{aksam_str}</code>\n"
     )
     return caption
 
@@ -576,24 +577,24 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     arbiter_emoji = (
         "🟢 AL" if resolved_stance == "BULLISH" else ("🔴 SAT" if resolved_stance == "BEARISH" else "⚪️ BEKLE")
     )
-    arbiter_reason = sanitize_markdown(resolution_markdown)
+    arbiter_reason = escape_html_response(resolution_markdown)
 
     price = float(latest_snapshot.mid_price)
     cash_balance = float(portfolio.cash_balance)
     xag_balance = float(current_position.quantity)
 
     msg = (
-        f"📊 *SilverPilot Canlı Analiz Raporu* (İstek Üzerine)\n\n"
-        f"🥈 *Gümüş (XAG\\_GRAM):* {price:,.4f} USD/gram\n"
-        f"📈 *Piyasa Rejimi:* {regime_label}\n\n"
-        f"🗳️ *Strateji Oylaması:*\n"
+        f"📊 <b>SilverPilot Canlı Analiz Raporu</b> (İstek Üzerine)\n\n"
+        f"🥈 <b>Gümüş (XAG_GRAM):</b> {price:,.4f} USD/gram\n"
+        f"📈 <b>Piyasa Rejimi:</b> {regime_label}\n\n"
+        f"🗳️ <b>Strateji Oylaması:</b>\n"
         f"• RSI (14): {rsi_vote}\n"
         f"• Bollinger Bands: {bb_vote}\n"
         f"• SMA Cross (20/50): {sma_vote}\n\n"
-        f"👑 *Yüce Hakem Kararı:* {arbiter_emoji}\n"
-        f"📝 *Gerekçe:* {arbiter_reason}\n\n"
-        f"💵 *Nakit Bakiyesi:* {cash_balance:,.2f} USD\n"
-        f"🥈 *Gümüş Portföyü:* {xag_balance:,.4f} XAG\\_GRAM\n"
+        f"👑 <b>Yüce Hakem Kararı:</b> {arbiter_emoji}\n"
+        f"📝 <b>Gerekçe:</b> {arbiter_reason}\n\n"
+        f"💵 <b>Nakit Bakiyesi:</b> {cash_balance:,.2f} USD\n"
+        f"🥈 <b>Gümüş Portföyü:</b> {xag_balance:,.4f} XAG_GRAM\n"
     )
     return msg
 
@@ -634,16 +635,16 @@ async def process_telegram_update(update: dict, settings=None):
 
             # Send initial waiting message
             wait_text = (
-                "🔄 *Canlı analiz başlatıldı...*\n"
+                "🔄 <b>Canlı analiz başlatıldı...</b>\n"
                 "Kuveyt Türk ve global XAG_GRAM fiyatları anlık çekiliyor ve Supreme Arbiter değerlendiriliyor. "
                 "Lütfen bekleyin (10-15 sn)..."
             )
-            await bot.send_message(chat_id=settings.telegram_chat_id, text=wait_text, parse_mode="Markdown")
+            await bot.send_message(chat_id=settings.telegram_chat_id, text=wait_text, parse_mode="HTML")
 
             if cmd == "/canli":
                 with SessionLocal() as db:
                     reply_text = await run_canli_analysis_report(db, settings)
-                await bot.send_message(chat_id=settings.telegram_chat_id, text=reply_text, parse_mode="Markdown")
+                await bot.send_message(chat_id=settings.telegram_chat_id, text=reply_text, parse_mode="HTML")
             else:  # /analiz
                 # Generate dark mode session chart
                 with SessionLocal() as db:
@@ -653,7 +654,7 @@ async def process_telegram_update(update: dict, settings=None):
                     await bot.send_message(
                         chat_id=settings.telegram_chat_id,
                         text="❌ Grafik çizimi için yeterli gümüş fiyat geçmişi bulunamadı.",
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                     )
                 else:
                     with SessionLocal() as db:
@@ -663,7 +664,7 @@ async def process_telegram_update(update: dict, settings=None):
                         chat_id=settings.telegram_chat_id,
                         photo=chart_buffer,
                         caption=caption_text,
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                     )
             return
         except Exception as e:
@@ -672,8 +673,8 @@ async def process_telegram_update(update: dict, settings=None):
                 bot = Bot(token=settings.telegram_bot_token)
                 await bot.send_message(
                     chat_id=settings.telegram_chat_id,
-                    text=f"⚠️ Canlı analiz çalıştırılırken bir hata oluştu: {e}",
-                    parse_mode="Markdown",
+                    text=f"⚠️ Canlı analiz çalıştırılırken bir hata oluştu: {html.escape(str(e))}",
+                    parse_mode="HTML",
                 )
             except Exception:
                 pass
@@ -684,11 +685,11 @@ async def process_telegram_update(update: dict, settings=None):
             reply_text = handle_telegram_command(text, db)
     except Exception as e:
         logger.exception("Database error while processing Telegram command")
-        reply_text = f"⚠️ Komut işlenirken bir veritabanı hatası oluştu: {e}"
+        reply_text = f"⚠️ Komut işlenirken bir veritabanı hatası oluştu: {html.escape(str(e))}"
 
     try:
         bot = Bot(token=settings.telegram_bot_token)
-        await bot.send_message(chat_id=settings.telegram_chat_id, text=reply_text, parse_mode="Markdown")
+        await bot.send_message(chat_id=settings.telegram_chat_id, text=reply_text, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Failed to send Telegram message: {e}", exc_info=True)
 

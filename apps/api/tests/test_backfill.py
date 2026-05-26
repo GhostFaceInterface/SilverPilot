@@ -78,20 +78,20 @@ def test_backfill_success_and_failure():
         assert len(runs) == 1
         assert runs[0].status == "success"
         assert runs[0].records_seen == 2
-        assert runs[0].records_inserted == 2
+        assert runs[0].records_inserted == 4
         assert runs[0].duplicates == 0
 
         snapshots = db.query(PriceSnapshot).all()
-        assert len(snapshots) == 2
+        assert len(snapshots) == 4
         assert snapshots[0].buy_price == Decimal("28.8")
-        assert snapshots[1].buy_price == Decimal("29.3")
+        assert snapshots[2].buy_price == Decimal("29.3")
 
         raw_prices = db.query(RawGlobalPrice).all()
-        assert len(raw_prices) == 2
+        assert len(raw_prices) == 4
 
         indicators = db.query(TechnicalIndicator).all()
         # Since we ran calculate_indicators, verify it populated indicators
-        assert len(indicators) == 2
+        assert len(indicators) == 4
         db.close()
 
         # --- Test 2: Duplicate detection (Phase 2 & 3 set O(1) optimization) ---

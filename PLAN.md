@@ -1,50 +1,51 @@
-# Implementation Plan: Resilient Global XAG/USD Data Provider Fallback & Technical Indicators Recovery
+# Implementation Plan: Merciless System-Wide Testing & Telegram Bot HTML Resiliency Audit
 
-Bu plan, Yahoo Finance'in VPS IP'lerini engellemesinden kaynaklanan veri toplayıcı başarısızlıklarını ve buna bağlı olarak teknik indikatörlerin/Telegram işlemlerinin durması sorununu kökünden çözmeyi amaçlar. Ücretsiz, anahtarsız ve VPS dostu yeni bir servis olan **GoldApiSilverProvider** entegre edilecek ve sistemin indikatör/auto-trader katmanı tek bir kaynağa (`yahoo-si-f`) bağımlı olmaktan çıkarılarak tam bir yedeklilik (resilience) kazandırılacaktır.
+Bu eylem planı, SilverPilot sisteminin tüm kritik katmanlarında (Telegram arayüzü, tarihsel veri backfill mekanizması, veri toplayıcı veri bütünlüğü ve auto-trader strateji motoru) acımasız ve uçtan uca (E2E) testler uygulamayı, Telegram `/canli` çökme sorununu HTML göçü ile kökten gidermeyi ve her bir bileşenin davranışlarını doğrulamayı hedefler.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
-- **Tek Noktadan Başarısızlık (SPOF):** Mevcut auto-trader ve Telegram indikatör sorguları sert şekilde `yahoo-si-f` kaynağına bağımlıdır. Yahoo Finance VPS IP'sini engellediğinde veri toplama 200 OK HTML (cookie consent/CAPTCHA) döndüğü için `PARSE_ERROR` ile çökmekte, indikatörler hesaplanamamakta ve tüm auto-trading motoru durmaktadır.
-- **Yedekli İndikatör Hesaplama Güvencesi:** Gold API veya gelecekteki herhangi bir global sağlayıcıdan veri çekildiğinde de indikatörlerin otomatik hesaplanması ve veri tabanına yazılması gerekmektedir.
+- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Portföy riski, pozisyon limitleri ve BSMV kambiyo vergileri), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Veri şemaları ve entegrasyon yapıları).
 - **Etkilenen Dosyalar:**
-  - `apps/api/app/core/config.py` (Yeni Gold API ayarlarının eklenmesi ve varsayılan öncelik listesinin güncellenmesi)
-  - `apps/api/app/collectors/public_sources.py` (Yeni `GoldApiSilverProvider` sınıfı ve parser işlevinin yazılması)
-  - `apps/api/app/collectors/service.py` (`_INDICATOR_GLOBAL_SOURCES` kümesine yeni kaynağın eklenmesi)
-  - `apps/api/app/services/auto_trader.py` (Sadece `yahoo-si-f` yerine tüm aktif global kaynaklardan indikatör sorgulayacak dinamik yapıya geçiş)
-  - `apps/api/app/agents/telegram_bot.py` (İndikatör ve fiyat seansı analizlerini yedekli kaynaklardan çekecek esnek kurgunun entegrasyonu)
-  - `apps/api/tests/test_collectors.py` (Yeni sağlayıcı için unit ve entegrasyon testlerinin yazılması)
+  - `apps/api/app/agents/telegram_bot.py` (Telegram formatlarının Markdown'dan güvenli HTML'e taşınması)
+  - `apps/api/tests/test_telegram.py` (Yeni HTML tag doğrulama ve komut güvenliği testleri)
+  - `scripts/backfill_history.py` (Veri kaynağının `yahoo-si-f` olarak düzeltilmesi ve `XAG_GRAM` tarihsel verilerinin indikatörleri beslemek üzere otomatik çoğaltılması)
+  - `apps/api/app/collectors/service.py` (Düşük veri seanslarında indikatör koruması ve fallback testleri)
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[x]` **Faz 1: Konfigürasyon & Yeni Gold API Sağlayıcı Altyapısı**
-  - [x] **Config Güncellemesi:** `apps/api/app/core/config.py` dosyasına `gold_api_xag_usd_enabled`, `gold_api_xag_usd_url` ve `gold_api_xag_usd_timeout_seconds` alanlarının eklenmesi.
-  - [x] **Öncelik Güncellemesi:** `global_xag_source_priority` varsayılan değerinin `"yahoo-si-f,gold-api-xag-usd,metals-dev"` olarak güncellenmesi.
-  - [x] **Sağlayıcı Sınıfı:** `apps/api/app/collectors/public_sources.py` içerisine `GoldApiSilverProvider` sınıfının ve `parse_gold_api_silver_spot_json` parser işlevinin yazılması.
-  - [x] **Sağlayıcı Tescili:** `_global_xag_providers` fonksiyonuna yeni sağlayıcının tescil edilmesi.
-  - *DoD (Tamamlanma Tanımı):* Gold API sağlayıcısının yerelde sahte payload ile başarıyla parse edilebilmesi.
+- `[ ]` **Faz 1: Telegram Bot Formatting & HTML Migration Audit (Ajan: frontend-architect / security-auditor)**
+  - [ ] Telegram bot mesaj şablonlarını `/canli`, `/durum`, `/karzarar`, `/cuzdan` ve `/ajanlar` için tamamen robust **HTML parsing moduna** (`parse_mode="HTML"`) taşımak.
+  - [ ] Markdown V1'in iç içe geçmiş asteriks/underscore karakterlerindeki ve `XAG_GRAM` alt çizgilerindeki parsing çökmelerini (Offset 64 hatası) `html.escape` kullanarak kalıcı olarak engellemek.
+  - [ ] `sanitize_markdown` yerine HTML etiketlerini koruyan ve LLM çıktılarındaki tehlikeli HTML karakterlerini temizleyen `escape_html_response` yardımcı fonksiyonunu yazmak.
+  - *DoD (Tamamlanma Tanımı):* `tests/test_telegram.py` içerisine tüm komutların (/canli, /durum, /karzarar, /cuzdan, /ajanlar, /help) HTML etiket bütünlüğünü, boş/dolu portföy senaryolarını ve hata durumlarını acımasızca sınayan unit testlerin eklenmesi ve tamamının hatasız geçmesi.
 
-- `[x]` **Faz 2: İndikatör Hesaplama & Auto-Trader / Telegram Yedeklilik Entegrasyonu**
-  - [x] **İndikatör Tetikleyici Güncellemesi:** `apps/api/app/collectors/service.py` içerisindeki `_INDICATOR_GLOBAL_SOURCES` kümesine `"gold-api-xag-usd"` ve `"metals-dev-silver-spot"` değerlerinin eklenmesi.
-  - [x] **Auto-Trader Sorgu Esnekliği:** `apps/api/app/services/auto_trader.py` içerisindeki indikatör ve snapshot sorgularının tek bir sert kaynak yerine en son başarıyla güncellenen herhangi bir global kaynağı (`"yahoo-si-f"`, `"gold-api-xag-usd"`, `"metals-dev-silver-spot"`) getirecek şekilde esnetilmesi.
-  - [x] **Telegram Bot Sorgu Esnekliği:** `apps/api/app/agents/telegram_bot.py` içindeki `/canli` (indikatör), seans analizleri ve chart sorgularının en son aktif global kaynağı dinamik olarak algılamasının sağlanması.
-  - *DoD:* Auto-trader ve Telegram modüllerinin `yahoo-si-f` yerine `gold-api-xag-usd` indikatörleri bulunduğunda da hatasız çalışması.
+- `[ ]` **Faz 2: Tarihsel Veri & İndikatör Seeding Düzeltmesi (Ajan: data-engineer)**
+  - [ ] `scripts/backfill_history.py` dosyasını, Yahoo Finance'den çekilen tarihsel verileri hem `XAG` (Ounce) hem de `XAG_GRAM` (Gram Silver, 31.1035'e bölünmüş) olarak veri tabanına kaydedecek şekilde güncellemek.
+  - [ ] Tarihsel veri kaynağını `"yahoo-si-f-1d"` yerine doğrudan `/canli` ve auto-trader'ın kullandığı ana `"yahoo-si-f"` global kaynağı olarak kaydetmek.
+  - [ ] Local ve VPS veritabanlarında `python scripts/backfill_history.py` çalıştırarak en az 200 barlık günlük teknik indikatör geçmişini (`TechnicalIndicator` ve `PriceSnapshot`) `XAG_GRAM` için eksiksiz üretmek.
+  - *DoD:* `pytest tests/test_collectors.py` veya backfill script'inin yerelde sorunsuz çalışması ve DB'de `XAG_GRAM` indikatörlerinin varlığının doğrulanması.
 
-- `[x]` **Faz 3: Testler & Yerel Doğrulama**
-  - [x] **Unit Testler:** `apps/api/tests/test_collectors.py` içerisine `GoldApiSilverProvider`'ın başarılı akış, timeout ve parse hatası senaryolarını test eden kapsamlı unit testlerin yazılması.
-  - [x] **Entegrasyon Testi:** Fallback zincirinde Yahoo Finance başarısız olduğunda sistemin otomatik olarak Gold API'ye geçiş yaptığını ve `PriceSnapshot` ile `TechnicalIndicator` kayıtlarını oluşturduğunu doğrulayan entegrasyon testinin yazılması.
-  - *DoD:* Tüm pytest yerel test süitinin (150+ test) sıfır hata ile tamamlanması.
+- `[ ]` **Faz 3: Uçtan Uca Collector & Degraded Network Dayanıklılık Testleri (Ajan: data-engineer / quality-engineer)**
+  - [ ] FRED, TCMB, RSS ve Gold API toplayıcılarının (collectors) sıfır veri veya bağlantı kopukluğu anlarındaki hata yakalama ve "graceful degradation" (kısmi hizmet durdurma) davranışlarını simüle etmek.
+  - [ ] Hafta sonu / piyasa dışı saatler simülasyonu altında `kuveyt-silver` ve `global-xag-usd` toplayıcılarının soft-fail davranışlarını ve veri tutarlılığını test eden acımasız senaryolar işletmek.
+  - *DoD:* Tüm testlerin `pytest` ile test edilip yeşil yanması ve `verify_execution_pipeline.py` script'inin başarılı olması.
 
-- `[x]` **Faz 4: Canlı Dağıtım & VPS Smoke Doğrulaması**
-  - [x] **Git Commit & Push:** Kod değişikliklerinin `main` dalına otomatik commit ve push edilmesi.
-  - [x] **VPS Deploy & Smoke:** VPS sunucusunda `vps_smoke.sh` duman testlerinin çalıştırılması ve yeşil yanmasının teyit edilmesi.
-  - *DoD:* `vps_smoke.sh` testinin tüm sağlayıcılar için (özellikle Yahoo başarısız olsa dahi Gold API yedeğiyle) 100% başarıyla tamamlanması.
+- `[ ]` **Faz 4: Strateji Sinyalleri & BSMV Vergi Mantığı Simülasyonu (Ajan: backend-architect / quality-engineer)**
+  - [ ] `StrategyRunner` oylamalarında RSI, Bollinger ve SMA kesişimlerinin `None`/eksik indikatör durumundaki mukavemetini test etmek.
+  - [ ] Paper-trading işlemlerinde %0.2 BSMV (kambiyo vergisi), spread ve slippage (kayma) hesaplamalarının doğruluğunu matematiksel sınamalarla denetlemek.
+  - *DoD:* Yerel testlerin `pytest tests/test_auto_trader.py` komutuyla 100% başarılı olması.
+
+- `[ ]` **Faz 5: VPS Deployment & Smoke Validation (Ajan: safety-gatekeeper / quality-engineer)**
+  - [ ] `deploy.sh -y` kullanarak güncellenmiş kodları ve backfill script'ini VPS'e göndermek.
+  - [ ] VPS üzerinde `vps_smoke.sh` duman testini tetiklemek ve Telegram botundan `/canli`, `/durum`, `/karzarar` komutlarını göndererek sunucu çıktılarının loglarını doğrulamak.
+  - *DoD:* VPS smoke testlerinin sıfır hata ile yeşile dönmesi ve Telegram botunun hiçbir parse hatası vermeden canlı analiz raporunu başarıyla iletmesi.
 
 ---
 
 ## ❓ Açık Sorular
-> [!NOTE]
-> - Gold API (`api.gold-api.com`) tamamen ücretsiz, anahtarsız ve VPS IP'lerine karşı son derece hoşgörülüdür. Bu sağlayıcıyı öncelik sırasında Yahoo Finance'in hemen ardına koyarak Yahoo'nun çöktüğü tüm anlarda otomatik ve kusursuz bir yedeklilik sağlamayı hedefliyoruz.
-> - İndikatörlerin her iki global kaynaktan da gelebileceğini varsayarak, auto-trader ve Telegram botunun veri tabanındaki en taze global indikatör kaydını çekmesi mimari açıdan en doğru ve sağlam yaklaşımdır.
+> [!IMPORTANT]
+> 1. **Telegram Webhook Modu:** VPS üzerinde Telegram botunun webhook modunda çalıştığından emin olmak için `vps_smoke.sh` sonrasında port 8000'deki webhook uç noktasını test edecek mini bir duman testi ekleyelim mi?
+> 2. **Tarihsel Backfill:** VPS'teki PostgreSQL veritabanını temizlemeden, sadece eksik olan `XAG_GRAM` tarihsel verilerini eklemek için `backfill_history.py` içindeki tekilleştirme mekanizması (observed_at membership check) yeterli olacaktır. Onaylıyor musunuz?

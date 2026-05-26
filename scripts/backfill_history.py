@@ -21,25 +21,33 @@ def backfill():
     db = SessionLocal()
     try:
         # 1. Fetch Asset
-        asset = db.query(Asset).filter(Asset.symbol == "XAG").first()
-        if not asset:
+        asset_xag = db.query(Asset).filter(Asset.symbol == "XAG").first()
+        if not asset_xag:
             print("XAG Asset not found. Creating it...")
-            asset = Asset(symbol="XAG", name="Silver Spot", asset_type="metal", is_active=True)
-            db.add(asset)
+            asset_xag = Asset(symbol="XAG", name="Silver Spot", asset_type="metal", is_active=True)
+            db.add(asset_xag)
             db.commit()
-            db.refresh(asset)
+            db.refresh(asset_xag)
 
-        print(f"XAG Asset ID: {asset.id}")
+        asset_gram = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").first()
+        if not asset_gram:
+            print("XAG_GRAM Asset not found. Creating it...")
+            asset_gram = Asset(symbol="XAG_GRAM", name="Silver Gram Spot", asset_type="metal", is_active=True)
+            db.add(asset_gram)
+            db.commit()
+            db.refresh(asset_gram)
+
+        print(f"XAG Asset ID: {asset_xag.id}, XAG_GRAM Asset ID: {asset_gram.id}")
 
         # 2. Start Collector Run
         run = CollectorRun(
             collector_name="yahoo_xag_usd_backfill",
-            source="yahoo-si-f-1d",
+            source="yahoo-si-f",
             status="running",
             records_seen=0,
             records_inserted=0,
             duplicates=0,
-            details_json={"asset_symbol": "XAG"},
+            details_json={"asset_symbols": ["XAG", "XAG_GRAM"]},
         )
         db.add(run)
         db.commit()
@@ -107,25 +115,39 @@ def backfill():
         
         # Pre-fetch existing observed_at timestamps from PriceSnapshot (Phase 2 optimization)
         print("Pre-fetching existing PriceSnapshot timestamps...")
-        existing_snapshots = set(
+        existing_snapshots_xag = set(
             (r[0].replace(tzinfo=UTC) if r[0].tzinfo is None else r[0].astimezone(UTC))
             for r in db.query(PriceSnapshot.observed_at).filter(
-                PriceSnapshot.asset_id == asset.id,
-                PriceSnapshot.source == "yahoo-si-f-1d"
+                PriceSnapshot.asset_id == asset_xag.id,
+                PriceSnapshot.source == "yahoo-si-f"
             ).all() if r[0] is not None
         )
-        print(f"Found {len(existing_snapshots)} existing PriceSnapshots.")
+        existing_snapshots_gram = set(
+            (r[0].replace(tzinfo=UTC) if r[0].tzinfo is None else r[0].astimezone(UTC))
+            for r in db.query(PriceSnapshot.observed_at).filter(
+                PriceSnapshot.asset_id == asset_gram.id,
+                PriceSnapshot.source == "yahoo-si-f"
+            ).all() if r[0] is not None
+        )
+        print(f"Found {len(existing_snapshots_xag)} XAG and {len(existing_snapshots_gram)} XAG_GRAM existing PriceSnapshots.")
 
         # Pre-fetch existing observed_at timestamps from RawGlobalPrice (Phase 3 uniqueness check)
         print("Pre-fetching existing RawGlobalPrice timestamps...")
-        existing_raws = set(
+        existing_raws_xag = set(
             (r[0].replace(tzinfo=UTC) if r[0].tzinfo is None else r[0].astimezone(UTC))
             for r in db.query(RawGlobalPrice.observed_at).filter(
-                RawGlobalPrice.asset_id == asset.id,
-                RawGlobalPrice.source == "yahoo-si-f-1d"
+                RawGlobalPrice.asset_id == asset_xag.id,
+                RawGlobalPrice.source == "yahoo-si-f"
             ).all() if r[0] is not None
         )
-        print(f"Found {len(existing_raws)} existing RawGlobalPrices.")
+        existing_raws_gram = set(
+            (r[0].replace(tzinfo=UTC) if r[0].tzinfo is None else r[0].astimezone(UTC))
+            for r in db.query(RawGlobalPrice.observed_at).filter(
+                RawGlobalPrice.asset_id == asset_gram.id,
+                RawGlobalPrice.source == "yahoo-si-f"
+            ).all() if r[0] is not None
+        )
+        print(f"Found {len(existing_raws_xag)} XAG and {len(existing_raws_gram)} XAG_GRAM existing RawGlobalPrices.")
 
         # Insert records
         seen = 0
@@ -136,13 +158,13 @@ def backfill():
             seen += 1
             observed_at = datetime.fromtimestamp(int(row["timestamp"]), tz=UTC)
             
-            # O(1) membership check to prevent duplicate queries and dual-write uniqueness violations
-            if observed_at in existing_snapshots or observed_at in existing_raws:
+            is_dup_xag = observed_at in existing_snapshots_xag or observed_at in existing_raws_xag
+            is_dup_gram = observed_at in existing_snapshots_gram or observed_at in existing_raws_gram
+            
+            if is_dup_xag and is_dup_gram:
                 duplicates += 1
                 continue
                 
-            close_price = Decimal(str(row["close"]))
-            
             # Clean row values for JSON serialization (handling NaN and numpy types)
             payload_dict = {}
             for k, val in dict(row).items():
@@ -154,71 +176,143 @@ def backfill():
                 else:
                     payload_dict[k] = val
             
-            # Create RawGlobalPrice
-            raw_global = RawGlobalPrice(
-                collector_run_id=run.id,
-                asset_id=asset.id,
-                source="yahoo-si-f-1d",
-                buy_price=close_price,
-                sell_price=close_price,
-                currency="USD",
-                observed_at=observed_at,
-                fetched_at=datetime.now(UTC),
-                raw_payload_hash="backfill_" + str(row["timestamp"]),
-                parser_version="yahoo-finance-chart-v1",
-                payload_json=payload_dict,
-            )
-            db.add(raw_global)
-            db.flush()
-            
-            # Create PriceSnapshot
-            snap = PriceSnapshot(
-                asset_id=asset.id,
-                source="yahoo-si-f-1d",
-                buy_price=close_price,
-                sell_price=close_price,
-                mid_price=close_price,
-                currency="USD",
-                spread_absolute=Decimal("0.0"),
-                spread_percent=Decimal("0.0"),
-                observed_at=observed_at,
-                resolved_source="yahoo_si_f",
-                is_degraded=False,
-            )
-            db.add(snap)
-            db.flush()
-            
-            # Add to local sets to prevent duplicate constraint violation within the same run
-            existing_snapshots.add(observed_at)
-            existing_raws.add(observed_at)
-            
             # Helper to convert float to Decimal safely
             def to_dec(val):
                 if pd.isna(val) or val is None:
                     return None
                 return Decimal(str(val))
+
+            # 1. Process XAG if not duplicate
+            if not is_dup_xag:
+                close_price_xag = Decimal(str(row["close"]))
                 
-            # Create TechnicalIndicator
-            ti = TechnicalIndicator(
-                price_snapshot_id=snap.id,
-                bar_timestamp=observed_at,
-                timeframe="1d",
-                close_usd_oz=close_price,
-                rsi_14=to_dec(row.get("rsi_14")),
-                macd_line=to_dec(row.get("macd_line")),
-                macd_signal=to_dec(row.get("macd_signal")),
-                macd_histogram=to_dec(row.get("macd_histogram")),
-                bb_upper_20_2=to_dec(row.get("bb_upper_20_2")),
-                bb_middle_20_2=to_dec(row.get("bb_middle_20_2")),
-                bb_lower_20_2=to_dec(row.get("bb_lower_20_2")),
-                sma_20=to_dec(row.get("sma_20")),
-                sma_50=to_dec(row.get("sma_50")),
-                sma_200=to_dec(row.get("sma_200")),
-                atr_14=to_dec(row.get("atr_14")),
-                xau_xag_ratio=None,
-            )
-            db.add(ti)
-            inserted += 1
+                # Create RawGlobalPrice
+                raw_global_xag = RawGlobalPrice(
+                    collector_run_id=run.id,
+                    asset_id=asset_xag.id,
+                    source="yahoo-si-f",
+                    buy_price=close_price_xag,
+                    sell_price=close_price_xag,
+                    currency="USD",
+                    observed_at=observed_at,
+                    fetched_at=datetime.now(UTC),
+                    raw_payload_hash="backfill_" + str(row["timestamp"]),
+                    parser_version="yahoo-finance-chart-v1",
+                    payload_json=payload_dict,
+                )
+                db.add(raw_global_xag)
+                db.flush()
+                
+                # Create PriceSnapshot
+                snap_xag = PriceSnapshot(
+                    asset_id=asset_xag.id,
+                    source="yahoo-si-f",
+                    buy_price=close_price_xag,
+                    sell_price=close_price_xag,
+                    mid_price=close_price_xag,
+                    currency="USD",
+                    spread_absolute=Decimal("0.0"),
+                    spread_percent=Decimal("0.0"),
+                    observed_at=observed_at,
+                    resolved_source="yahoo_si_f",
+                    is_degraded=False,
+                )
+                db.add(snap_xag)
+                db.flush()
+                
+                # Create TechnicalIndicator
+                ti_xag = TechnicalIndicator(
+                    price_snapshot_id=snap_xag.id,
+                    bar_timestamp=observed_at,
+                    timeframe="1d",
+                    close_usd_oz=close_price_xag,
+                    rsi_14=to_dec(row.get("rsi_14")),
+                    macd_line=to_dec(row.get("macd_line")),
+                    macd_signal=to_dec(row.get("macd_signal")),
+                    macd_histogram=to_dec(row.get("macd_histogram")),
+                    bb_upper_20_2=to_dec(row.get("bb_upper_20_2")),
+                    bb_middle_20_2=to_dec(row.get("bb_middle_20_2")),
+                    bb_lower_20_2=to_dec(row.get("bb_lower_20_2")),
+                    sma_20=to_dec(row.get("sma_20")),
+                    sma_50=to_dec(row.get("sma_50")),
+                    sma_200=to_dec(row.get("sma_200")),
+                    atr_14=to_dec(row.get("atr_14")),
+                    xau_xag_ratio=None,
+                )
+                db.add(ti_xag)
+                existing_snapshots_xag.add(observed_at)
+                existing_raws_xag.add(observed_at)
+                inserted += 1
+
+            # 2. Process XAG_GRAM if not duplicate
+            if not is_dup_gram:
+                conversion_rate = Decimal("31.1035")
+                close_price_xag = Decimal(str(row["close"]))
+                close_price_gram = close_price_xag / conversion_rate
+                
+                def to_dec_gram(val):
+                    dec_val = to_dec(val)
+                    if dec_val is None:
+                        return None
+                    return dec_val / conversion_rate
+
+                # Create RawGlobalPrice
+                raw_global_gram = RawGlobalPrice(
+                    collector_run_id=run.id,
+                    asset_id=asset_gram.id,
+                    source="yahoo-si-f",
+                    buy_price=close_price_gram,
+                    sell_price=close_price_gram,
+                    currency="USD",
+                    observed_at=observed_at,
+                    fetched_at=datetime.now(UTC),
+                    raw_payload_hash="backfill_gram_" + str(row["timestamp"]),
+                    parser_version="yahoo-finance-chart-v1",
+                    payload_json=payload_dict,
+                )
+                db.add(raw_global_gram)
+                db.flush()
+                
+                # Create PriceSnapshot
+                snap_gram = PriceSnapshot(
+                    asset_id=asset_gram.id,
+                    source="yahoo-si-f",
+                    buy_price=close_price_gram,
+                    sell_price=close_price_gram,
+                    mid_price=close_price_gram,
+                    currency="USD",
+                    spread_absolute=Decimal("0.0"),
+                    spread_percent=Decimal("0.0"),
+                    observed_at=observed_at,
+                    resolved_source="yahoo_si_f",
+                    is_degraded=False,
+                )
+                db.add(snap_gram)
+                db.flush()
+                
+                # Create TechnicalIndicator
+                ti_gram = TechnicalIndicator(
+                    price_snapshot_id=snap_gram.id,
+                    bar_timestamp=observed_at,
+                    timeframe="1d",
+                    close_usd_oz=close_price_gram,
+                    rsi_14=to_dec(row.get("rsi_14")),
+                    macd_line=to_dec_gram(row.get("macd_line")),
+                    macd_signal=to_dec_gram(row.get("macd_signal")),
+                    macd_histogram=to_dec_gram(row.get("macd_histogram")),
+                    bb_upper_20_2=to_dec_gram(row.get("bb_upper_20_2")),
+                    bb_middle_20_2=to_dec_gram(row.get("bb_middle_20_2")),
+                    bb_lower_20_2=to_dec_gram(row.get("bb_lower_20_2")),
+                    sma_20=to_dec_gram(row.get("sma_20")),
+                    sma_50=to_dec_gram(row.get("sma_50")),
+                    sma_200=to_dec_gram(row.get("sma_200")),
+                    atr_14=to_dec_gram(row.get("atr_14")),
+                    xau_xag_ratio=None,
+                )
+                db.add(ti_gram)
+                existing_snapshots_gram.add(observed_at)
+                existing_raws_gram.add(observed_at)
+                inserted += 1
             
             if inserted % 100 == 0:
                 db.commit()
