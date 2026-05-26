@@ -188,11 +188,11 @@ docker compose --env-file .env.production run --rm api python -m app.collectors.
 echo \"Running: global-xag-usd\"
 docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job global-xag-usd || echo \"Global XAG/USD is stale or closed (expected during off-market hours or holidays).\"
 echo \"Running: kuveyt-silver\"
-docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver
+docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver || echo \"Kuveyt Silver is currently unreachable or failed.\"
 echo \"Running: fed-rss\"
-docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fed-rss
+docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fed-rss || echo \"Fed RSS is currently unreachable or failed.\"
 echo \"Running: fred-macro\"
-docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fred-macro
+docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fred-macro || echo \"Fred Macro is currently unreachable or failed.\"
 
 echo -e \"\${BLUE}Verifying end-to-end Collector health metrics...\${NC}\"
 curl -fsS http://127.0.0.1:8000/collectors/health
