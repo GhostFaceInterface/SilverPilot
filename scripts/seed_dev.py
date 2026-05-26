@@ -3,6 +3,8 @@ import sys
 
 api_path = Path(__file__).resolve().parents[1] / "apps" / "api"
 sys.path.insert(0, str(api_path))
+if Path("/app/app").exists():
+    sys.path.insert(0, "/app")
 
 from app.services.seed import seed_development_data  # noqa: E402
 
