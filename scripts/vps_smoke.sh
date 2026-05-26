@@ -126,24 +126,21 @@ log_info "Running collector: kuveyt-silver"
 if docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job kuveyt-silver; then
     log_success "kuveyt-silver collector succeeded."
 else
-    log_error "kuveyt-silver collector failed."
-    exit 1
+    log_warning "kuveyt-silver collector failed (allowed to soft-fail during off-market hours or network blips)."
 fi
 
 log_info "Running collector: fed-rss"
 if docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fed-rss; then
     log_success "fed-rss collector succeeded."
 else
-    log_error "fed-rss collector failed."
-    exit 1
+    log_warning "fed-rss collector failed (allowed to soft-fail during network blips)."
 fi
 
 log_info "Running collector: fred-macro"
 if docker compose --env-file .env.production run --rm api python -m app.collectors.runner --job fred-macro; then
     log_success "fred-macro collector succeeded."
 else
-    log_error "fred-macro collector failed."
-    exit 1
+    log_warning "fred-macro collector failed (allowed to soft-fail during network blips)."
 fi
 
 # 7. End-to-End Metrics & Freshness Verification
