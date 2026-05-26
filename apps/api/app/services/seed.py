@@ -6,6 +6,7 @@ from app.models import Asset, Portfolio
 
 from sqlalchemy import text
 
+
 def seed_development_data() -> None:
     db = SessionLocal()
     try:
@@ -22,7 +23,12 @@ def seed_development_data() -> None:
 
         if old_asset:
             db.execute(text("DELETE FROM paper_trades WHERE asset_id = :aid"), {"aid": old_asset.id})
-            db.execute(text("DELETE FROM technical_indicators WHERE price_snapshot_id IN (SELECT id FROM price_snapshots WHERE asset_id = :aid)"), {"aid": old_asset.id})
+            db.execute(
+                text(
+                    "DELETE FROM technical_indicators WHERE price_snapshot_id IN (SELECT id FROM price_snapshots WHERE asset_id = :aid)"
+                ),
+                {"aid": old_asset.id},
+            )
             db.execute(text("DELETE FROM price_snapshots WHERE asset_id = :aid"), {"aid": old_asset.id})
             db.execute(text("DELETE FROM raw_bank_prices WHERE asset_id = :aid"), {"aid": old_asset.id})
             db.execute(text("DELETE FROM raw_global_prices WHERE asset_id = :aid"), {"aid": old_asset.id})

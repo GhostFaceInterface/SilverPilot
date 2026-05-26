@@ -208,7 +208,7 @@ def ingest_global_price(
             gram_sell = _price(sell_price / conversion_rate)
             gram_mid = _price(mid_price / conversion_rate)
             gram_spread_abs = _price(spread_absolute / conversion_rate)
-            
+
             raw_gram = RawGlobalPrice(
                 collector_run_id=run.id,
                 asset_id=gram_asset.id,
@@ -223,7 +223,7 @@ def ingest_global_price(
                 payload_json=payload,
             )
             db.add(raw_gram)
-            
+
             snapshot_gram = PriceSnapshot(
                 asset_id=gram_asset.id,
                 source=source,
@@ -239,8 +239,10 @@ def ingest_global_price(
             )
             db.add(snapshot_gram)
             db.flush()
-            
-            _try_compute_and_store_indicator(db, asset=gram_asset, source=source, snapshot=snapshot_gram, observed_at=observed_at)
+
+            _try_compute_and_store_indicator(
+                db, asset=gram_asset, source=source, snapshot=snapshot_gram, observed_at=observed_at
+            )
 
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
@@ -446,7 +448,7 @@ def ingest_bank_price(
             gram_snap_sell = _price(snap_sell / conversion_rate)
             gram_snap_mid = _price(mid_price / conversion_rate)
             gram_spread_abs = _price(spread_absolute / conversion_rate)
-            
+
             raw_gram = RawBankPrice(
                 collector_run_id=run.id,
                 asset_id=gram_asset.id,
@@ -463,7 +465,7 @@ def ingest_bank_price(
                 is_degraded=is_degraded,
             )
             db.add(raw_gram)
-            
+
             snapshot_gram = PriceSnapshot(
                 asset_id=gram_asset.id,
                 source=source,

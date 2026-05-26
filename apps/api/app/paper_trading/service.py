@@ -37,7 +37,7 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
         raise PaperTradingError("Real-money portfolios are not allowed in SilverPilot")
 
     asset = _get_asset(db, request.asset_symbol)
-    
+
     # --- Option C: Auto-inject %0.2 BSMV/Kambiyo tax for XAG_GRAM paper buy ---
     if request.action == "paper_buy" and asset.symbol == "XAG_GRAM":
         price = request.buy_price
