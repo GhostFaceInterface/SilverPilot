@@ -145,9 +145,7 @@ def create_paper_trade(request: PaperTradeRequest, db: Session = Depends(get_db)
 
 
 @router.get("/paper-trades/position")
-def get_paper_position(
-    portfolio_name: str = "gram-paper", asset_symbol: str = "XAG_GRAM", db: Session = Depends(get_db)
-):
+def get_paper_position(portfolio_name: str = "gram-paper", asset_symbol: str = "XAG_GRAM", db: Session = Depends(get_db)):
     portfolio = db.execute(select(Portfolio).where(Portfolio.name == portfolio_name)).scalar_one_or_none()
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")

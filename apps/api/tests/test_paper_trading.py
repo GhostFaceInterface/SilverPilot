@@ -21,14 +21,13 @@ def make_client():
     Base.metadata.create_all(bind=engine)
 
     db = testing_session()
-    db.add(Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True))
-    db.add(Asset(symbol="XAG_GRAM", name="Silver (Gram)", asset_type="metal", is_active=True))
+    db.add(Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True))
     db.add(
         Portfolio(
             name="gram-paper",
             base_currency="USD",
-            initial_cash=Decimal("600.000000"),
-            cash_balance=Decimal("600.000000"),
+            initial_cash=Decimal("2500.000000"),
+            cash_balance=Decimal("2500.000000"),
             is_real_money=False,
         )
     )
@@ -52,8 +51,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
     fetched_at = observed_at
     db = testing_session()
     try:
-        xag = db.query(Asset).filter(Asset.symbol == "XAG").one()
-        xag_gram = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
         bank_run = CollectorRun(
             collector_name="kuveyt_public_silver",
             source="kuveyt-public-silver-page",
@@ -90,7 +88,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
             [
                 RawBankPrice(
                     collector_run_id=bank_run.id,
-                    asset_id=xag_gram.id,
+                    asset_id=asset.id,
                     source="kuveyt-public-silver-page",
                     buy_price=Decimal("10.000000"),
                     sell_price=Decimal("9.800000"),
@@ -103,7 +101,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
                 ),
                 RawGlobalPrice(
                     collector_run_id=global_run.id,
-                    asset_id=xag.id,
+                    asset_id=asset.id,
                     source="gold-api-xag-usd",
                     buy_price=Decimal("32.000000"),
                     sell_price=Decimal("32.000000"),
@@ -143,7 +141,7 @@ def seed_global_price_history(
     observed_at = observed_at or datetime.now(UTC)
     db = testing_session()
     try:
-        asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
         for index, price in enumerate(prices):
             point_time = observed_at - timedelta(minutes=len(prices) - index)
             run = CollectorRun(
@@ -244,7 +242,7 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
         },
     )
     assert buy_response.status_code == 200
-    assert buy_response.json()["snapshot"]["cash_balance"] == "499.000000"
+    assert buy_response.json()["snapshot"]["cash_balance"] == "2398.800000"
     assert buy_response.json()["risk_decision"]["decision"] == "allow"
     assert buy_response.json()["risk_decision"]["reason_code"] == "RISK_CHECK_PASSED"
     assert buy_response.json()["trade"]["risk_decision_id"] == buy_response.json()["risk_decision"]["id"]
@@ -263,8 +261,8 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     assert sell_response.status_code == 200
 
     snapshot = sell_response.json()["snapshot"]
-    assert snapshot["cash_balance"] == "596.000000"
-    assert Decimal(snapshot["portfolio_value"]) < Decimal("600.000000")
+    assert snapshot["cash_balance"] == "2495.800000"
+    assert Decimal(snapshot["portfolio_value"]) < Decimal("2500.000000")
     assert Decimal(snapshot["realized_pnl"]) < Decimal("0")
 
 
@@ -276,7 +274,7 @@ def test_buy_cannot_make_cash_balance_negative():
         "/paper-trades",
         json={
             "action": "paper_buy",
-            "quantity": "100",
+            "quantity": "300",
             "buy_price": "10.00",
             "sell_price": "9.80",
             "fees": "0",
@@ -293,7 +291,7 @@ def test_buy_cannot_make_cash_balance_negative():
     try:
         portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
         trade = db.query(PaperTrade).one()
-        assert portfolio.cash_balance == Decimal("600.000000")
+        assert portfolio.cash_balance == Decimal("2500.000000")
         assert trade.action == "blocked"
         assert trade.risk_decision_id is not None
     finally:
@@ -399,7 +397,7 @@ def test_high_spread_blocks_trade_before_balance_changes():
     db = testing_session()
     try:
         portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
-        assert portfolio.cash_balance == Decimal("600.000000")
+        assert portfolio.cash_balance == Decimal("2500.000000")
     finally:
         db.close()
 

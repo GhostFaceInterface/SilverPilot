@@ -76,7 +76,7 @@ async def test_regime_classifier_sideways_coldstart():
 
     try:
         # Fewer than 14 records -> cold start
-        asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+        asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
         db.add(asset)
         db.flush()
 
@@ -105,7 +105,7 @@ async def test_regime_classifier_trending():
     db = TestingSession()
 
     try:
-        asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+        asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
         db.add(asset)
         db.flush()
 
@@ -160,15 +160,15 @@ async def test_auto_trading_blended_bullish_consensus():
 
     try:
         # Seed asset and portfolio
-        asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+        asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
         db.add(asset)
         db.flush()
 
         portfolio = Portfolio(
             name="gram-paper",
             base_currency="USD",
-            initial_cash=Decimal("2500.00"),
-            cash_balance=Decimal("2500.00"),
+            initial_cash=Decimal("1000.00"),
+            cash_balance=Decimal("1000.00"),
             is_real_money=False,
         )
         db.add(portfolio)
@@ -253,15 +253,15 @@ async def test_auto_trading_blended_neutral_consensus_silent():
 
     try:
         # Seed asset and portfolio
-        asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+        asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
         db.add(asset)
         db.flush()
 
         portfolio = Portfolio(
             name="gram-paper",
             base_currency="USD",
-            initial_cash=Decimal("2500.00"),
-            cash_balance=Decimal("2500.00"),
+            initial_cash=Decimal("1000.00"),
+            cash_balance=Decimal("1000.00"),
             is_real_money=False,
         )
         db.add(portfolio)

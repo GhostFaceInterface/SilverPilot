@@ -684,13 +684,6 @@ def _price_rise_percent(prices: list[Decimal]) -> Decimal | None:
 
 
 def _global_price_rows_since(db: Session, *, asset_id: int, since: datetime) -> list[RawGlobalPrice]:
-    asset = db.get(Asset, asset_id)
-    if asset and asset.symbol.endswith("_GRAM"):
-        base_symbol = asset.symbol[:-5]
-        base_asset = db.execute(select(Asset).where(Asset.symbol == base_symbol)).scalar_one_or_none()
-        if base_asset:
-            asset_id = base_asset.id
-
     return list(
         db.execute(
             select(RawGlobalPrice)

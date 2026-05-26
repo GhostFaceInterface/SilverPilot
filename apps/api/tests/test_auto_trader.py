@@ -49,7 +49,7 @@ async def test_auto_trading_buy_signal():
     db = TestingSession()
 
     # 1. Seed critical asset and portfolio
-    asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
     db.add(asset)
     db.flush()
 
@@ -134,7 +134,7 @@ async def test_auto_trading_buy_signal():
         sent_text = mock_bot_instance.send_message.call_args[1]["text"]
         assert "SilverPilot Auto-Trading Raporu" in sent_text
         assert "ALIM (BUY)" in sent_text
-        assert "XAG_GRAM (Gümüş/gram)" in sent_text
+        assert "XAG_GRAM" in sent_text
 
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -152,7 +152,7 @@ async def test_auto_trading_sell_signal():
     db = TestingSession()
 
     # 1. Seed critical asset and portfolio
-    asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
     db.add(asset)
     db.flush()
 

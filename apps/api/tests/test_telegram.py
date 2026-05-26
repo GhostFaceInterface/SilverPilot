@@ -27,7 +27,7 @@ def test_telegram_commands():
     db = TestingSessionLocal()
 
     # 2. Seed data
-    asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
     db.add(asset)
     db.flush()
 
@@ -210,10 +210,10 @@ async def test_process_telegram_update_on_demand():
     ):
         mock_bot_instance = AsyncMock()
         MockBot.return_value = mock_bot_instance
-
+        
         mock_db = MagicMock()
         MockSessionLocal.return_value.__enter__.return_value = mock_db
-
+        
         mock_canli_report.return_value = "Mock Canli Report Content"
 
         await process_telegram_update(canli_update, settings=settings)
@@ -221,7 +221,7 @@ async def test_process_telegram_update_on_demand():
         # Should send wait message and then the final report
         assert mock_bot_instance.send_message.call_count == 2
         mock_canli_report.assert_called_once_with(mock_db, settings)
-
+        
         mock_bot_instance.send_message.assert_any_call(
             chat_id=987654, text="Mock Canli Report Content", parse_mode="Markdown"
         )
@@ -237,12 +237,11 @@ async def test_process_telegram_update_on_demand():
     ):
         mock_bot_instance = AsyncMock()
         MockBot.return_value = mock_bot_instance
-
+        
         mock_db = MagicMock()
         MockSessionLocal.return_value.__enter__.return_value = mock_db
-
+        
         from io import BytesIO
-
         dummy_buffer = BytesIO(b"dummy")
         mock_chart.return_value = dummy_buffer
         mock_caption.return_value = "Mock Caption Content"
@@ -253,7 +252,10 @@ async def test_process_telegram_update_on_demand():
         mock_bot_instance.send_message.assert_called_once()
         mock_chart.assert_called_once_with(mock_db)
         mock_caption.assert_called_once_with(mock_db)
-
+        
         mock_bot_instance.send_photo.assert_called_once_with(
-            chat_id=987654, photo=dummy_buffer, caption="Mock Caption Content", parse_mode="Markdown"
+            chat_id=987654,
+            photo=dummy_buffer,
+            caption="Mock Caption Content",
+            parse_mode="Markdown"
         )
