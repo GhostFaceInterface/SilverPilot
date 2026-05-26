@@ -56,6 +56,14 @@ def seed_development_data() -> None:
             db.add(asset)
             db.flush()
 
+        # Re-seed legacy XAG Asset (required because collectors fetch and save ounce price under XAG,
+        # which is then dynamically converted/replicated to XAG_GRAM in service.py)
+        xag_asset = db.query(Asset).filter(Asset.symbol == "XAG").one_or_none()
+        if xag_asset is None:
+            xag_asset = Asset(symbol="XAG", name="Silver Spot Ounce", asset_type="metal", is_active=True)
+            db.add(xag_asset)
+            db.flush()
+
         # 3. Seed 2500 USD gram-paper Portfolio
         portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one_or_none()
         if portfolio is None:
