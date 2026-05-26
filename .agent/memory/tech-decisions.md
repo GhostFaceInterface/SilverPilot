@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-25
+updated: 2026-05-26
 ---
 
 
@@ -94,3 +94,8 @@ updated: 2026-05-25
   2. Securely connects to `silverpilot-vps` via SSH and pulls the latest main.
   3. Triggers `scripts/vps_smoke.sh` on the VPS to rebuild services, run Alembic migrations, test collectors, and run E2E live database tests (`verify_execution_pipeline.py`).
 - **Direct VPS Edit Ban:** Direct live-patching or editing of codebase files directly on the VPS is strictly prohibited to ensure Git history consistency, prevent syntax errors, and maintain zero-trust boundaries.
+
+## 15. Telegram Bot On-Demand Analysis & Premium Charting (Phase 15 - May 2026)
+- **On-Demand Scrapers & Consensuses:** Command `/canli` runs live collectors (`collect_kuveyt_public_silver`, `collect_global_xag_usd`) synchronously, calculates strategy oylamaları (rsi, bollinger, sma_cross), triggers Supreme Arbiter resolution (`run_blended_consensus_resolution`), and compiles a live diagnostic consensus text report without triggering actual paper trades.
+- **Agg Headless Chart Rendering:** Command `/analiz` queries the last 24 hours of price snapshots (preferring scraped Kuveyt silver over Yahoo fallback), plots a beautiful dark-mode chart using Matplotlib (enforcing headless backend via `matplotlib.use("Agg")` *before* importing `pyplot` to prevent window-manager crashes on headless containers), segments the time-series into 3 custom shaded vertical sessions (Sabah 00-08, Öğle-Avrupa 08-16, Akşam-Amerika 16-24), and sends the output as a photo via `BytesIO` buffer with tabular statistics.
+- **Budget Adjustments & Spams Mitigation:** The daily LLM budget guard threshold `DEEPSEEK_DAILY_BUDGET_USD` was increased from `1.00` to `3.00` in `.env` to accommodate on-demand DeepSeek R1 consensus trigger requests. Anti-spam/rate-limiting bounds and missing database seed guards are recommended for future hardening.

@@ -199,6 +199,9 @@ def ingest_global_price(
     # --- Technical Indicator Calculation (isolated: must never lose the price snapshot) ---
     _try_compute_and_store_indicator(db, asset=asset, source=source, snapshot=snapshot, observed_at=observed_at)
 
+    # --- Gram Replication Pipeline (Option C) ---
+    _try_replicate_for_gram(db, ounce_snapshot=snapshot, source=source, observed_at=observed_at)
+
     finish_collector_run(db, run, status="success", records_inserted=1)
     db.commit()
     db.refresh(run)
@@ -211,6 +214,9 @@ def ingest_global_price(
 # ---------------------------------------------------------------------------
 _INDICATOR_HISTORY_BARS = 200
 _INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f"}
+
+# --- Conversion Constants ---
+TROY_OUNCE_IN_GRAMS = Decimal("31.1035")
 
 
 def _try_compute_and_store_indicator(
@@ -305,6 +311,68 @@ def _try_compute_and_store_indicator(
     except Exception:
         logger.exception(
             "indicator_error: failed to compute indicators for snapshot_id=%s — price snapshot preserved", snapshot.id
+        )
+
+
+def _try_replicate_for_gram(
+    db: Session,
+    *,
+    ounce_snapshot: PriceSnapshot,
+    source: str,
+    observed_at: datetime,
+) -> None:
+    """Replicate an ounce-denominated PriceSnapshot as a gram-denominated XAG_GRAM snapshot.
+
+    Conversion: gram_price = ounce_price / 31.1035
+    Indicator calculation is then triggered for the gram snapshot.
+    Isolated with try/except so failures never lose the parent ounce snapshot.
+    """
+    try:
+        gram_asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
+        if gram_asset is None:
+            logger.debug("gram_replication_skip: XAG_GRAM asset not seeded yet")
+            return
+
+        # Convert ounce prices to gram prices
+        gram_buy = _price(ounce_snapshot.buy_price / TROY_OUNCE_IN_GRAMS)
+        gram_sell = _price(ounce_snapshot.sell_price / TROY_OUNCE_IN_GRAMS)
+        gram_mid = _price(ounce_snapshot.mid_price / TROY_OUNCE_IN_GRAMS)
+        gram_spread = _price(gram_buy - gram_sell)
+        gram_spread_pct = (
+            _price((gram_spread / gram_mid) * Decimal("100")) if gram_mid > 0 else Decimal("0.000000")
+        )
+
+        gram_snapshot = PriceSnapshot(
+            asset_id=gram_asset.id,
+            source=source,
+            buy_price=gram_buy,
+            sell_price=gram_sell,
+            mid_price=gram_mid,
+            currency=ounce_snapshot.currency,
+            spread_absolute=gram_spread,
+            spread_percent=gram_spread_pct,
+            observed_at=observed_at,
+            resolved_source=f"{source}:gram-replicated",
+            is_degraded=ounce_snapshot.is_degraded,
+        )
+        db.add(gram_snapshot)
+        db.flush()  # Get gram_snapshot.id for indicator insert
+
+        # Compute indicators for the gram asset
+        _try_compute_and_store_indicator(
+            db, asset=gram_asset, source=source, snapshot=gram_snapshot, observed_at=observed_at
+        )
+
+        logger.info(
+            "gram_replicated: ounce_snapshot_id=%s -> gram_snapshot_id=%s mid=%.6f USD/g",
+            ounce_snapshot.id,
+            gram_snapshot.id,
+            gram_mid,
+        )
+    except Exception:
+        logger.exception(
+            "gram_replication_error: failed to replicate ounce_snapshot_id=%s as gram — ounce snapshot preserved",
+            ounce_snapshot.id,
         )
 
 

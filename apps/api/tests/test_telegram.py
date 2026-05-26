@@ -27,15 +27,15 @@ def test_telegram_commands():
     db = TestingSessionLocal()
 
     # 2. Seed data
-    asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
+    asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
     db.add(asset)
     db.flush()
 
     portfolio = Portfolio(
-        name="default-paper",
+        name="gram-paper",
         base_currency="USD",
-        initial_cash=Decimal("600.00"),
-        cash_balance=Decimal("600.00"),
+        initial_cash=Decimal("2500.00"),
+        cash_balance=Decimal("2500.00"),
         is_real_money=False,
     )
     db.add(portfolio)
@@ -86,12 +86,12 @@ def test_telegram_commands():
     durum_res = handle_telegram_command("/durum", db)
     assert "Gümüş & Portföy Durumu" in durum_res
     assert "Nakitteki Bakiye:" in durum_res
-    assert "600.00" in durum_res
+    assert "2,500.00" in durum_res
 
     # /cuzdan
     cuzdan_res = handle_telegram_command("/cuzdan", db)
     assert "Başlangıç Bakiyesi" in cuzdan_res
-    assert "600.00" in cuzdan_res
+    assert "2,500.00" in cuzdan_res
     assert "Anlık Portföy Değeri:" in cuzdan_res
 
     # /karzarar

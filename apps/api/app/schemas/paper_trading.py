@@ -8,8 +8,8 @@ TradeAction = Literal["paper_buy", "paper_sell", "hold", "blocked"]
 
 
 class PaperTradeRequest(BaseModel):
-    portfolio_name: str = "default-paper"
-    asset_symbol: str = "XAG"
+    portfolio_name: str = "gram-paper"
+    asset_symbol: str = "XAG_GRAM"
     action: TradeAction
     quantity: Decimal | None = Field(default=None, ge=Decimal("0"))
     cash_amount: Decimal | None = Field(default=None, gt=Decimal("0"))

@@ -22,9 +22,10 @@ def make_client():
 
     db = testing_session()
     db.add(Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True))
+    db.add(Asset(symbol="XAG_GRAM", name="Silver (Gram)", asset_type="metal", is_active=True))
     db.add(
         Portfolio(
-            name="default-paper",
+            name="gram-paper",
             base_currency="USD",
             initial_cash=Decimal("600.000000"),
             cash_balance=Decimal("600.000000"),
@@ -51,7 +52,8 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
     fetched_at = observed_at
     db = testing_session()
     try:
-        asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
+        xag = db.query(Asset).filter(Asset.symbol == "XAG").one()
+        xag_gram = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
         bank_run = CollectorRun(
             collector_name="kuveyt_public_silver",
             source="kuveyt-public-silver-page",
@@ -88,7 +90,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
             [
                 RawBankPrice(
                     collector_run_id=bank_run.id,
-                    asset_id=asset.id,
+                    asset_id=xag_gram.id,
                     source="kuveyt-public-silver-page",
                     buy_price=Decimal("10.000000"),
                     sell_price=Decimal("9.800000"),
@@ -101,7 +103,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
                 ),
                 RawGlobalPrice(
                     collector_run_id=global_run.id,
-                    asset_id=asset.id,
+                    asset_id=xag.id,
                     source="gold-api-xag-usd",
                     buy_price=Decimal("32.000000"),
                     sell_price=Decimal("32.000000"),
@@ -179,8 +181,8 @@ def seed_global_price_history(
 def seed_realized_loss(testing_session, *, loss: Decimal, sell_created_at: datetime):
     db = testing_session()
     try:
-        asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
-        portfolio = db.query(Portfolio).filter(Portfolio.name == "default-paper").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
         decision = RiskDecision(
             decision="allow",
             reason_code="RISK_CHECK_PASSED",
@@ -289,7 +291,7 @@ def test_buy_cannot_make_cash_balance_negative():
 
     db = testing_session()
     try:
-        portfolio = db.query(Portfolio).filter(Portfolio.name == "default-paper").one()
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
         trade = db.query(PaperTrade).one()
         assert portfolio.cash_balance == Decimal("600.000000")
         assert trade.action == "blocked"
@@ -302,7 +304,7 @@ def test_real_money_portfolio_is_rejected():
     client, testing_session = make_client()
     db = testing_session()
     try:
-        portfolio = db.query(Portfolio).filter(Portfolio.name == "default-paper").one()
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
         portfolio.is_real_money = True
         db.commit()
     finally:
@@ -396,7 +398,7 @@ def test_high_spread_blocks_trade_before_balance_changes():
 
     db = testing_session()
     try:
-        portfolio = db.query(Portfolio).filter(Portfolio.name == "default-paper").one()
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
         assert portfolio.cash_balance == Decimal("600.000000")
     finally:
         db.close()
@@ -530,8 +532,8 @@ def test_risk_status_reports_thresholds_and_current_metrics():
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["portfolio_name"] == "default-paper"
-    assert payload["asset_symbol"] == "XAG"
+    assert payload["portfolio_name"] == "gram-paper"
+    assert payload["asset_symbol"] == "XAG_GRAM"
     assert payload["thresholds"]["max_24h_volatility_percent"] == "12.0"
     assert payload["current_metrics"]["daily_realized_loss_usd"] == "0.000000"
     assert payload["current_metrics"]["global_xag_volatility_24h_percent"] is not None

@@ -178,8 +178,8 @@ def evaluate_paper_trade_risk(
 def risk_policy_status(
     db: Session,
     *,
-    portfolio_name: str = "default-paper",
-    asset_symbol: str = "XAG",
+    portfolio_name: str = "gram-paper",
+    asset_symbol: str = "XAG_GRAM",
 ) -> dict:
     settings = get_settings()
     portfolio = db.execute(select(Portfolio).where(Portfolio.name == portfolio_name)).scalar_one_or_none()
@@ -684,6 +684,13 @@ def _price_rise_percent(prices: list[Decimal]) -> Decimal | None:
 
 
 def _global_price_rows_since(db: Session, *, asset_id: int, since: datetime) -> list[RawGlobalPrice]:
+    asset = db.get(Asset, asset_id)
+    if asset and asset.symbol.endswith("_GRAM"):
+        base_symbol = asset.symbol[:-5]
+        base_asset = db.execute(select(Asset).where(Asset.symbol == base_symbol)).scalar_one_or_none()
+        if base_asset:
+            asset_id = base_asset.id
+
     return list(
         db.execute(
             select(RawGlobalPrice)

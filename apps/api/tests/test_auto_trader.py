@@ -49,15 +49,15 @@ async def test_auto_trading_buy_signal():
     db = TestingSession()
 
     # 1. Seed critical asset and portfolio
-    asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
+    asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
     db.add(asset)
     db.flush()
 
     portfolio = Portfolio(
-        name="default-paper",
+        name="gram-paper",
         base_currency="USD",
-        initial_cash=Decimal("600.00"),
-        cash_balance=Decimal("600.00"),
+        initial_cash=Decimal("2500.00"),
+        cash_balance=Decimal("2500.00"),
         is_real_money=False,
     )
     db.add(portfolio)
@@ -134,7 +134,7 @@ async def test_auto_trading_buy_signal():
         sent_text = mock_bot_instance.send_message.call_args[1]["text"]
         assert "SilverPilot Auto-Trading Raporu" in sent_text
         assert "ALIM (BUY)" in sent_text
-        assert "XAG (Gümüş)" in sent_text
+        assert "XAG_GRAM (Gümüş/gram)" in sent_text
 
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -152,14 +152,14 @@ async def test_auto_trading_sell_signal():
     db = TestingSession()
 
     # 1. Seed critical asset and portfolio
-    asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
+    asset = Asset(symbol="XAG_GRAM", name="Silver", asset_type="metal", is_active=True)
     db.add(asset)
     db.flush()
 
     portfolio = Portfolio(
-        name="default-paper",
+        name="gram-paper",
         base_currency="USD",
-        initial_cash=Decimal("600.00"),
+        initial_cash=Decimal("2500.00"),
         cash_balance=Decimal("100.00"),  # Already invested mostly
         is_real_money=False,
     )

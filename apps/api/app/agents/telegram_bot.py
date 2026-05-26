@@ -53,7 +53,7 @@ def handle_telegram_command(command: str, db: Session) -> str:
             "🤖 *SilverPilot Telegram Portföy & Teşhis Botuna Hoş Geldiniz!*\n\n"
             "Aşağıdaki komutları kullanabilirsiniz:\n"
             "📊 /durum - Gümüş & Portföy bakiyelerini ve dağılımını gösterir.\n"
-            "💼 /cuzdan - $600 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir.\n"
+            "💼 /cuzdan - $2,500 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir.\n"
             "📈 /karzarar - Açık pozisyon PNL ve son 5 paper-trade işlemini özetler.\n"
             "🤖 /ajanlar - Son Supreme Arbiter uyuşmazlık ve çözümlenmiş kararları listeler."
         )
@@ -62,15 +62,15 @@ def handle_telegram_command(command: str, db: Session) -> str:
 
 
 def get_durum_text(db: Session) -> str:
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
     if not portfolio:
         portfolio = db.execute(select(Portfolio).order_by(Portfolio.created_at)).scalars().first()
     if not portfolio:
         return "❌ Aktif portföy bulunamadı."
 
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "❌ Gümüş (XAG) varlığı bulunamadı."
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
 
     position = calculate_position(db, portfolio.id, asset.id)
 
@@ -92,9 +92,9 @@ def get_durum_text(db: Session) -> str:
     cash_ratio = Decimal("100") - ratio
 
     return (
-        "📊 *Gümüş & Portföy Durumu*\n\n"
+        "📊 *Gümüş & Portföy Durumu (Gram/USD)*\n\n"
         f"💵 *Nakitteki Bakiye:* {cash_balance:,.2f} USD\n"
-        f"🥈 *Gümüş Miktarı:* {silver_qty:,.4f} XAG\n"
+        f"🥈 *Gümüş Miktarı:* {silver_qty:,.6f} gram\n"
         f"💰 *Gümüş Değeri:* {silver_value:,.2f} USD\n"
         f"📈 *Toplam Portföy Değeri:* {portfolio_value:,.2f} USD\n"
         f"⚖️ *Portföy Dağılımı:* %{ratio:.2f} Gümüş / %{cash_ratio:.2f} Nakit"
@@ -102,15 +102,15 @@ def get_durum_text(db: Session) -> str:
 
 
 def get_cuzdan_text(db: Session) -> str:
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
     if not portfolio:
         portfolio = db.execute(select(Portfolio).order_by(Portfolio.created_at)).scalars().first()
     if not portfolio:
         return "❌ Aktif portföy bulunamadı."
 
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "❌ Gümüş (XAG) varlığı bulunamadı."
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
 
     position = calculate_position(db, portfolio.id, asset.id)
     snapshot = db.execute(
@@ -127,30 +127,30 @@ def get_cuzdan_text(db: Session) -> str:
     cash_balance = portfolio.cash_balance
     portfolio_value = cash_balance + silver_value
 
-    initial_balance = Decimal("600")
+    initial_balance = portfolio.initial_cash
     pnl = portfolio_value - initial_balance
     pnl_pct = (pnl / initial_balance * 100) if initial_balance > 0 else Decimal("0")
 
     sign = "+" if pnl >= 0 else ""
 
     return (
-        "💼 *Cüzdan Değişim Özeti*\n\n"
-        f"💵 *Başlangıç Bakiyesi:* $600.00 USD\n"
+        "💼 *Cüzdan Değişim Özeti (Gram/USD)*\n\n"
+        f"💵 *Başlangıç Bakiyesi:* ${initial_balance:,.2f} USD\n"
         f"📈 *Anlık Portföy Değeri:* ${portfolio_value:,.2f} USD\n"
         f"📊 *Toplam Kar/Zarar (PNL):* {sign}${pnl:,.2f} USD ({sign}{pnl_pct:.2f}%)"
     )
 
 
 def get_karzarar_text(db: Session) -> str:
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
     if not portfolio:
         portfolio = db.execute(select(Portfolio).order_by(Portfolio.created_at)).scalars().first()
     if not portfolio:
         return "❌ Aktif portföy bulunamadı."
 
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     if not asset:
-        return "❌ Gümüş (XAG) varlığı bulunamadı."
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
 
     position = calculate_position(db, portfolio.id, asset.id)
     snapshot = db.execute(
@@ -190,16 +190,16 @@ def get_karzarar_text(db: Session) -> str:
                 "🟢 AL" if trade.action == "paper_buy" else "🔴 SAT" if trade.action == "paper_sell" else "⚪️ BLOKLANDI"
             )
             trades_str += (
-                f"{idx}. {action_emoji} | Miktar: {trade.quantity:,.4f} @ {trade.price:,.2f} USD ({time_str})\n"
+                f"{idx}. {action_emoji} | Miktar: {trade.quantity:,.6f} gram @ {trade.price:,.6f} USD/gram ({time_str})\n"
             )
     else:
         trades_str = "_Henüz bir paper-trade işlemi bulunmuyor._"
 
     return (
-        "📈 *Açık Pozisyon ve Kar/Zarar Durumu*\n\n"
-        f"🥈 *Açık Pozisyon:* {silver_qty:,.4f} XAG\n"
-        f"🏷️ *Ortalama Alış Maliyeti:* {avg_buy_cost:,.4f} USD/oz\n"
-        f"💸 *Anlık Gümüş Fiyatı:* {mid_price:,.4f} USD/oz\n"
+        "📈 *Açık Pozisyon ve Kar/Zarar Durumu (Gram/USD)*\n\n"
+        f"🥈 *Açık Pozisyon:* {silver_qty:,.6f} gram\n"
+        f"🏷️ *Ortalama Alış Maliyeti:* {avg_buy_cost:,.6f} USD/gram\n"
+        f"💸 *Anlık Gümüş Fiyatı:* {mid_price:,.6f} USD/gram\n"
         f"📊 *Açık Pozisyon Kar/Zarar:* {sign}${unrealized_pnl:,.2f} USD\n\n"
         f"🔄 *Son 5 Paper Trade İşlemi:*\n{trades_str}"
     )
@@ -471,8 +471,8 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     except Exception as e:
         logger.warning(f"On-demand collect_global_xag_usd failed: {e}")
 
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
     
     stmt = (
         select(TechnicalIndicator)
@@ -544,11 +544,11 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
 
     price = float(latest_snapshot.mid_price)
     cash_balance = float(portfolio.cash_balance)
-    xag_balance = float(current_position.quantity)
+    asset_balance = float(current_position.quantity)
 
     msg = (
         f"📊 *SilverPilot Canlı Analiz Raporu* (İstek Üzerine)\n\n"
-        f"🥈 *Gümüş (XAG):* {price:,.4f} USD/oz\n"
+        f"🥈 *Gümüş (XAG\\_GRAM):* {price:,.6f} USD/gram\n"
         f"📈 *Piyasa Rejimi:* {regime_label}\n\n"
         f"🗳️ *Strateji Oylaması:*\n"
         f"• RSI (14): {rsi_vote}\n"
@@ -557,7 +557,7 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
         f"👑 *Yüce Hakem Kararı:* {arbiter_emoji}\n"
         f"📝 *Gerekçe:* {arbiter_reason}\n\n"
         f"💵 *Nakit Bakiyesi:* {cash_balance:,.2f} USD\n"
-        f"🥈 *Gümüş Portföyü:* {xag_balance:,.4f} XAG\n"
+        f"🥈 *Gümüş Portföyü:* {asset_balance:,.6f} gram\n"
     )
     return msg
 

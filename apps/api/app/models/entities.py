@@ -285,7 +285,7 @@ class AgentRun(Base):
 class TechnicalIndicator(Base):
     __tablename__ = "technical_indicators"
     __table_args__ = (
-        UniqueConstraint("bar_timestamp", "timeframe", name="uq_technical_indicators_timestamp_timeframe"),
+        UniqueConstraint("price_snapshot_id", "timeframe", name="uq_technical_indicators_snapshot_timeframe"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -14,6 +14,15 @@ from app.agents.orchestrator import run_blended_consensus_resolution
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
 
+# --- Portfolio & Asset Configuration ---
+PORTFOLIO_NAME = "gram-paper"
+ASSET_SYMBOL = "XAG_GRAM"
+ASSET_UNIT_LABEL = "gram"
+
+# --- Fee & Tax Configuration ---
+TRADING_FEE = Decimal("0.05")
+BSMV_TAX_RATE = Decimal("0.002")  # 0.2% Kuveyt Türk BSMV/Kambiyo vergisi
+
 
 def sanitize_markdown(text: str) -> str:
     """Escapes markdown control characters and converts ** to * for Telegram Markdown V1."""
@@ -88,7 +97,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
 
         msg = (
             f"📊 *SilverPilot Canlı Analiz Raporu*\n\n"
-            f"🥈 *Gümüş (XAG):* {trade_data['price']:,.4f} USD/oz\n"
+            f"🥈 *Gümüş ({ASSET_SYMBOL}):* {trade_data['price']:,.6f} USD/{ASSET_UNIT_LABEL}\n"
             f"📈 *Piyasa Rejimi:* {regime_label}\n\n"
             f"🗳️ *Strateji Oylaması:*\n"
             f"• RSI (14): {rsi_vote}\n"
@@ -101,13 +110,13 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
 
         if action in ("paper_buy", "paper_sell"):
             msg += (
-                f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.4f} XAG\n"
+                f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.6f} {ASSET_UNIT_LABEL}\n"
                 f"💰 *Net Tutar:* {trade_data.get('net_amount', 0.0):,.2f} USD\n"
             )
 
         msg += f"💵 *Nakit Bakiyesi:* {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
-        if "xag_balance" in trade_data:
-            msg += f"🥈 *Gümüş Portföyü:* {trade_data['xag_balance']:,.4f} XAG\n"
+        if "asset_balance" in trade_data:
+            msg += f"🥈 *Gümüş Portföyü:* {trade_data['asset_balance']:,.6f} {ASSET_UNIT_LABEL}\n"
 
         risk_decision = trade_data.get("risk_decision")
         if risk_decision:
@@ -150,15 +159,16 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         msg = (
             f"{status_emoji} *SilverPilot Auto-Trading Raporu*\n\n"
             f"🔄 *İşlem Tipi:* {action_str}\n"
-            f"🥈 *Varlık:* XAG (Gümüş)\n"
-            f"🏷️ *Fiyat:* {trade_data['price']:,.4f} USD/oz\n"
+            f"🥈 *Varlık:* {ASSET_SYMBOL} (Gümüş/{ASSET_UNIT_LABEL})\n"
+            f"🏷️ *Fiyat:* {trade_data['price']:,.6f} USD/{ASSET_UNIT_LABEL}\n"
             f"{regime_details}"
         )
         if action in ("paper_buy", "paper_sell", "blocked"):
             msg += (
-                f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.4f} XAG\n"
+                f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.6f} {ASSET_UNIT_LABEL}\n"
                 f"💰 *Net Tutar:* {trade_data.get('net_amount', 0.0):,.2f} USD\n"
                 f"💸 *Komisyon (Fees):* {trade_data.get('fees', 0.0):,.2f} USD\n"
+                f"🏦 *BSMV Vergi:* {trade_data.get('taxes', 0.0):,.2f} USD\n"
             )
         msg += f"💵 *Nakit Bakiyesi:* {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
         msg += f"{indicator_details}{risk_info}"
@@ -199,16 +209,16 @@ async def run_auto_trading(db: Session = None):
 
 
 async def _run_auto_trading_impl(db: Session, settings):
-    # 1. Fetch portfolio 'default-paper'
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
+    # 1. Fetch portfolio
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == PORTFOLIO_NAME)).scalar_one_or_none()
     if not portfolio:
-        logger.error("Portfolio 'default-paper' not found")
+        logger.error(f"Portfolio '{PORTFOLIO_NAME}' not found")
         return
 
-    # 2. Fetch asset 'XAG'
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    # 2. Fetch asset
+    asset = db.execute(select(Asset).where(Asset.symbol == ASSET_SYMBOL)).scalar_one_or_none()
     if not asset:
-        logger.error("Asset 'XAG' not found")
+        logger.error(f"Asset '{ASSET_SYMBOL}' not found")
         return
 
     # 3. Fetch two latest indicators from source 'yahoo-si-f'
@@ -329,16 +339,17 @@ async def _run_auto_trading_impl(db: Session, settings):
     if action == "BUY" and not has_open_position:
         cash = portfolio.cash_balance
         if cash > Decimal("0.05"):
+            bsmv_tax = (cash * BSMV_TAX_RATE).quantize(Decimal("0.000001"))
             request = PaperTradeRequest(
-                portfolio_name="default-paper",
-                asset_symbol="XAG",
+                portfolio_name=PORTFOLIO_NAME,
+                asset_symbol=ASSET_SYMBOL,
                 action="paper_buy",
                 quantity=None,
                 cash_amount=cash,
                 buy_price=buy_price,
                 sell_price=sell_price,
-                fees=Decimal("0.05"),
-                taxes=Decimal("0"),
+                fees=TRADING_FEE,
+                taxes=bsmv_tax,
             )
             try:
                 trade, snapshot = execute_paper_trade(db, request)
@@ -351,13 +362,13 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     elif action == "SELL" and has_open_position:
         request = PaperTradeRequest(
-            portfolio_name="default-paper",
-            asset_symbol="XAG",
+            portfolio_name=PORTFOLIO_NAME,
+            asset_symbol=ASSET_SYMBOL,
             action="paper_sell",
             quantity=current_position.quantity,
             buy_price=buy_price,
             sell_price=sell_price,
-            fees=Decimal("0.05"),
+            fees=TRADING_FEE,
             taxes=Decimal("0"),
         )
         try:
@@ -375,7 +386,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         "net_amount": float(trade.net_amount) if trade else 0.0,
         "fees": float(trade.fees) if trade else 0.0,
         "cash_balance": float(portfolio.cash_balance),
-        "xag_balance": float(current_position.quantity),
+        "asset_balance": float(current_position.quantity),
         "strategy_name": settings.strategy_name,
         "indicators": {
             "rsi": float(latest_indicator.rsi_14) if latest_indicator.rsi_14 is not None else 0.0,
