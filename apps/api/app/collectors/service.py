@@ -338,9 +338,7 @@ def _try_replicate_for_gram(
         gram_sell = _price(ounce_snapshot.sell_price / TROY_OUNCE_IN_GRAMS)
         gram_mid = _price(ounce_snapshot.mid_price / TROY_OUNCE_IN_GRAMS)
         gram_spread = _price(gram_buy - gram_sell)
-        gram_spread_pct = (
-            _price((gram_spread / gram_mid) * Decimal("100")) if gram_mid > 0 else Decimal("0.000000")
-        )
+        gram_spread_pct = _price((gram_spread / gram_mid) * Decimal("100")) if gram_mid > 0 else Decimal("0.000000")
 
         gram_snapshot = PriceSnapshot(
             asset_id=gram_asset.id,
