@@ -1341,15 +1341,35 @@ def _global_xag_providers(settings: Settings) -> list[GlobalSilverPriceProvider]
         "metals-dev": MetalsDevSilverProvider(),
         "metalsdev": MetalsDevSilverProvider(),
     }
+    
+    # Safely parse priority sources from settings
+    priority_sources = [
+        raw_name.strip().lower() 
+        for raw_name in settings.global_xag_source_priority.split(",") 
+        if raw_name.strip()
+    ]
+    
+    # Self-healing fallback: Auto-inject gold-api-xag-usd if not present in configuration priority list
+    gold_enabled = getattr(settings, "gold_api_xag_usd_enabled", True)
+    if gold_enabled and "gold-api-xag-usd" not in priority_sources and "gold_api_xag_usd" not in priority_sources:
+        if "yahoo-si-f" in priority_sources:
+            idx = priority_sources.index("yahoo-si-f")
+            priority_sources.insert(idx + 1, "gold-api-xag-usd")
+        elif "yahoo_si_f" in priority_sources:
+            idx = priority_sources.index("yahoo_si_f")
+            priority_sources.insert(idx + 1, "gold-api-xag-usd")
+        else:
+            priority_sources.append("gold-api-xag-usd")
+            
     providers = []
     seen = set()
-    for raw_name in settings.global_xag_source_priority.split(","):
-        name = raw_name.strip().lower()
+    for name in priority_sources:
         provider = available.get(name)
         if provider is not None and provider.source not in seen:
             providers.append(provider)
             seen.add(provider.source)
-    return providers or [YahooXagUsdProvider(), MetalsDevSilverProvider()]
+            
+    return providers or [YahooXagUsdProvider(), GoldApiSilverProvider(), MetalsDevSilverProvider()]
 
 
 def _global_price_payload(
