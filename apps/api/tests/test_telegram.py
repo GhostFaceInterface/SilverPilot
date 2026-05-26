@@ -194,3 +194,68 @@ async def test_process_telegram_update_filtering():
             mock_bot_instance.send_message.assert_called_once_with(
                 chat_id=987654, text="Mock Reply Content", parse_mode="Markdown"
             )
+
+
+@pytest.mark.anyio
+async def test_process_telegram_update_on_demand():
+    settings = Settings(telegram_bot_token="test_token_123", telegram_chat_id=987654, telegram_bot_mode="webhook")
+
+    # 1. Test /canli
+    canli_update = {"message": {"chat": {"id": 987654}, "text": "/canli"}}
+
+    with (
+        patch("app.agents.telegram_bot.Bot") as MockBot,
+        patch("app.agents.telegram_bot.SessionLocal") as MockSessionLocal,
+        patch("app.agents.telegram_bot.run_canli_analysis_report") as mock_canli_report,
+    ):
+        mock_bot_instance = AsyncMock()
+        MockBot.return_value = mock_bot_instance
+        
+        mock_db = MagicMock()
+        MockSessionLocal.return_value.__enter__.return_value = mock_db
+        
+        mock_canli_report.return_value = "Mock Canli Report Content"
+
+        await process_telegram_update(canli_update, settings=settings)
+
+        # Should send wait message and then the final report
+        assert mock_bot_instance.send_message.call_count == 2
+        mock_canli_report.assert_called_once_with(mock_db, settings)
+        
+        mock_bot_instance.send_message.assert_any_call(
+            chat_id=987654, text="Mock Canli Report Content", parse_mode="Markdown"
+        )
+
+    # 2. Test /analiz
+    analiz_update = {"message": {"chat": {"id": 987654}, "text": "/analiz"}}
+
+    with (
+        patch("app.agents.telegram_bot.Bot") as MockBot,
+        patch("app.agents.telegram_bot.SessionLocal") as MockSessionLocal,
+        patch("app.agents.telegram_bot.generate_daily_price_chart") as mock_chart,
+        patch("app.agents.telegram_bot.generate_daily_price_caption") as mock_caption,
+    ):
+        mock_bot_instance = AsyncMock()
+        MockBot.return_value = mock_bot_instance
+        
+        mock_db = MagicMock()
+        MockSessionLocal.return_value.__enter__.return_value = mock_db
+        
+        from io import BytesIO
+        dummy_buffer = BytesIO(b"dummy")
+        mock_chart.return_value = dummy_buffer
+        mock_caption.return_value = "Mock Caption Content"
+
+        await process_telegram_update(analiz_update, settings=settings)
+
+        # Should send wait message and then the photo
+        mock_bot_instance.send_message.assert_called_once()
+        mock_chart.assert_called_once_with(mock_db)
+        mock_caption.assert_called_once_with(mock_db)
+        
+        mock_bot_instance.send_photo.assert_called_once_with(
+            chat_id=987654,
+            photo=dummy_buffer,
+            caption="Mock Caption Content",
+            parse_mode="Markdown"
+        )

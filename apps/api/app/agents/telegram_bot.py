@@ -1,7 +1,13 @@
 import asyncio
 import logging
+import io
 from decimal import Decimal
-from sqlalchemy import select, desc
+from datetime import datetime, timezone, timedelta
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from sqlalchemy import select, desc, func
 from sqlalchemy.orm import Session
 from telegram import Bot
 from telegram.error import TelegramError
@@ -256,6 +262,306 @@ def get_ajanlar_text(db: Session) -> str:
     return "\n".join(lines)
 
 
+def generate_daily_price_chart(db: Session) -> io.BytesIO | None:
+    now = datetime.now(timezone.utc)
+    twenty_four_hours_ago = now - timedelta(hours=24)
+    
+    # Try kuveyt first
+    stmt = select(PriceSnapshot).where(
+        PriceSnapshot.source == "kuveyt-public-silver-page",
+        PriceSnapshot.observed_at >= twenty_four_hours_ago
+    ).order_by(PriceSnapshot.observed_at.asc())
+    snapshots = db.execute(stmt).scalars().all()
+    
+    if not snapshots:
+        stmt = select(PriceSnapshot).where(
+            PriceSnapshot.source == "yahoo-si-f",
+            PriceSnapshot.observed_at >= twenty_four_hours_ago
+        ).order_by(PriceSnapshot.observed_at.asc())
+        snapshots = db.execute(stmt).scalars().all()
+        
+    if not snapshots:
+        return None
+        
+    tr_tz = timezone(timedelta(hours=3))
+    times = [s.observed_at.astimezone(tr_tz) for s in snapshots]
+    prices = [float(s.mid_price) for s in snapshots]
+    
+    min_time = min(times)
+    max_time = max(times)
+    
+    # Setup figure
+    fig, ax = plt.subplots(figsize=(10, 6.5), dpi=150)
+    fig.patch.set_facecolor('#121212')
+    ax.set_facecolor('#1e1e1e')
+    
+    # Plot line
+    ax.plot(times, prices, color='#00e5ff', linewidth=2.5, label='Gümüş (XAG/USD) Orta Fiyat')
+    
+    # Draw boundary spans
+    boundaries = []
+    start_day = (min_time - timedelta(days=1)).date()
+    end_day = (max_time + timedelta(days=1)).date()
+    curr_day = start_day
+    while curr_day <= end_day:
+        for hour in [0, 8, 16]:
+            dt = datetime.combine(curr_day, datetime.min.time(), tzinfo=tr_tz) + timedelta(hours=hour)
+            boundaries.append(dt)
+        curr_day += timedelta(days=1)
+    
+    boundaries.sort()
+    
+    y_min, y_max = min(prices), max(prices)
+    y_range = y_max - y_min if y_max > y_min else 1.0
+    ax.set_ylim(y_min - y_range * 0.15, y_max + y_range * 0.25)
+    
+    label_y = y_max + y_range * 0.15
+    
+    # Shade spans
+    for i in range(len(boundaries) - 1):
+        b1 = boundaries[i]
+        b2 = boundaries[i+1]
+        
+        # Intersection
+        i_start = max(b1, min_time)
+        i_end = min(b2, max_time)
+        
+        if i_start >= i_end:
+            continue
+            
+        # Determine session
+        if b1.hour == 0:
+            color = '#007acc'
+            label = "Sabah Seansı\n(00:00 - 08:00)"
+            alpha = 0.08
+        elif b1.hour == 8:
+            color = '#d4af37'
+            label = "Öğle-Avrupa Seansı\n(08:00 - 16:00)"
+            alpha = 0.08
+        else:
+            color = '#8a2be2'
+            label = "Akşam-Amerika Seansı\n(16:00 - 24:00)"
+            alpha = 0.08
+            
+        ax.axvspan(i_start, i_end, color=color, alpha=alpha)
+        
+        # Place label if the span is wide enough (at least 2 hours)
+        span_hours = (i_end - i_start).total_seconds() / 3600.0
+        if span_hours >= 2.0:
+            mid_x = i_start + (i_end - i_start) / 2
+            ax.text(mid_x, label_y, label, color=color, ha='center', va='top', fontsize=8.5, weight='bold')
+
+    # Formatting axes
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=tr_tz))
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+    
+    ax.tick_params(colors='#888888', labelsize=9)
+    ax.grid(True, color='#2d2d2d', linestyle='--', linewidth=0.5)
+    
+    # Labels and titles
+    ax.set_title('🥈 SilverPilot Gümüş (XAG) Günlük Fiyat Değişim Analizi 📊', color='#ffffff', fontsize=13, weight='bold', pad=25)
+    ax.set_ylabel('Fiyat (USD/oz)', color='#888888', fontsize=10, labelpad=10)
+    
+    # Style border
+    for spine in ax.spines.values():
+        spine.set_color('#2d2d2d')
+        
+    # Legend
+    legend = ax.legend(loc='lower right', facecolor='#1e1e1e', edgecolor='#2d2d2d')
+    for text in legend.get_texts():
+        text.set_color('#ffffff')
+        
+    plt.tight_layout()
+    
+    # Save to BytesIO
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', facecolor=fig.get_facecolor(), edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def generate_daily_price_caption(db: Session) -> str:
+    now = datetime.now(timezone.utc)
+    twenty_four_hours_ago = now - timedelta(hours=24)
+    
+    stmt = select(PriceSnapshot).where(
+        PriceSnapshot.source == "kuveyt-public-silver-page",
+        PriceSnapshot.observed_at >= twenty_four_hours_ago
+    ).order_by(PriceSnapshot.observed_at.asc())
+    snapshots = db.execute(stmt).scalars().all()
+    
+    if not snapshots:
+        stmt = select(PriceSnapshot).where(
+            PriceSnapshot.source == "yahoo-si-f",
+            PriceSnapshot.observed_at >= twenty_four_hours_ago
+        ).order_by(PriceSnapshot.observed_at.asc())
+        snapshots = db.execute(stmt).scalars().all()
+        
+    if not snapshots:
+        return "📊 *Seanslık Fiyat Analiz Özeti*\nVeri bulunamadı."
+        
+    tr_tz = timezone(timedelta(hours=3))
+    
+    sabah_prices = []
+    ogle_prices = []
+    aksam_prices = []
+    all_prices = []
+    
+    for s in snapshots:
+        local_dt = s.observed_at.astimezone(tr_tz)
+        price = float(s.mid_price)
+        all_prices.append(price)
+        
+        if 0 <= local_dt.hour < 8:
+            sabah_prices.append(price)
+        elif 8 <= local_dt.hour < 16:
+            ogle_prices.append(price)
+        else:
+            aksam_prices.append(price)
+            
+    # Calculate stats
+    def get_stats(lst):
+        if not lst:
+            return "Veri Yok"
+        return f"Min: {min(lst):.3f} | Max: {max(lst):.3f} | Ort: {sum(lst)/len(lst):.3f}"
+        
+    sabah_str = get_stats(sabah_prices)
+    ogle_str = get_stats(ogle_prices)
+    aksam_str = get_stats(aksam_prices)
+    
+    overall_min = min(all_prices)
+    overall_max = max(all_prices)
+    latest_price = all_prices[-1]
+    
+    # Calculate daily change
+    daily_change = latest_price - all_prices[0]
+    daily_change_pct = (daily_change / all_prices[0] * 100) if all_prices[0] > 0 else 0.0
+    sign = "+" if daily_change >= 0 else ""
+    
+    caption = (
+        "📊 *SilverPilot Günlük Seans & Fiyat Raporu*\n\n"
+        f"🥈 *Son Fiyat (Canlı):* {latest_price:.4f} USD/oz\n"
+        f"📈 *Günlük Değişim:* {sign}{daily_change:.4f} USD ({sign}{daily_change_pct:.2f}%)\n"
+        f"⚖️ *Günlük Aralık:* {overall_min:.4f} - {overall_max:.4f} USD/oz\n\n"
+        "🕰️ *Seanslık Değerler (USD/oz):*\n"
+        f"• *Sabah (00:00 - 08:00):*\n  `{sabah_str}`\n"
+        f"• *Öğle-Avrupa (08:00 - 16:00):*\n  `{ogle_str}`\n"
+        f"• *Akşam-Amerika (16:00 - 24:00):*\n  `{aksam_str}`\n"
+    )
+    return caption
+
+
+async def run_canli_analysis_report(db: Session, settings) -> str:
+    from app.collectors.public_sources import collect_kuveyt_public_silver, collect_global_xag_usd
+    from app.models import TechnicalIndicator, PriceSnapshot, Portfolio, Asset
+    from app.services.regime import get_market_regime
+    from app.services.strategy import StrategyRunner
+    from app.agents.orchestrator import run_blended_consensus_resolution
+    from app.paper_trading.service import calculate_position
+
+    # Run collectors synchronously to refresh snapshots and indicators
+    try:
+        collect_kuveyt_public_silver(db, settings=settings)
+    except Exception as e:
+        logger.warning(f"On-demand collect_kuveyt_public_silver failed: {e}")
+        
+    try:
+        collect_global_xag_usd(db, settings=settings)
+    except Exception as e:
+        logger.warning(f"On-demand collect_global_xag_usd failed: {e}")
+
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "default-paper")).scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    
+    stmt = (
+        select(TechnicalIndicator)
+        .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
+        .where(PriceSnapshot.source == "yahoo-si-f")
+        .order_by(TechnicalIndicator.bar_timestamp.desc())
+        .limit(2)
+    )
+    indicators = db.execute(stmt).scalars().all()
+    if not indicators:
+        return "❌ Teknik gösterge verisi bulunamadı."
+        
+    latest_indicator = indicators[0]
+    prev_indicator = indicators[1] if len(indicators) > 1 else None
+    
+    latest_snapshot = latest_indicator.price_snapshot
+    if not latest_snapshot:
+        latest_snapshot = db.execute(
+            select(PriceSnapshot).where(PriceSnapshot.id == latest_indicator.price_snapshot_id)
+        ).scalar_one_or_none()
+        
+    if not latest_snapshot:
+        return "❌ Fiyat snapshot verisi bulunamadı."
+
+    current_position = calculate_position(db, portfolio.id, asset.id)
+    has_open_position = current_position.quantity > 0
+    
+    regime_info = get_market_regime(db)
+    strategy_votes = StrategyRunner.evaluate_blended_strategies(
+        close=latest_indicator.close_usd_oz,
+        rsi_14=latest_indicator.rsi_14,
+        sma_20=latest_indicator.sma_20,
+        sma_50=latest_indicator.sma_50,
+        prev_sma_20=prev_indicator.sma_20 if prev_indicator else None,
+        prev_sma_50=prev_indicator.sma_50 if prev_indicator else None,
+        bb_lower=latest_indicator.bb_lower_20_2,
+        bb_upper=latest_indicator.bb_upper_20_2,
+        has_open_position=has_open_position,
+    )
+    
+    consensus_event = await run_blended_consensus_resolution(db, regime_info, strategy_votes, latest_snapshot)
+    resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
+    resolution_markdown = consensus_event.value_json.get("resolution_markdown", "Gerekçe bulunamadı.")
+
+    regime = regime_info.get("regime", "SIDEWAYS")
+    regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
+    if regime == "TRENDING_UP":
+        regime_label = "Güçlü Yükseliş Trendi (TRENDING UP)"
+    elif regime == "TRENDING_DOWN":
+        regime_label = "Güçlü Düşüş Trendi (TRENDING DOWN)"
+
+    def format_vote(vote_dict):
+        if not vote_dict:
+            return "⚪️ BEKLE"
+        act = vote_dict.get("action", "HOLD")
+        reason = vote_dict.get("reason", "")
+        reason_safe = reason.replace("_", " ") if reason else ""
+        emoji = "🟢 AL" if act == "BUY" else ("🔴 SAT" if act == "SELL" else "⚪️ BEKLE")
+        return f"{emoji} ({reason_safe})" if reason_safe else emoji
+
+    rsi_vote = format_vote(strategy_votes.get("rsi"))
+    bb_vote = format_vote(strategy_votes.get("bollinger"))
+    sma_vote = format_vote(strategy_votes.get("sma_cross"))
+
+    arbiter_emoji = (
+        "🟢 AL" if resolved_stance == "BULLISH" else ("🔴 SAT" if resolved_stance == "BEARISH" else "⚪️ BEKLE")
+    )
+    arbiter_reason = sanitize_markdown(resolution_markdown)
+
+    price = float(latest_snapshot.mid_price)
+    cash_balance = float(portfolio.cash_balance)
+    xag_balance = float(current_position.quantity)
+
+    msg = (
+        f"📊 *SilverPilot Canlı Analiz Raporu* (İstek Üzerine)\n\n"
+        f"🥈 *Gümüş (XAG):* {price:,.4f} USD/oz\n"
+        f"📈 *Piyasa Rejimi:* {regime_label}\n\n"
+        f"🗳️ *Strateji Oylaması:*\n"
+        f"• RSI (14): {rsi_vote}\n"
+        f"• Bollinger Bands: {bb_vote}\n"
+        f"• SMA Cross (20/50): {sma_vote}\n\n"
+        f"👑 *Yüce Hakem Kararı:* {arbiter_emoji}\n"
+        f"📝 *Gerekçe:* {arbiter_reason}\n\n"
+        f"💵 *Nakit Bakiyesi:* {cash_balance:,.2f} USD\n"
+        f"🥈 *Gümüş Portföyü:* {xag_balance:,.4f} XAG\n"
+    )
+    return msg
+
+
 async def process_telegram_update(update: dict, settings=None):
     if settings is None:
         settings = get_settings()
@@ -283,6 +589,59 @@ async def process_telegram_update(update: dict, settings=None):
     text = message.get("text")
     if not text:
         return
+
+    cmd = text.strip().lower().split()[0] if text.strip() else ""
+
+    if cmd in ("/canli", "/analiz"):
+        try:
+            bot = Bot(token=settings.telegram_bot_token)
+            
+            # Send initial waiting message
+            wait_text = (
+                "🔄 *Canlı analiz başlatıldı...*\n"
+                "Kuveyt Türk ve global XAG fiyatları anlık çekiliyor ve Supreme Arbiter değerlendiriliyor. "
+                "Lütfen bekleyin (10-15 sn)..."
+            )
+            await bot.send_message(chat_id=settings.telegram_chat_id, text=wait_text, parse_mode="Markdown")
+            
+            if cmd == "/canli":
+                with SessionLocal() as db:
+                    reply_text = await run_canli_analysis_report(db, settings)
+                await bot.send_message(chat_id=settings.telegram_chat_id, text=reply_text, parse_mode="Markdown")
+            else:  # /analiz
+                # Generate dark mode session chart
+                with SessionLocal() as db:
+                    chart_buffer = generate_daily_price_chart(db)
+                    
+                if chart_buffer is None:
+                    await bot.send_message(
+                        chat_id=settings.telegram_chat_id, 
+                        text="❌ Grafik çizimi için yeterli gümüş fiyat geçmişi bulunamadı.", 
+                        parse_mode="Markdown"
+                    )
+                else:
+                    with SessionLocal() as db:
+                        caption_text = generate_daily_price_caption(db)
+                    
+                    await bot.send_photo(
+                        chat_id=settings.telegram_chat_id,
+                        photo=chart_buffer,
+                        caption=caption_text,
+                        parse_mode="Markdown"
+                    )
+            return
+        except Exception as e:
+            logger.exception("Error during on-demand telegram command execution")
+            try:
+                bot = Bot(token=settings.telegram_bot_token)
+                await bot.send_message(
+                    chat_id=settings.telegram_chat_id, 
+                    text=f"⚠️ Canlı analiz çalıştırılırken bir hata oluştu: {e}", 
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            return
 
     try:
         with SessionLocal() as db:
