@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 from telegram import Bot
 from telegram.error import TelegramError

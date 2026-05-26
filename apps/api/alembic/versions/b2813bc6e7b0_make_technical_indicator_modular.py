@@ -5,9 +5,6 @@ Revises: 3e7a45f0cd22
 Create Date: 2026-05-26 15:50:25.983230
 """
 from alembic import op
-import sqlalchemy as sa
-
-
 revision = 'b2813bc6e7b0'
 down_revision = '3e7a45f0cd22'
 branch_labels = None
