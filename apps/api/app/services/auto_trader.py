@@ -1,4 +1,6 @@
 import logging
+import html
+import re
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,18 +17,17 @@ from app.agents.orchestrator import run_blended_consensus_resolution
 logger = logging.getLogger("silverpilot.services.auto_trader")
 
 
-def sanitize_markdown(text: str) -> str:
-    """Escapes markdown control characters and converts ** to * for Telegram Markdown V1."""
+def escape_html_response(text: str) -> str:
+    """Escapes HTML special characters and converts markdown **bold** and *italic* to HTML tags."""
     if not text:
         return ""
-    # Convert standard double-asterisk bold (**) to Markdown V1 single-asterisk bold (*)
-    text = text.replace("**", "*")
-    # Escape underscores to prevent them from starting italic blocks
-    text = text.replace("\\_", "_").replace("_", "\\_")
-    # Escape brackets to prevent unmatched link structures
-    text = text.replace("\\[", "[").replace("[", "\\[")
-    text = text.replace("\\]", "]").replace("]", "\\]")
-    return text
+    # Escape HTML special characters (&, <, >) first
+    escaped = html.escape(text)
+    # Safely convert double-asterisk bold to <b>...</b>
+    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    # Safely convert single-asterisk italic to <i>...</i>
+    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    return escaped
 
 
 async def send_telegram_notification(trade_data: dict, settings, disable_notification: bool = False):
@@ -72,7 +73,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
                 return "⚪️ BEKLE"
             act = vote_dict.get("action", "HOLD")
             reason = vote_dict.get("reason", "")
-            reason_safe = reason.replace("_", " ") if reason else ""
+            reason_safe = html.escape(reason.replace("_", " ")) if reason else ""
             emoji = "🟢 AL" if act == "BUY" else ("🔴 SAT" if act == "SELL" else "⚪️ BEKLE")
             return f"{emoji} ({reason_safe})" if reason_safe else emoji
 
@@ -84,53 +85,53 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         arbiter_emoji = (
             "🟢 AL" if arbiter_stance == "BULLISH" else ("🔴 SAT" if arbiter_stance == "BEARISH" else "⚪️ BEKLE")
         )
-        arbiter_reason = sanitize_markdown(trade_data.get("arbiter_reason", "Gerekçe belirtilmedi."))
+        arbiter_reason = escape_html_response(trade_data.get("arbiter_reason", "Gerekçe belirtilmedi."))
 
         msg = (
-            f"📊 *SilverPilot Canlı Analiz Raporu*\n\n"
-            f"🥈 *Gümüş (XAG\\_GRAM):* {trade_data['price']:,.4f} USD/gram\n"
-            f"📈 *Piyasa Rejimi:* {regime_label}\n\n"
-            f"🗳️ *Strateji Oylaması:*\n"
+            f"📊 <b>SilverPilot Canlı Analiz Raporu</b>\n\n"
+            f"🥈 <b>Gümüş (XAG_GRAM):</b> {trade_data['price']:,.4f} USD/gram\n"
+            f"📈 <b>Piyasa Rejimi:</b> {regime_label}\n\n"
+            f"🗳️ <b>Strateji Oylaması:</b>\n"
             f"• RSI (14): {rsi_vote}\n"
             f"• Bollinger Bands: {bb_vote}\n"
             f"• SMA Cross (20/50): {sma_vote}\n\n"
-            f"👑 *Yüce Hakem Kararı:* {arbiter_emoji}\n"
-            f"📝 *Gerekçe:* {arbiter_reason}\n\n"
-            f"🔄 *İşlem Durumu:* {status_emoji} {action_str}\n"
+            f"👑 <b>Yüce Hakem Kararı:</b> {arbiter_emoji}\n"
+            f"📝 <b>Gerekçe:</b> {arbiter_reason}\n\n"
+            f"🔄 <b>İşlem Durumu:</b> {status_emoji} {action_str}\n"
         )
 
         if action in ("paper_buy", "paper_sell"):
             msg += (
-                f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.4f} XAG\\_GRAM\n"
-                f"💰 *Net Tutar:* {trade_data.get('net_amount', 0.0):,.2f} USD\n"
+                f"📦 <b>Miktar:</b> {trade_data.get('quantity', 0.0):,.4f} XAG_GRAM\n"
+                f"💰 <b>Net Tutar:</b> {trade_data.get('net_amount', 0.0):,.2f} USD\n"
             )
 
-        msg += f"💵 *Nakit Bakiyesi:* {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
+        msg += f"💵 <b>Nakit Bakiyesi:</b> {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
         if "xag_balance" in trade_data:
-            msg += f"🥈 *Gümüş Portföyü:* {trade_data['xag_balance']:,.4f} XAG\\_GRAM\n"
+            msg += f"🥈 <b>Gümüş Portföyü:</b> {trade_data['xag_balance']:,.4f} XAG_GRAM\n"
 
         risk_decision = trade_data.get("risk_decision")
         if risk_decision:
             msg += (
-                f"\n⚖️ *Risk Kararı:* {risk_decision['decision'].upper()}\n"
-                f"🔍 *Neden Kodu:* `{risk_decision['reason_code']}`\n"
-                f"📊 *Risk Seviyesi:* {risk_decision['risk_level']}\n"
+                f"\n⚖️ <b>Risk Kararı:</b> {risk_decision['decision'].upper()}\n"
+                f"🔍 <b>Neden Kodu:</b> <code>{html.escape(risk_decision['reason_code'])}</code>\n"
+                f"📊 <b>Risk Seviyesi:</b> {risk_decision['risk_level']}\n"
             )
     else:
         risk_info = ""
         risk_decision = trade_data.get("risk_decision")
         if risk_decision:
             risk_info = (
-                f"\n⚖️ *Risk Kararı:* {risk_decision['decision'].upper()}\n"
-                f"🔍 *Neden Kodu:* `{risk_decision['reason_code']}`\n"
-                f"📊 *Risk Seviyesi:* {risk_decision['risk_level']}\n"
+                f"\n⚖️ <b>Risk Kararı:</b> {risk_decision['decision'].upper()}\n"
+                f"🔍 <b>Neden Kodu:</b> <code>{html.escape(risk_decision['reason_code'])}</code>\n"
+                f"📊 <b>Risk Seviyesi:</b> {risk_decision['risk_level']}\n"
             )
 
         indicator_details = ""
         indicators = trade_data.get("indicators", {})
         if indicators:
             indicator_details = (
-                f"\n📊 *Teknik Göstergeler:*\n"
+                f"\n📊 <b>Teknik Göstergeler:</b>\n"
                 f"• RSI (14): {indicators.get('rsi', 0.0):,.2f}\n"
                 f"• SMA (20/50): {indicators.get('sma_20', 0.0):,.2f} / {indicators.get('sma_50', 0.0):,.2f}\n"
                 f"• Bollinger (U/L): {indicators.get('bb_upper', 0.0):,.2f} / {indicators.get('bb_lower', 0.0):,.2f}\n"
@@ -145,22 +146,22 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
                 regime_label = "Güçlü Yükseliş Trendi (TRENDING UP)"
             elif regime == "TRENDING_DOWN":
                 regime_label = "Güçlü Düşüş Trendi (TRENDING DOWN)"
-            regime_details = f"📈 *Piyasa Rejimi:* {regime_label}\n"
+            regime_details = f"📈 <b>Piyasa Rejimi:</b> {regime_label}\n"
 
         msg = (
-            f"{status_emoji} *SilverPilot Auto-Trading Raporu*\n\n"
-            f"🔄 *İşlem Tipi:* {action_str}\n"
-            f"🥈 *Varlık:* XAG_GRAM (Gümüş)\n"
-            f"🏷️ *Fiyat:* {trade_data['price']:,.4f} USD/gram\n"
+            f"{status_emoji} <b>SilverPilot Auto-Trading Raporu</b>\n\n"
+            f"🔄 <b>İşlem Tipi:</b> {action_str}\n"
+            f"🥈 <b>Varlık:</b> XAG_GRAM (Gümüş)\n"
+            f"🏷️ <b>Fiyat:</b> {trade_data['price']:,.4f} USD/gram\n"
             f"{regime_details}"
         )
         if action in ("paper_buy", "paper_sell", "blocked"):
             msg += (
-                f"📦 *Miktar:* {trade_data.get('quantity', 0.0):,.4f} XAG_GRAM\n"
-                f"💰 *Net Tutar:* {trade_data.get('net_amount', 0.0):,.2f} USD\n"
-                f"💸 *Komisyon (Fees):* {trade_data.get('fees', 0.0):,.2f} USD\n"
+                f"📦 <b>Miktar:</b> {trade_data.get('quantity', 0.0):,.4f} XAG_GRAM\n"
+                f"💰 <b>Net Tutar:</b> {trade_data.get('net_amount', 0.0):,.2f} USD\n"
+                f"💸 <b>Komisyon (Fees):</b> {trade_data.get('fees', 0.0):,.2f} USD\n"
             )
-        msg += f"💵 *Nakit Bakiyesi:* {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
+        msg += f"💵 <b>Nakit Bakiyesi:</b> {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
         msg += f"{indicator_details}{risk_info}"
 
     try:
@@ -168,7 +169,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         await bot.send_message(
             chat_id=settings.telegram_chat_id,
             text=msg,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             disable_notification=disable_notification,
         )
         logger.info(f"Telegram notification sent successfully (silent={disable_notification}).")
