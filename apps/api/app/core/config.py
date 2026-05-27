@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     agent_news_model: str = "deepseek-v4-flash"
     agent_report_model: str = "deepseek-v4-flash"
     agent_risk_model: str = "deepseek-v4-pro"
+    agent_hermes_model: str = "deepseek-v4-pro"
+
+    hermes_veto_threshold: Decimal = Field(default=Decimal("-0.45"))
+    weight_global_authority: Decimal = Field(default=Decimal("0.5"))
+    weight_local_expert: Decimal = Field(default=Decimal("0.3"))
+    weight_local_forum: Decimal = Field(default=Decimal("0.2"))
 
 
 @lru_cache

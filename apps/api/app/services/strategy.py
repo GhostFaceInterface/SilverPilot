@@ -192,12 +192,43 @@ class StrategyRunner:
             return "HOLD", "UNKNOWN_STRATEGY"
 
     @classmethod
-    def apply_agent_filters(cls, action: str, news_sentiment: str | None, risk_decision: str | None) -> tuple[str, str]:
+    def apply_agent_filters(
+        cls,
+        action: str,
+        news_sentiment: str | None,
+        risk_decision: str | None,
+        db: Session | None = None,
+    ) -> tuple[str, str]:
         """
         Applies agent filters (news sentiment and risk decision) to the strategy action.
         Vetoes BUY action to HOLD if news_sentiment is BEARISH or risk_decision is REJECTED.
+        Also checks hermes-agent weighted sentiment score and vetoes to HOLD if below threshold.
         """
         if action == "BUY":
+            if db is not None:
+                from app.models.entities import AgentMemoryEvent
+                from app.core.config import get_settings
+                from sqlalchemy import desc
+                settings = get_settings()
+                
+                stmt = (
+                    db.query(AgentMemoryEvent)
+                    .filter(
+                        AgentMemoryEvent.agent_name == "hermes-agent",
+                        AgentMemoryEvent.event_type == "hermes_sentiment",
+                        AgentMemoryEvent.key == "latest_analysis"
+                    )
+                    .order_by(desc(AgentMemoryEvent.id))
+                    .first()
+                )
+                if stmt is not None:
+                    val = stmt.value_json or {}
+                    score_val = val.get("score")
+                    if score_val is not None:
+                        score_dec = Decimal(str(score_val))
+                        if score_dec < settings.hermes_veto_threshold:
+                            return "HOLD", "AGENT_VETO_HERMES_BEARISH_NEWS"
+
             if news_sentiment == "BEARISH":
                 return "HOLD", "AGENT_VETO_BEARISH_NEWS"
             if risk_decision == "REJECTED":

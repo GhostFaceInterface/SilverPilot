@@ -1,51 +1,71 @@
-# Implementation Plan: Merciless System-Wide Testing & Telegram Bot HTML Resiliency Audit
+# Implementation Plan: DeepSeek-Based Hermes Agent & Advanced News Sentiment Analysis (REVISED v4)
 
-Bu eylem planı, SilverPilot sisteminin tüm kritik katmanlarında (Telegram arayüzü, tarihsel veri backfill mekanizması, veri toplayıcı veri bütünlüğü ve auto-trader strateji motoru) acımasız ve uçtan uca (E2E) testler uygulamayı, Telegram `/canli` çökme sorununu HTML göçü ile kökten gidermeyi ve her bir bileşenin davranışlarını doğrulamayı hedefler.
+Bu revize edilmiş plan, SilverPilot sistemine küresel ve yerel düzeyde **sadece kurumsal, profesyonel ve prestijli** ekonomi/finans kaynaklarından gelen verileri tarayan, spekülasyon ve alaka filtreleri uygulayan, ağırlıklı bir konsensüs skoru üreten ve bu skoru otomatik veto mekanizmasına ("Yüce Hakem") aktaran DeepSeek tabanlı **Hermes Agent** yapısının entegrasyonunu hedefler.
+
+Kullanıcı yönlendirmesi ve saptamaları doğrultusunda, **tüm bireysel yatırımcı yorumları, forumlar, investing.com tartışmaları ve crowd-sourced (halk tabanlı) spekülatif kaynaklar mimariden ve plandan TAMAMEN ÇIKARILMIŞTIR.** Sistemin profesyonel yapısına uygun olarak, sadece dünya çapında ve Türkiye'de saygınlığı tartışmasız olan, verileri stabil RSS veya API kanallarından sorunsuz alınabilen **kurumsal referans kaynakları** entegre edilecektir.
+
+---
+
+## 🔍 Nihai Kurumsal & Profesyonel Haber Kaynakları
+Veri toplama skili (Python Ingestion Skill) tarafından taranacak ve IP engeli vb. sorunlar yaratmayan, dünya çapında/yerel düzeyde saygın kaynaklar şunlardır:
+
+### 1. Küresel Kurumsal Referanslar (Global Institutional Sources)
+- **Kitco Metals (kitco.com) [Küresel Kıymetli Madenler Otoritesi]:** Dünya kıymetli madenler piyasasının haber teknik analiz merkezidir. Profesyonel analist makaleleri ve gümüş haberleri RSS beslemesiyle çekilir.
+- **Bloomberg & Reuters (Yahoo Finance API/RSS kanalları üzerinden):** Küresel emtia fiyatlamaları, merkez bankası politikaları ve makroekonomik kararlar için mutlak kurumsal referanstır.
+- **LBMA (London Bullion Market Association) & Silver Institute:** Gümüş arz-talep dengesi ve kurumsal fiyatlama verileri için resmi referans raporları.
+
+### 2. Türkiye Yerel Kurumsal Referanslar (Turkish Corporate Sources)
+- **Bloomberg HT (bloomberght.com) [Türkiye Ekonomi Referansı]:** Türkiye'deki en prestijli, resmi ve profesyonel ekonomi haberciliği platformudur. Sadece makro analizler ve resmi veriler çekilir (hiçbir bireysel yorum içermez).
+- **GCM Yatırım (Günlük Gümüş Raporları) [Yerel Kurumsal Analiz]:** Profesyonel araştırma departmanı tarafından hazırlanan günlük resmi teknik ve temel gümüş analiz bültenleri (spekülasyondan arınmış kurumsal veri).
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
-- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Portföy riski, pozisyon limitleri ve BSMV kambiyo vergileri), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Veri şemaları ve entegrasyon yapıları).
-- **Etkilenen Dosyalar:**
-  - `apps/api/app/agents/telegram_bot.py` (Telegram formatlarının Markdown'dan güvenli HTML'e taşınması)
-  - `apps/api/tests/test_telegram.py` (Yeni HTML tag doğrulama ve komut güvenliği testleri)
-  - `scripts/backfill_history.py` (Veri kaynağının `yahoo-si-f` olarak düzeltilmesi ve `XAG_GRAM` tarihsel verilerinin indikatörleri beslemek üzere otomatik çoğaltılması)
-  - `apps/api/app/collectors/service.py` (Düşük veri seanslarında indikatör koruması ve fallback testleri)
+- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Duyarlılık tabanlı veto kuralları ve risk limitleri), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Veri bütünlüğü ve yeni haber metadata şemaları).
+- **Etkilenen Dosyalar/Bileşenler:**
+  - `.env` ve `.env.example` [MODIFY] -> `HERMES_VETO_THRESHOLD` ve kaynak bazlı ağırlık katsayılarının (`WEIGHT_GLOBAL_CORP=0.6` [Bloomberg/Reuters/Kitco], `WEIGHT_LOCAL_CORP=0.4` [Bloomberg HT/GCM]) eklenmesi.
+  - `apps/api/app/collectors/public_sources.py` [MODIFY] -> Sadece bu kurumsal kaynakların RSS/API beslemelerini toplayan ve veritabanına kaydeden Python toplayıcıları.
+  - `apps/api/app/agents/hermes.py` [NEW] -> Tek bir LLM çağrısıyla (DeepSeek v4-pro) kurumsal haber paketlerini analiz eden ve ağırlıklı sentiment skorunu hesaplayan Hermes Agent motoru.
+  - `apps/api/app/services/strategy.py` [MODIFY] -> `StrategyRunner.apply_agent_filters` metodunun `.env` üzerinden okunan veto eşiğine göre güncellenmesi.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[ ]` **Faz 1: Telegram Bot Formatting & HTML Migration Audit (Ajan: frontend-architect / security-auditor)**
-  - [ ] Telegram bot mesaj şablonlarını `/canli`, `/durum`, `/karzarar`, `/cuzdan` ve `/ajanlar` için tamamen robust **HTML parsing moduna** (`parse_mode="HTML"`) taşımak.
-  - [ ] Markdown V1'in iç içe geçmiş asteriks/underscore karakterlerindeki ve `XAG_GRAM` alt çizgilerindeki parsing çökmelerini (Offset 64 hatası) `html.escape` kullanarak kalıcı olarak engellemek.
-  - [ ] `sanitize_markdown` yerine HTML etiketlerini koruyan ve LLM çıktılarındaki tehlikeli HTML karakterlerini temizleyen `escape_html_response` yardımcı fonksiyonunu yazmak.
-  - *DoD (Tamamlanma Tanımı):* `tests/test_telegram.py` içerisine tüm komutların (/canli, /durum, /karzarar, /cuzdan, /ajanlar, /help) HTML etiket bütünlüğünü, boş/dolu portföy senaryolarını ve hata durumlarını acımasızca sınayan unit testlerin eklenmesi ve tamamının hatasız geçmesi.
+- `[ ]` **Faz 1: Python Tabanlı Kurumsal Haber Toplama Skili (Ajan: data-engineer)**
+  - [ ] Gümüş için Yahoo Finance RSS (`SI=F`), Kitco Metals RSS, Bloomberg HT Ekonomi RSS ve GCM Yatırım bülten toplayıcılarını yazmak.
+  - [ ] Python seviyesinde **Ön Filtreleme & Temizleme:**
+    - RSS'ten gelen haberler arasından sadece gümüş ("silver", "gümüş", "xag") ve kritik makro olayları ("fed rate", "faiz", "enflasyon", "inflation") içeren girdileri kabul etmek.
+    - LLM'e sadece bu temizlenmiş ve doğrudan hedefe odaklı kurumsal haber/analiz başlıklarını ve özetlerini sunmak (böylece gereksiz token tüketimi sıfırlanır).
+  - *DoD (Tamamlanma Tanımı):* `pytest tests/test_collectors.py` ile kurumsal toplayıcıların Türkiye ve küresel kaynaklardan verileri hatasız çekmesi, filtrelemesi ve veritabanına kaydetmesi.
 
-- `[ ]` **Faz 2: Tarihsel Veri & İndikatör Seeding Düzeltmesi (Ajan: data-engineer)**
-  - [ ] `scripts/backfill_history.py` dosyasını, Yahoo Finance'den çekilen tarihsel verileri hem `XAG` (Ounce) hem de `XAG_GRAM` (Gram Silver, 31.1035'e bölünmüş) olarak veri tabanına kaydedecek şekilde güncellemek.
-  - [ ] Tarihsel veri kaynağını `"yahoo-si-f-1d"` yerine doğrudan `/canli` ve auto-trader'ın kullandığı ana `"yahoo-si-f"` global kaynağı olarak kaydetmek.
-  - [ ] Local ve VPS veritabanlarında `python scripts/backfill_history.py` çalıştırarak en az 200 barlık günlük teknik indikatör geçmişini (`TechnicalIndicator` ve `PriceSnapshot`) `XAG_GRAM` için eksiksiz üretmek.
-  - *DoD:* `pytest tests/test_collectors.py` veya backfill script'inin yerelde sorunsuz çalışması ve DB'de `XAG_GRAM` indikatörlerinin varlığının doğrulanması.
+- `[ ]` **Faz 2: DeepSeek-Hermes Agent Tasarımı & Kurumsal Analiz Motoru (Ajan: backend-architect)**
+  - [ ] `apps/api/app/agents/hermes.py` dosyasını oluşturmak. Bu modülde DeepSeek LLM (`deepseek-v4-pro` veya `deepseek-r1`) kullanılarak derlenmiş kurumsal paketler analiz edilecektir.
+  - [ ] LLM, her haber girdisi için şu analizleri yapacaktır:
+    - **Sentiment:** BULLISH (+1), BEARISH (-1), NEUTRAL (0).
+    - **Relevance (0.0 - 1.0):** Gümüş piyasası ile doğrudan alaka düzeyi.
+    - **Speculation (0.0 - 1.0):** clickbait, sansasyonellik veya kanıtsız iddia puanı.
+  - [ ] Ağırlıklı nihai sentiment skoru formülünü kodlamak:
+    $$\text{Duyarlılık Skoru} = \text{Sentiment}_{küresel\_kurumsal} \times W_{glob\_corp} + \text{Sentiment}_{yerel\_kurumsal} \times W_{local\_corp}$$
+    *(Not: Her bileşen kendi içinde Spekülasyon ve Alaka filtreleriyle ağırlıklandırılacaktır.)*
+  - [ ] Skoru `AgentMemoryEvent` tablosuna `hermes-agent` adıyla kaydetmek.
+  - *DoD:* Hermes Agent'ın tek tek haberleri analiz ederek ağırlıklı skoru başarıyla hesaplaması.
 
-- `[ ]` **Faz 3: Uçtan Uca Collector & Degraded Network Dayanıklılık Testleri (Ajan: data-engineer / quality-engineer)**
-  - [ ] FRED, TCMB, RSS ve Gold API toplayıcılarının (collectors) sıfır veri veya bağlantı kopukluğu anlarındaki hata yakalama ve "graceful degradation" (kısmi hizmet durdurma) davranışlarını simüle etmek.
-  - [ ] Hafta sonu / piyasa dışı saatler simülasyonu altında `kuveyt-silver` ve `global-xag-usd` toplayıcılarının soft-fail davranışlarını ve veri tutarlılığını test eden acımasız senaryolar işletmek.
-  - *DoD:* Tüm testlerin `pytest` ile test edilip yeşil yanması ve `verify_execution_pipeline.py` script'inin başarılı olması.
+- `[ ]` **Faz 3: Yüce Hakem Veto Entegrasyonu & .env Konfigürasyonu (Ajan: backend-architect)**
+  - [ ] `.env` ve `.env.example` dosyalarına `HERMES_VETO_THRESHOLD` (Varsayılan: `-0.45`) parametresini eklemek.
+  - [ ] `apps/api/app/services/strategy.py` içindeki `StrategyRunner.apply_agent_filters` metodunu güncellemek. Statik veto yerine, veritabanındaki son `hermes-agent` skorunu okup bu değer `HERMES_VETO_THRESHOLD` değerinden küçükse `BUY` sinyalini veto edip `HOLD` yapmak.
+  - [ ] Sistem denetim ajanı olan `apps/api/app/agents/auditor.py` içerisindeki agent listesine `hermes-agent`'ı dahil etmek.
+  - *DoD:* Strateji motorunun .env üzerinden okunan eşik değerine göre veto filtresini başarıyla uygulaması.
 
-- `[ ]` **Faz 4: Strateji Sinyalleri & BSMV Vergi Mantığı Simülasyonu (Ajan: backend-architect / quality-engineer)**
-  - [ ] `StrategyRunner` oylamalarında RSI, Bollinger ve SMA kesişimlerinin `None`/eksik indikatör durumundaki mukavemetini test etmek.
-  - [ ] Paper-trading işlemlerinde %0.2 BSMV (kambiyo vergisi), spread ve slippage (kayma) hesaplamalarının doğruluğunu matematiksel sınamalarla denetlemek.
-  - *DoD:* Yerel testlerin `pytest tests/test_auto_trader.py` komutuyla 100% başarılı olması.
-
-- `[ ]` **Faz 5: VPS Deployment & Smoke Validation (Ajan: safety-gatekeeper / quality-engineer)**
-  - [ ] `deploy.sh -y` kullanarak güncellenmiş kodları ve backfill script'ini VPS'e göndermek.
-  - [ ] VPS üzerinde `vps_smoke.sh` duman testini tetiklemek ve Telegram botundan `/canli`, `/durum`, `/karzarar` komutlarını göndererek sunucu çıktılarının loglarını doğrulamak.
-  - *DoD:* VPS smoke testlerinin sıfır hata ile yeşile dönmesi ve Telegram botunun hiçbir parse hatası vermeden canlı analiz raporunu başarıyla iletmesi.
+- `[ ]` **Faz 4: Kalite Kontrol & Simülasyon Testleri (Ajan: quality-engineer)**
+  - [ ] Hermes Agent için mock kurumsal haber paketleri ile pytest test senaryoları yazmak.
+  - [ ] Ağırlıklı formülün ve filtreleme mantığının matematiksel olarak doğru çalıştığını doğrulamak.
+  - *DoD:* `pytest tests/test_hermes_agent.py` test süitinin %100 başarıyla tamamlanması.
 
 ---
 
 ## ❓ Açık Sorular
+
 > [!IMPORTANT]
-> 1. **Telegram Webhook Modu:** VPS üzerinde Telegram botunun webhook modunda çalıştığından emin olmak için `vps_smoke.sh` sonrasında port 8000'deki webhook uç noktasını test edecek mini bir duman testi ekleyelim mi?
-> 2. **Tarihsel Backfill:** VPS'teki PostgreSQL veritabanını temizlemeden, sadece eksik olan `XAG_GRAM` tarihsel verilerini eklemek için `backfill_history.py` içindeki tekilleştirme mekanizması (observed_at membership check) yeterli olacaktır. Onaylıyor musunuz?
+> 1. **Küresel / Yerel Ağırlık Dağılımı:** Varsayılan katsayıları `Küresel Kurumsal Haberler (Bloomberg/Reuters/Kitco) = %60` (`WEIGHT_GLOBAL_CORP`) ve `Yerel Kurumsal Haberler (Bloomberg HT/GCM) = %40` (`WEIGHT_LOCAL_CORP`) olarak belirledim. Bu dağılım sizin için uygun mudur?
+> 2. **Varsayılan Veto Eşiği (-0.45):** Eşik değeri `.env` parametresi üzerinden dinamik olacaktır. Başlangıç eşiği olarak `-0.45` değerini onaylıyor musunuz?
