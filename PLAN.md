@@ -32,34 +32,34 @@ Veri toplama skili (Python Ingestion Skill) tarafından taranacak ve IP engeli v
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[ ]` **Faz 1: Python Tabanlı Kurumsal Haber Toplama Skili (Ajan: data-engineer)**
-  - [ ] Gümüş için Yahoo Finance RSS (`SI=F`), Kitco Metals RSS, Bloomberg HT Ekonomi RSS ve GCM Yatırım bülten toplayıcılarını yazmak.
-  - [ ] Python seviyesinde **Ön Filtreleme & Temizleme:**
+- `[x]` **Faz 1: Python Tabanlı Kurumsal Haber Toplama Skili (Ajan: data-engineer)**
+  - `[x]` Gümüş için Yahoo Finance RSS (`SI=F`), Kitco Metals RSS, Bloomberg HT Ekonomi RSS ve GCM Yatırım bülten toplayıcılarını yazmak.
+  - `[x]` Python seviyesinde **Ön Filtreleme & Temizleme:**
     - RSS'ten gelen haberler arasından sadece gümüş ("silver", "gümüş", "xag") ve kritik makro olayları ("fed rate", "faiz", "enflasyon", "inflation") içeren girdileri kabul etmek.
     - LLM'e sadece bu temizlenmiş ve doğrudan hedefe odaklı kurumsal haber/analiz başlıklarını ve özetlerini sunmak (böylece gereksiz token tüketimi sıfırlanır).
   - *DoD (Tamamlanma Tanımı):* `pytest tests/test_collectors.py` ile kurumsal toplayıcıların Türkiye ve küresel kaynaklardan verileri hatasız çekmesi, filtrelemesi ve veritabanına kaydetmesi.
 
-- `[ ]` **Faz 2: DeepSeek-Hermes Agent Tasarımı & Kurumsal Analiz Motoru (Ajan: backend-architect)**
-  - [ ] `apps/api/app/agents/hermes.py` dosyasını oluşturmak. Bu modülde DeepSeek LLM (`deepseek-v4-pro` veya `deepseek-r1`) kullanılarak derlenmiş kurumsal paketler analiz edilecektir.
-  - [ ] LLM, her haber girdisi için şu analizleri yapacaktır:
+- `[x]` **Faz 2: DeepSeek-Hermes Agent Tasarımı & Kurumsal Analiz Motoru (Ajan: backend-architect)**
+  - `[x]` `apps/api/app/agents/hermes.py` dosyasını oluşturmak. Bu modülde DeepSeek LLM (`deepseek-v4-pro` veya `deepseek-r1`) kullanılarak derlenmiş kurumsal paketler analiz edilecektir.
+  - `[x]` LLM, her haber girdisi için şu analizleri yapacaktır:
     - **Sentiment:** BULLISH (+1), BEARISH (-1), NEUTRAL (0).
     - **Relevance (0.0 - 1.0):** Gümüş piyasası ile doğrudan alaka düzeyi.
     - **Speculation (0.0 - 1.0):** clickbait, sansasyonellik veya kanıtsız iddia puanı.
-  - [ ] Ağırlıklı nihai sentiment skoru formülünü kodlamak:
+  - `[x]` Ağırlıklı nihai sentiment skoru formülünü kodlamak:
     $$\text{Duyarlılık Skoru} = \text{Sentiment}_{küresel\_kurumsal} \times W_{glob\_corp} + \text{Sentiment}_{yerel\_kurumsal} \times W_{local\_corp}$$
     *(Not: Her bileşen kendi içinde Spekülasyon ve Alaka filtreleriyle ağırlıklandırılacaktır.)*
-  - [ ] Skoru `AgentMemoryEvent` tablosuna `hermes-agent` adıyla kaydetmek.
+  - `[x]` Skoru `AgentMemoryEvent` tablosuna `hermes-agent` adıyla kaydetmek.
   - *DoD:* Hermes Agent'ın tek tek haberleri analiz ederek ağırlıklı skoru başarıyla hesaplaması.
 
-- `[ ]` **Faz 3: Yüce Hakem Veto Entegrasyonu & .env Konfigürasyonu (Ajan: backend-architect)**
-  - [ ] `.env` ve `.env.example` dosyalarına `HERMES_VETO_THRESHOLD` (Varsayılan: `-0.45`) parametresini eklemek.
-  - [ ] `apps/api/app/services/strategy.py` içindeki `StrategyRunner.apply_agent_filters` metodunu güncellemek. Statik veto yerine, veritabanındaki son `hermes-agent` skorunu okup bu değer `HERMES_VETO_THRESHOLD` değerinden küçükse `BUY` sinyalini veto edip `HOLD` yapmak.
-  - [ ] Sistem denetim ajanı olan `apps/api/app/agents/auditor.py` içerisindeki agent listesine `hermes-agent`'ı dahil etmek.
+- `[x]` **Faz 3: Yüce Hakem Veto Entegrasyonu & .env Konfigürasyonu (Ajan: backend-architect)**
+  - `[x]` `.env` ve `.env.example` dosyalarına `HERMES_VETO_THRESHOLD` (Varsayılan: `-0.45`) parametresini eklemek.
+  - `[x]` `apps/api/app/services/strategy.py` içindeki `StrategyRunner.apply_agent_filters` metodunu güncellemek. Statik veto yerine, veritabanındaki son `hermes-agent` skorunu okup bu değer `HERMES_VETO_THRESHOLD` değerinden küçükse `BUY` sinyalini veto edip `HOLD` yapmak.
+  - `[x]` Sistem denetim ajanı olan `apps/api/app/agents/auditor.py` içerisindeki agent listesine `hermes-agent`'ı dahil etmek.
   - *DoD:* Strateji motorunun .env üzerinden okunan eşik değerine göre veto filtresini başarıyla uygulaması.
 
-- `[ ]` **Faz 4: Kalite Kontrol & Simülasyon Testleri (Ajan: quality-engineer)**
-  - [ ] Hermes Agent için mock kurumsal haber paketleri ile pytest test senaryoları yazmak.
-  - [ ] Ağırlıklı formülün ve filtreleme mantığının matematiksel olarak doğru çalıştığını doğrulamak.
+- `[x]` **Faz 4: Kalite Kontrol & Simülasyon Testleri (Ajan: quality-engineer)**
+  - `[x]` Hermes Agent için mock kurumsal haber paketleri ile pytest test senaryoları yazmak.
+  - `[x]` Ağırlıklı formülün ve filtreleme mantığının matematiksel olarak doğru çalıştığını doğrulamak.
   - *DoD:* `pytest tests/test_hermes_agent.py` test süitinin %100 başarıyla tamamlanması.
 
 ---
