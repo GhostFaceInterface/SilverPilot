@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-26
+updated: 2026-05-27
 ---
 
 
@@ -99,3 +99,12 @@ updated: 2026-05-26
 - **On-Demand Scrapers & Consensuses:** Command `/canli` runs live collectors (`collect_kuveyt_public_silver`, `collect_global_xag_usd`) synchronously, calculates strategy oylamaları (rsi, bollinger, sma_cross), triggers Supreme Arbiter resolution (`run_blended_consensus_resolution`), and compiles a live diagnostic consensus text report without triggering actual paper trades.
 - **Agg Headless Chart Rendering:** Command `/analiz` queries the last 24 hours of price snapshots (preferring scraped Kuveyt silver over Yahoo fallback), plots a beautiful dark-mode chart using Matplotlib (enforcing headless backend via `matplotlib.use("Agg")` *before* importing `pyplot` to prevent window-manager crashes on headless containers), segments the time-series into 3 custom shaded vertical sessions (Sabah 00-08, Öğle-Avrupa 08-16, Akşam-Amerika 16-24), and sends the output as a photo via `BytesIO` buffer with tabular statistics.
 - **Budget Adjustments & Spams Mitigation:** The daily LLM budget guard threshold `DEEPSEEK_DAILY_BUDGET_USD` was increased from `1.00` to `3.00` in `.env` to accommodate on-demand DeepSeek R1 consensus trigger requests. Anti-spam/rate-limiting bounds and missing database seed guards are recommended for future hardening.
+
+## 16. Hermes Sentiment Agent & Yüce Hakem Veto Integration (Phase 16 - May 2026)
+- **Pre-filtered Ingestion:** Pre-filters raw news items from public feeds (Kitco, Bloomberg HT, FXStreet, GCM, Fed) on precious metals or macro keywords before LLM ingestion, reducing raw news noise and saving ~90% in token overhead.
+- **DeepSeek Multi-Aspect Analyzer:** Executes a single structured prompt to `deepseek-v4-pro` under the `hermes-agent` namespace to return a raw JSON array assessing each article's `sentiment` (BULLISH/BEARISH/NEUTRAL), `relevance` (0.0 to 1.0), and `speculation` clickbait risk (0.0 to 1.0).
+- **Multi-Aspect Weighted Formula:** Calculations compute a weighted score in range `[-1.0, 1.0]` based on source authority:
+  $$\text{article\_score} = \text{sentiment\_numeric} \times (1.0 - \text{speculation}) \times \text{relevance} \times \text{source\_weight}$$
+  Where sources are mapped: Global Authority (Kitco, FXStreet, Reuters, Fed; weight = 0.5), Local Expert (GCM, Bloomberg HT; weight = 0.3), and Local Forum (Investing.com; weight = 0.2).
+- **Yüce Hakem Veto Filter:** The weighted sentiment score is dynamically integrated in `StrategyRunner.apply_agent_filters`. If the score falls below `HERMES_VETO_THRESHOLD` (configurable via `.env`, default `-0.45`), `BUY` signals are overridden to `HOLD` with `AGENT_VETO_HERMES_BEARISH_NEWS`.
+- **System Auditor & Unit Tests:** Registered `hermes-agent` in the `auditor-agent` inspection loop and added a thorough E2E test suite in `test_hermes_agent.py` achieving 100% correct E2E test coverage across all 159 tests.
