@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
-from telegram import Bot
+from telegram import Bot, BotCommand
 from telegram.error import TelegramError
 
 from app.core.config import get_settings
@@ -694,6 +694,25 @@ async def process_telegram_update(update: dict, settings=None):
         logger.error(f"Failed to send Telegram message: {e}", exc_info=True)
 
 
+async def register_bot_commands(bot: Bot) -> None:
+    """Programmatically registers the bot commands in the Telegram API so they show up in the Telegram UI menu."""
+    commands = [
+        BotCommand("durum", "Gümüş & Portföy bakiyelerini ve dağılımını gösterir"),
+        BotCommand("cuzdan", "$2500 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir"),
+        BotCommand("karzarar", "Açık pozisyon PNL ve son 5 paper-trade işlemini özetler"),
+        BotCommand("ajanlar", "Son Supreme Arbiter uyuşmazlık ve çözümlenmiş kararları listeler"),
+        BotCommand("canli", "Canlı fiyat analizi, indikatörler ve Supreme Arbiter raporu sunar"),
+        BotCommand("analiz", "Son seanslık fiyat analiz grafiğini fotoğraf olarak gönderir"),
+        BotCommand("help", "Kullanılabilir komutları ve yardım kılavuzunu gösterir"),
+    ]
+    try:
+        logger.info("Registering Telegram bot commands programmatically...")
+        await bot.set_my_commands(commands)
+        logger.info("Telegram bot commands successfully registered.")
+    except Exception as e:
+        logger.error(f"Failed to register Telegram bot commands: {e}", exc_info=True)
+
+
 async def set_telegram_webhook():
     settings = get_settings()
     if not settings.telegram_bot_token:
@@ -705,6 +724,7 @@ async def set_telegram_webhook():
         return
 
     bot = Bot(token=settings.telegram_bot_token)
+    await register_bot_commands(bot)
     webhook_url = f"{settings.telegram_webhook_url.rstrip('/')}/agent/telegram/webhook"
     logger.info(f"Setting Telegram webhook to: {webhook_url}")
 
@@ -722,6 +742,7 @@ async def start_polling():
         return
 
     bot = Bot(token=settings.telegram_bot_token)
+    await register_bot_commands(bot)
     logger.info("Starting Telegram bot polling task in background...")
 
     offset = 0
