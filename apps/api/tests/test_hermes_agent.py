@@ -9,6 +9,7 @@ from app.agents.hermes import run_hermes_sentiment_analysis
 from app.services.strategy import StrategyRunner
 from app.models import RawNews, AgentMemoryEvent, CollectorRun
 
+
 @pytest.mark.anyio
 async def test_hermes_sentiment_calculation_formula(db_session):
     """
@@ -19,7 +20,7 @@ async def test_hermes_sentiment_calculation_formula(db_session):
       Unweighted = -1 * (1 - 0.1) * 0.9 = -0.81. Weighted = -0.81 * 0.3 = -0.243.
     - Article 3: Investing (Local Forum, weight = 0.2), NEUTRAL (0), relevance = 0.5, speculation = 0.5.
       Unweighted = 0. Weighted = 0.
-    
+
     Total Weighted Score = 0.32 + (-0.243) + 0 = 0.077.
     Total Source Weight = 0.5 + 0.3 + 0.2 = 1.0.
     Final Score = 0.077 / 1.0 = 0.077.
@@ -72,11 +73,13 @@ async def test_hermes_sentiment_calculation_formula(db_session):
     db_session.commit()
 
     # Mock DeepSeek API response corresponding to the articles
-    mock_llm_json = json.dumps([
-        {"title": "Good Kitco News", "sentiment": "BULLISH", "relevance": 0.8, "speculation": 0.2},
-        {"title": "Bad GCM News", "sentiment": "BEARISH", "relevance": 0.9, "speculation": 0.1},
-        {"title": "Neutral Investing News", "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5}
-    ])
+    mock_llm_json = json.dumps(
+        [
+            {"title": "Good Kitco News", "sentiment": "BULLISH", "relevance": 0.8, "speculation": 0.2},
+            {"title": "Bad GCM News", "sentiment": "BEARISH", "relevance": 0.9, "speculation": 0.1},
+            {"title": "Neutral Investing News", "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5},
+        ]
+    )
 
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_response = AsyncMock()
@@ -105,18 +108,19 @@ async def test_hermes_sentiment_calculation_formula(db_session):
         assert event.agent_name == "hermes-agent"
         assert event.event_type == "hermes_sentiment"
         assert event.key == "latest_analysis"
-        
+
         val = event.value_json
         assert abs(val["score"] - 0.077) < 1e-5
-        assert val["sentiment"] == "NEUTRAL" # 0.077 is between -0.45 and 0.15
+        assert val["sentiment"] == "NEUTRAL"  # 0.077 is between -0.45 and 0.15
         assert len(val["articles"]) == 3
-        
+
         # Verify specific details of Article 1
         art1 = val["articles"][0]
         assert art1["title"] == "Good Kitco News"
         assert art1["source"] == "kitco-rss"
         assert art1["sentiment"] == "BULLISH"
         assert abs(art1["article_score"] - 0.32) < 1e-5
+
 
 @pytest.mark.anyio
 async def test_hermes_veto_threshold_behavior(db_session):
@@ -163,6 +167,7 @@ async def test_hermes_veto_threshold_behavior(db_session):
     action, reason = StrategyRunner.apply_agent_filters("BUY", "BULLISH", "APPROVED", db=db_session)
     assert action == "BUY"
     assert reason == ""
+
 
 @pytest.mark.anyio
 async def test_run_hermes_sentiment_analysis_empty_db(db_session):

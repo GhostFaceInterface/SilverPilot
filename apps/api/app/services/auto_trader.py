@@ -24,9 +24,9 @@ def escape_html_response(text: str) -> str:
     # Escape HTML special characters (&, <, >) first
     escaped = html.escape(text)
     # Safely convert double-asterisk bold to <b>...</b>
-    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    escaped = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", escaped)
     # Safely convert single-asterisk italic to <i>...</i>
-    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    escaped = re.sub(r"\*(.*?)\*", r"<i>\1</i>", escaped)
     return escaped
 
 
@@ -218,7 +218,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
         .where(
             PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]),
-            PriceSnapshot.asset_id == asset.id
+            PriceSnapshot.asset_id == asset.id,
         )
         .order_by(TechnicalIndicator.bar_timestamp.desc())
         .limit(2)

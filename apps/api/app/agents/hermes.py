@@ -21,6 +21,7 @@ TARGET_SOURCES = {
     "investing-rss",
 }
 
+
 async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     """
     Fetches recent news from RawNews in the last 24 hours (or falls back to the latest 15 matching sources).
@@ -34,22 +35,18 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     # 1. Fetch recent news matching target sources from the last 24 hours
     stmt = (
         select(RawNews)
-        .where(
-            RawNews.fetched_at >= twenty_four_hours_ago,
-            RawNews.source.in_(list(TARGET_SOURCES))
-        )
+        .where(RawNews.fetched_at >= twenty_four_hours_ago, RawNews.source.in_(list(TARGET_SOURCES)))
         .order_by(desc(RawNews.fetched_at))
     )
     news_items = db.execute(stmt).scalars().all()
 
     # 2. Fallback to latest 15 news matching sources if none found in last 24 hours
     if not news_items:
-        logger.info("No matching source news in the last 24 hours. Falling back to the latest 15 matching source news articles.")
+        logger.info(
+            "No matching source news in the last 24 hours. Falling back to the latest 15 matching source news articles."
+        )
         stmt_fallback = (
-            select(RawNews)
-            .where(RawNews.source.in_(list(TARGET_SOURCES)))
-            .order_by(desc(RawNews.fetched_at))
-            .limit(15)
+            select(RawNews).where(RawNews.source.in_(list(TARGET_SOURCES))).order_by(desc(RawNews.fetched_at)).limit(15)
         )
         news_items = db.execute(stmt_fallback).scalars().all()
 
@@ -161,8 +158,7 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     # If parsing failed or returned empty list, recover by creating a neutral fallback entry for each article
     if not parsed_list:
         parsed_list = [
-            {"title": item.title, "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5}
-            for item in news_items
+            {"title": item.title, "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5} for item in news_items
         ]
 
     # 6. Calculate the Weighted Sentiment Score
@@ -208,15 +204,17 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         total_weighted_score += article_score
         total_source_weight += source_weight
 
-        analyzed_articles.append({
-            "title": parsed.get("title", ""),
-            "source": source_name,
-            "sentiment": sentiment_label,
-            "relevance": relevance,
-            "speculation": speculation,
-            "article_score": article_score,
-            "source_weight": source_weight,
-        })
+        analyzed_articles.append(
+            {
+                "title": parsed.get("title", ""),
+                "source": source_name,
+                "sentiment": sentiment_label,
+                "relevance": relevance,
+                "speculation": speculation,
+                "article_score": article_score,
+                "source_weight": source_weight,
+            }
+        )
 
     final_score = total_weighted_score / total_source_weight if total_source_weight > 0.0 else 0.0
     veto_threshold = float(settings.hermes_veto_threshold)
@@ -266,5 +264,7 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     db.commit()
     db.refresh(event)
 
-    logger.info(f"Hermes weighted sentiment analysis completed and saved successfully. Event ID: {event.id}, Score: {final_score:.4f}")
+    logger.info(
+        f"Hermes weighted sentiment analysis completed and saved successfully. Event ID: {event.id}, Score: {final_score:.4f}"
+    )
     return event

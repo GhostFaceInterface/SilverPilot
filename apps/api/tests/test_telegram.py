@@ -261,24 +261,34 @@ async def test_process_telegram_update_on_demand():
 
 def test_escape_html_response():
     from app.agents.telegram_bot import escape_html_response
+
     assert escape_html_response("") == ""
     assert escape_html_response(None) == ""
-    
+
     # HTML characters escaping
     assert escape_html_response("hello <world> & brand") == "hello &lt;world&gt; &amp; brand"
-    
+
     # Bold conversion
     assert escape_html_response("this is **bold** text") == "this is <b>bold</b> text"
-    
+
     # Italic conversion
     assert escape_html_response("this is *italic* text") == "this is <i>italic</i> text"
-    
+
     # Mix
-    assert escape_html_response("Check **bold** and *italic* with <brackets>") == "Check <b>bold</b> and <i>italic</i> with &lt;brackets&gt;"
+    assert (
+        escape_html_response("Check **bold** and *italic* with <brackets>")
+        == "Check <b>bold</b> and <i>italic</i> with &lt;brackets&gt;"
+    )
 
 
 def test_telegram_html_tag_balance_audit():
-    from app.agents.telegram_bot import get_durum_text, get_cuzdan_text, get_karzarar_text, get_ajanlar_text, handle_telegram_command
+    from app.agents.telegram_bot import (
+        get_durum_text,
+        get_cuzdan_text,
+        get_karzarar_text,
+        get_ajanlar_text,
+        handle_telegram_command,
+    )
     import re
 
     engine = create_engine(
@@ -306,10 +316,10 @@ def test_telegram_html_tag_balance_audit():
     # Helper to audit tags balance
     def assert_html_balanced(html_str):
         # Extract all HTML tags
-        tags = re.findall(r'</?[a-zA-Z0-9]+>', html_str)
+        tags = re.findall(r"</?[a-zA-Z0-9]+>", html_str)
         stack = []
         for tag in tags:
-            if tag.startswith('</'):
+            if tag.startswith("</"):
                 tag_name = tag[2:-1]
                 assert len(stack) > 0, f"Closing tag {tag} with no opening tag in:\n{html_str}"
                 last_open = stack.pop()
@@ -317,7 +327,7 @@ def test_telegram_html_tag_balance_audit():
             else:
                 tag_name = tag[1:-1]
                 # If it's a self closing tag like <br/>, ignore
-                if not tag.endswith('/>'):
+                if not tag.endswith("/>"):
                     stack.append(tag_name)
         assert len(stack) == 0, f"Unclosed tags: {stack} in:\n{html_str}"
 
@@ -362,7 +372,10 @@ def test_telegram_html_tag_balance_audit():
     # 5. Audit /ajanlar (empty state)
     ajanlar_empty = get_ajanlar_text(db)
     assert_html_balanced(ajanlar_empty)
-    assert "Ajan Teşhis &amp; Supreme Arbiter Kararları" in ajanlar_empty or "Ajan Teşhis & Supreme Arbiter Kararları" in ajanlar_empty
+    assert (
+        "Ajan Teşhis &amp; Supreme Arbiter Kararları" in ajanlar_empty
+        or "Ajan Teşhis & Supreme Arbiter Kararları" in ajanlar_empty
+    )
 
     # 6. Audit /help
     help_msg = handle_telegram_command("/help", db)
@@ -442,6 +455,7 @@ def test_telegram_canli_report_html_safety_merciless():
     db.commit()
 
     import re
+
     # Run the canli analysis report and check it escapes tags properly
     # Using magic mocks for background API scrapers
     mock_consensus_event = MagicMock()
@@ -461,21 +475,23 @@ def test_telegram_canli_report_html_safety_merciless():
         settings.telegram_chat_id = 987654
 
         import sys
+
         if sys.version_info >= (3, 8):
             # run_canli_analysis_report is async
             import asyncio
+
             report = asyncio.run(run_canli_analysis_report(db, settings))
-            
+
             # Verify tag balance of report
-            tags = re.findall(r'</?[a-zA-Z0-9]+>', report)
+            tags = re.findall(r"</?[a-zA-Z0-9]+>", report)
             stack = []
             for tag in tags:
-                if tag.startswith('</'):
+                if tag.startswith("</"):
                     stack.pop()
-                elif not tag.endswith('/>'):
+                elif not tag.endswith("/>"):
                     stack.append(tag[1:-1])
             assert len(stack) == 0, f"Unbalanced tags in /canli report: {stack}"
-            
+
             # Verify the adversarial HTML was escaped but bold tags are rendered as <b>
             assert "is &lt; 30" in report
             assert "<b>BUY</b>" in report

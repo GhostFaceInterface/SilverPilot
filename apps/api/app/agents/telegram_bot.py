@@ -30,9 +30,9 @@ def escape_html_response(text: str) -> str:
     # Escape HTML special characters (&, <, >) first
     escaped = html.escape(text)
     # Safely convert double-asterisk bold to <b>...</b>
-    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    escaped = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", escaped)
     # Safely convert single-asterisk italic to <i>...</i>
-    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    escaped = re.sub(r"\*(.*?)\*", r"<i>\1</i>", escaped)
     return escaped
 
 

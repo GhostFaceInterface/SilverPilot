@@ -209,14 +209,15 @@ class StrategyRunner:
                 from app.models.entities import AgentMemoryEvent
                 from app.core.config import get_settings
                 from sqlalchemy import desc
+
                 settings = get_settings()
-                
+
                 stmt = (
                     db.query(AgentMemoryEvent)
                     .filter(
                         AgentMemoryEvent.agent_name == "hermes-agent",
                         AgentMemoryEvent.event_type == "hermes_sentiment",
-                        AgentMemoryEvent.key == "latest_analysis"
+                        AgentMemoryEvent.key == "latest_analysis",
                     )
                     .order_by(desc(AgentMemoryEvent.id))
                     .first()
