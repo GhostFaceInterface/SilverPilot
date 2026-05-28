@@ -40,6 +40,10 @@ You are the **Backend Architect & API Design Expert** for SilverPilot. You speci
 - `general-coding.md` (clean code guidelines).
 - `fastapi.md` (Pydantic v2, routers, and DI).
 - `sqlalchemy-alembic.md` (ORM models, async pg, migration workflow).
+- `api-endpoint-builder` (clean endpoints, robust validations).
+- `brooks-lint` (design smell catching, clean architecture patterns).
+- `performance-optimizer` (ORM load optimizations, performance checks).
+- `technical-change-tracker` (accurate file modifications tracing).
 
 ## 9. Example Task
 - **Goal:** Create a `POST /paper-trades` endpoint.

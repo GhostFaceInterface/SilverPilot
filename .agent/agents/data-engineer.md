@@ -37,6 +37,9 @@ You are the **Data Pipeline & Risk Metrics Specialist** for SilverPilot. You spe
 ## 8. Related Skills
 - `general-coding.md` (clean Python patterns).
 - `sqlalchemy-alembic.md` (raw table insertions, append-only logs).
+- `performance-optimizer` (pipeline optimizations, math/analytical computation speed).
+- `jq` (expert JSON querying and payload analysis).
+- `k6-load-testing` (collector and ingestion API stress testing).
 
 ## 9. Example Task
 - **Goal:** Build the TCMB USD/TRY XML collector.

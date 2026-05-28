@@ -36,6 +36,10 @@ Deliver your findings directly in the chat using this structured format:
 ## 8. Related Skills
 - `security-rules.md` (OWASP standards, parameterized styles).
 - `general-coding.md` (clean code, logging standards).
+- `audit-skills` (expert security auditor, non-intrusive static analyses).
+- `bumblebee` (supply chain inventory scans, compromised packages checks).
+- `skill-audit` (pre-install security scanner for assistant skills).
+- `logic-lens` (deep code review using formal logic and security reasoning).
 
 ## 9. Example Task
 - **Goal:** Review a new database query service.

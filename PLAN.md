@@ -1,58 +1,56 @@
-# Implementation Plan: SilverPilot Derin Kod Denetimi ve Zafiyet Analizi (Audit & Hardening)
+# Implementation Plan: Antigravity Awesome Skills (V11.8.0) Integration & Hardening
 
-Bu plan, yapay zeka desteğiyle geliştirilmiş SilverPilot platformunun tüm kritik modüllerini, veri yollarını, veritabanı transaction güvenlik katmanlarını ve finansal risk yönetim mekanizmalarını parça parça taramak, AI kaynaklı mantıksal hataları ve mimari açıkları tespit edip gidermek amacıyla hazırlanmış **Derin Kod Denetimi ve Sıkılaştırma (Audit & Hardening)** yol haritasıdır.
+Bu plan, `https://github.com/sickn33/antigravity-awesome-skills` (V11.8.0) reposunda sunulan 1,480+ endüstri standardı agentic skill'i (beceriyi), modern workflow yapılarını ve gelişmiş orkestrasyon pratiklerini SilverPilot projesinin mevcut `.agent/` dizini altındaki ajan framework'üne entegre ederek, projedeki geliştirici yapay zeka asistan mimarisini maksimum güce ve derinliğe ulaştırmayı hedefler.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
-- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Finansal limitler ve risk geçitleri), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Veri şemaları ve entegrasyon sözleşmeleri).
-- **Hedef Tehdit Vektörleri:**
-  1. **SQLAlchemy Oturum Sızıntıları:** Kapatılmayan session'lar, transaction havuzunun şişmesi ve `DetachedInstanceError` hataları.
-  2. **Finansal Risk Geçidi Açıkları:** Stale data (bayat fiyat verisi) kullanımı, bakiye doğrulama bypass açıkları, hatalı gerçekleşen stop-loss tetikleyicileri.
-  3. **Yarış Durumları (Race Conditions):** Eşzamanlı isteklerde (özellikle toplayıcılar ve trade emirleri çalışırken) oluşabilecek veri kilitlenmeleri.
-  4. **Hata Yakalama Gaps (Exception Swallowing):** Hataların sessizce yutulması nedeniyle sistemin çöktüğü halde çalışıyor görünmesi.
+- **Etkilenen Politikalar:** `.agent/GEMINI.md` (Temel anayasa kuralları), `.agent/workflows/orchestrate.md` (Çoklu ajan orkestrasyonu).
+- **Etkilenen Dizinler:**
+  - `.agent/skills/` (Mevcut 7 becerinin güncellenmesi ve 1,480+ havuzdan kritik olanların eklenmesi)
+  - `.agent/agents/` (Özel uzman ajanların yeni becerilere erişim sağlayacak şekilde güncellenmesi)
+  - `.agent/workflows/` (İş akışı şablonlarının modern orkestrasyon desenleriyle zenginleştirilmesi)
+- **Risk Faktörü (Context Overload):** 1,480+ becerinin tamamının kontrolsüz şekilde projeye yüklenmesi, LLM bağlam limitinin (context limit) aşılmasına ("Agent Overload") ve asistanın yavaşlamasına neden olabilir. Bu nedenle kurulum **seçici (selective/curated) filtreleme** protokolüyle gerçekleştirilecektir.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[x]` **Faz 1: Altyapı, Veri Tabanı ve Oturum Güvenliği (Bölge 1)**
-  - **Denetlenecek Alanlar:** `apps/api/app/core/`, `apps/api/app/models/`, `apps/api/app/schemas/`
-  - [x] **DB Session Lifecycle Audit:** Veritabanı oturumlarının (session) FastAPI dependency injection yapısında (`get_db`) düzgün kapatıldığını doğrulamak.
-  - [x] **Transaction Leak Checks:** Kod tabanında `db.commit()` veya `db.rollback()` işlemlerinin asenkron/senkron döngülerde açık bağlantı (connection leak) bırakıp bırakmadığını denetlemek.
-  - [x] **Pydantic Validation Gaps:** Pydantic şemalarında (`schemas/`) eksik tip doğrulamaları ve runtime çökmelerine neden olabilecek zayıf veri tiplerini tespit etmek.
-  - *Ajanlar:* `backend-architect`, `debugger-agent`
-  - *DoD (Tamamlanma Tanımı):* Mevcut yerel testlerin sıfır hata ile geçmesi ve SQLAlchemy bağlantı havuzu (connection pool) sızıntı testinin başarıyla tamamlanması.
+- `[x]` **Faz 1: Altyapı Hazırlığı ve NPX Kurulumu**
+  - [x] Node.js/NPX ortamının kontrol edilmesi.
+  - [x] `antigravity-awesome-skills` kütüphanesinin yerel bir test dizinine kurulması veya CLI parametrelerinin incelenmesi.
+  - *Ajan:* `scout-agent`, `project-planner`
+  - *DoD (Tamamlanma Tanımı):* `npx antigravity-awesome-skills --help` komutunun başarıyla çalışması ve çıktı vermesi.
 
-- `[x]` **Faz 2: Veri Toplama, Entegrasyonlar ve LLM Katmanı (Bölge 2)**
-  - **Denetlenecek Alanlar:** `apps/api/app/collectors/`, `apps/api/app/llm/`
-  - [x] **Collector Robustness Audit:** Harici servislerden (TCMB, Yahoo, Kuveyt vb.) veri çeken toplayıcıların ağ kesintilerinde, hatalı JSON/XML yanıtlarında veya timeout durumlarında çökmeden hata loglaması ve kaldığı yerden devam etmesi (graceful degradation).
-  - [x] **Duplicate Data Prevention:** Mükerrer fiyat kayıtlarının veritabanına yazılmasını önleyen unique index ve constraint yapılarının doğrulanması.
-  - [x] **LLM Gateway Exception Handling:** DeepSeek API kesintilerinde veya bütçe aşımlarında (`DEEPSEEK_DAILY_BUDGET_USD`) sistemin çökmeden nötr kararlarla yoluna devam edebilme mekanizmasının denetimi.
-  - *Ajanlar:* `data-engineer`, `security-auditor`
-  - *DoD:* Ağ kesinti taklit edilen (mocked network failures) kolektör testlerinin başarıyla geçmesi.
+- `[x]` **Faz 2: Seçici Beceri Entegrasyonu (Selective Skill Set Install)**
+  - [x] Projeye uygun kritik kategorilerin belirlenmesi (Örn: `development, backend, testing, security, observability`).
+  - [x] `npx antigravity-awesome-skills --path .agent/skills --category development,backend,testing,security,observability --risk safe,none` komutu veya özelleştirilmiş kurulum scripti kullanılarak hedeflenen becerilerin `.agent/skills/` altına yerleştirilmesi.
+  - [x] Çakışan veya tekrarlanan eski beceri dosyalarının temizlenmesi veya birleştirilmesi.
+  - *Ajan:* `scout-agent`, `archaeologist-agent`
+  - *DoD:* `.agent/skills/` dizini altında yeni ve gelişmiş beceri dosyalarının (`SKILL.md` ve ilgili YAML manifestleri) doğrulanması.
 
-- `[x]` **Faz 3: Karar Algoritmaları, Paper Trading ve Risk Motoru (Bölge 3)**
-  - **Denetlenecek Alanlar:** `apps/api/app/services/`, `apps/api/app/paper_trading/`, `apps/api/app/risk/`
-  - [x] **Pre-Trade Risk Engine Deep Dive:** Risk motorundaki bayat veri kontrolünün (`evaluate_paper_trade_risk`) milisaniyelik gecikmeleri veya geciken zaman dilimlerini (timezones) doğru yakaladığından emin olunması.
-  - [x] **Balance and Equity Guard:** Yetersiz bakiye durumlarında paper trade alımlarının kesinlikle engellenmesi, negatif nakit veya negatif varlık bakiyesi oluşma ihtimallerinin bertaraf edilmesi.
-  - [x] **Stop-Loss and Slippage Accuracy:** Stop-loss hesaplamalarının ve komisyon oranlarının (fees, taxes) gerçeğe uygun şekilde uygulandığının ve slipaj (fiyat kayması) durumlarının simüle edilme doğruluğunun denetimi.
-  - [x] **Strategy Engine Boundary Checks:** `StrategyRunner` içerisindeki indikatör eşik değerlerinin (RSI sınırları vb.) sınır durumlarında (edge-cases) hatalı karar vermediğinin doğrulanması.
-  - *Ajanlar:* `backend-architect`, `data-engineer`, `debugger-agent`
-  - *DoD:* Özel olarak hazırlanmış uç sınır durum (edge-case / boundary) paper-trade simülasyon testlerinin yazılması ve başarıyla geçmesi.
+- `[x]` **Faz 3: Ajan Rollerinin (Agent Personas) Yeni Becerilerle Güçlendirilmesi**
+  - [x] `.agent/agents/` altındaki 9 uzman ajanın (örneğin `backend-architect.md`, `data-engineer.md`, `security-auditor.md`) yeni eklenen `@skill-id` becerilerini tanıp kullanabilmesi için sistem promptlarının ve yetki tanımlarının güncellenmesi.
+  - *Ajan:* `backend-architect`, `project-planner`
+  - *DoD:* Ajan dosyalarının başarıyla güncellenmesi ve `safety-gatekeeper` tarafından statik doğrulamanın onaylanması.
 
-- `[x]` **Faz 4: Dış Arayüzler, Ajanlar ve Telegram Entegrasyonu (Bölge 4)**
-  - **Denetlenecek Alanlar:** `apps/api/app/api/`, `apps/api/app/agents/` (auditor, news, hermes), Telegram Bot
-  - [x] **FastAPI Router Authorization & OWASP:** API uç noktalarında yetkisiz erişim kontrolleri (Zero-Trust denetimi) ve SQL injection / parametre manipülasyonu açıklarının taranması.
-  - [x] **Agent Memory Persistence Audits:** `auditor-agent`, `news-agent` ve `hermes-agent` bellek durumlarının (`AgentMemoryEvent`) veritabanında doğru indexlendiğinin ve sorguların şişmeye neden olmadığının doğrulanması.
-  - [x] **Telegram Webhook/Polling Connection Stability:** Ağ kopmalarında veya Telegram API sınırlamalarında (rate-limiting) bildirimlerin yutulmaması için kuyruklama mekanizmasının ve hata toleransının denetlenmesi.
-  - *Ajanlar:* `security-auditor`, `quality-engineer`
-  - *DoD:* API ve Ajan uç noktaları için OWASP güvenlik taramalarının yeşil çıkması.
+- `[x]` **Faz 4: Gelişmiş Workflows ve Orkestrasyon Adaptasyonu**
+  - [x] `antigravity-awesome-skills` içerisindeki modern multi-agent ve DDD (Domain-Driven Design) odaklı workflow şablonlarının incelenmesi.
+  - [x] Projedeki `.agent/workflows/orchestrate.md` ve `.agent/workflows/plan.md` dosyalarının bu yeni yeteneklerle güncellenmesi.
+  - *Ajan:* `project-planner`, `backend-architect`
+  - *DoD:* `/orchestrate` ve `/plan` akışlarının yeni becerilerle tam uyumlu çalıştığının gösterilmesi.
+
+- `[x]` **Faz 5: Kalite Kontrol, Doğrulama ve Sıkılaştırma**
+  - [x] Yeni sistemin entegrasyon smoke testinin yapılması (Örn: asistanın yeni eklenen bir `@brainstorming` veya `@api-design` becerisini kullanarak çıktı üretmesi).
+  - [x] `safety-gatekeeper` tarafından tüm `.agent/` klasörünün statik analizi.
+  - *Ajan:* `quality-engineer`, `safety-gatekeeper`
+  - *DoD:* Tüm sistemin hatasız entegre olması ve `git status` üzerinde temiz bir çalışma alanı sağlanması.
 
 ---
 
 ## ❓ Açık Sorular
 
 > [!IMPORTANT]
-> 1. **Model Tercihi:** Bu derin denetim ve hata ayıklama operasyonu yüksek muhakeme gerektirdiğinden, kritik inceleme adımlarında **Gemini 3.5 Pro** modeli ile çalışmayı öneriyoruz. Bu model geçiş protokolünü onaylıyor musunuz?
-> 2. **Faz-Faz İlerleme:** Denetim sırasında tespit edeceğimiz açıkları anında düzelterek mi ilerleyelim, yoksa her fazın sonunda toplu bir bulgu raporu sunup onayınızı aldıktan sonra mı düzeltmeleri uygulayalım? *(Önerimiz: Tespit edilen zafiyetlerin anında düzeltilip test edilerek faza dahil edilmesidir.)*
+> 1. **Beceri Seçimi (Curated vs Full):** 1,480+ becerinin tamamı yerine projenize en uygun olan **`development, backend, testing, security`** ve **`observability`** odaklı bir "Curated Bundle" kurmayı öneriyoruz. Bu seçici kurulum yaklaşımını onaylıyor musunuz yoksa tam paketi mi kurmak istersiniz?
+> 2. **Mevcut Becerilerin Korunması:** Projede halihazırda bulunan 7 özel beceri dosyası (`fastapi.md`, `sqlalchemy-alembic.md` vb.) oldukça optimize edilmiştir. Yeni entegrasyonda bu dosyaları tamamen silmek yerine, yeni gelen küresel becerilerle **harmanlayarak (merge)** korumayı öneriyoruz. Bu konuda tercihiniz nedir?
+> 3. **Model Geçiş Protokolü:** Bu planın uygulanması aşamasında, karmaşık kod yazımları ve entegrasyon doğruluk incelemeleri için **Gemini 3.5 Pro** modeline geçmeyi kabul ediyor musunuz?

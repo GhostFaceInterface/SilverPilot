@@ -21,7 +21,7 @@ Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hat
 - Değişiklik yapılacak alanların finansal risk boyutunu ölçmek için **[docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md)** ve veri bütünlüğü için **[docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md)** dosyalarını inceleyin.
 
 ### Adım 2: Zorunlu Fazlandırma ve PLAN.md Hazırlığı
-- Büyük veya çok dosyalı işleri, ucuz modellerin (Gemini 3.5 Flash gibi) hata payını sıfıra indirmek için olabildiğince küçük, bağımsız ve ardışık **Fazlara (Phases)** bölün.
+- Büyük veya çok dosyalı işleri, ucuz modellerin (Gemini 3.5 Flash gibi) hata payını sıfıra indirmek için olabildiğince küçük, bağımsız ve ardışık **Fazlara (Phases)** bölün. Enforce the use of `@concise-planning` standard to ensure verb-first, highly-measurable task lists.
 - Proje kök dizininde bir **`PLAN.md`** dosyası oluşturun (veya mevcut olanı güncelleyin). Plan taslağını aşağıdaki şablon standartlarına uygun şekilde hazırlayın.
 
 ### Adım 3: Socratic Gate (Kullanıcı Onayı Kapısı)

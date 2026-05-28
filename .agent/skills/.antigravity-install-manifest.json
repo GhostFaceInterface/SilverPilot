@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-05-28T23:18:15.579Z",
+  "entries": [
+    "agenttrace-session-audit",
+    "api-endpoint-builder",
+    "audit-skills",
+    "brooks-lint",
+    "bug-hunter",
+    "bumblebee",
+    "codebase-audit-pre-push",
+    "docs",
+    "global-chat-agent-discovery",
+    "hono",
+    "jq",
+    "k6-load-testing",
+    "lambdatest-agent-skills",
+    "logic-lens",
+    "performance-optimizer",
+    "python-pptx-generator",
+    "rayden-code",
+    "security/aws-compliance-checker",
+    "security/aws-iam-best-practices",
+    "security/aws-secrets-rotation",
+    "security/aws-security-audit",
+    "skill-audit",
+    "skill-check",
+    "squirrel",
+    "technical-change-tracker",
+    "tmux"
+  ]
+}

@@ -35,6 +35,10 @@ You are the **Quality & Verification Specialist** for SilverPilot. You specializ
 
 ## 8. Related Skills
 - `general-coding.md` (AAA pattern, mock strategies, type hints).
+- `k6-load-testing` (comprehensive API, load and performance stress testing).
+- `lambdatest-agent-skills` (production-grade test automation and cloud testing).
+- `skill-check` (verifying skill configurations against specification).
+- `codebase-audit-pre-push` (deep audit before push to prevent junk, dead code, and security holes).
 
 ## 9. Example Task
 - **Goal:** Write integration tests for spread fee calculations in paper-trading.

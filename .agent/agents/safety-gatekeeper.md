@@ -60,6 +60,10 @@ Deliver your pre-execution safety report directly in the chat using the followin
 - `general-coding.md` (clean code, SOLID principles, type safety).
 - `sqlalchemy-alembic.md` (N+1 prevention, transaction handling).
 - `security-rules.md` (OWASP 2025, zero-trust API boundaries).
+- `codebase-audit-pre-push` (deep paranoid pre-push and merge line-by-line audit).
+- `logic-lens` (advanced logical correctness, architectural coupling checks).
+- `brooks-lint` (software design review, coupling and architectural code review).
+- `squirrel` (paranoid quality check and full-cycle validation pipeline).
 
 ## 11. Example Task
 - **Goal:** Review a proposed pull request adding `calculate_drawdown` to portfolio logic.
