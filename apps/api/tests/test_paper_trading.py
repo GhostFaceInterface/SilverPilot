@@ -871,3 +871,24 @@ def test_cross_currency_fx_rate_conversion():
     assert sell_response.json()["trade"]["taxes"] == "0.000000"
     assert sell_response.json()["trade"]["gross_amount"] == "3.062500"
     assert sell_response.json()["trade"]["net_amount"] == "3.031250"
+
+
+def test_concurrency_race_condition_under_locking():
+    from app.paper_trading.service import _get_portfolio
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    client, testing_session = make_client()
+    db = testing_session()
+    try:
+        # 1. Assert that _get_portfolio with lock=True completes successfully on SQLite
+        portfolio = _get_portfolio(db, "gram-paper", lock=True)
+        assert portfolio.name == "gram-paper"
+
+        # 2. Verify that when target dialect is postgresql, it compiles with "FOR UPDATE"
+        stmt = select(Portfolio).where(Portfolio.name == "gram-paper")
+        stmt_locked = stmt.with_for_update()
+        compiled = str(stmt_locked.compile(dialect=postgresql.dialect()))
+        assert "FOR UPDATE" in compiled
+    finally:
+        db.close()

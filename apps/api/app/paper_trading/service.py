@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, ROUND_DOWN
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, RawFxRate
@@ -32,7 +32,7 @@ class Position:
 
 
 def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperTrade, PortfolioSnapshot]:
-    portfolio = _get_portfolio(db, request.portfolio_name)
+    portfolio = _get_portfolio(db, request.portfolio_name, lock=True)
     if portfolio.is_real_money:
         raise PaperTradingError("Real-money portfolios are not allowed in SilverPilot")
 
@@ -141,25 +141,32 @@ def create_portfolio_snapshot(
 
 
 def calculate_position(db: Session, portfolio_id: int, asset_id: int) -> Position:
-    trades = db.execute(
-        select(PaperTrade).where(
+    buy_stats = db.execute(
+        select(
+            func.sum(PaperTrade.quantity).label("total_qty"),
+            func.sum(PaperTrade.net_amount).label("total_net"),
+        ).where(
             PaperTrade.portfolio_id == portfolio_id,
             PaperTrade.asset_id == asset_id,
-            PaperTrade.action.in_(("paper_buy", "paper_sell")),
+            PaperTrade.action == "paper_buy",
         )
-    ).scalars()
+    ).one_or_none()
 
-    buy_quantity = Decimal("0")
-    buy_net_amount = Decimal("0")
-    sell_quantity = Decimal("0")
-    sell_net_amount = Decimal("0")
-    for trade in trades:
-        if trade.action == "paper_buy":
-            buy_quantity += trade.quantity
-            buy_net_amount += trade.net_amount
-        elif trade.action == "paper_sell":
-            sell_quantity += trade.quantity
-            sell_net_amount += trade.net_amount
+    sell_stats = db.execute(
+        select(
+            func.sum(PaperTrade.quantity).label("total_qty"),
+            func.sum(PaperTrade.net_amount).label("total_net"),
+        ).where(
+            PaperTrade.portfolio_id == portfolio_id,
+            PaperTrade.asset_id == asset_id,
+            PaperTrade.action == "paper_sell",
+        )
+    ).one_or_none()
+
+    buy_quantity = buy_stats.total_qty or Decimal("0") if buy_stats else Decimal("0")
+    buy_net_amount = buy_stats.total_net or Decimal("0") if buy_stats else Decimal("0")
+    sell_quantity = sell_stats.total_qty or Decimal("0") if sell_stats else Decimal("0")
+    sell_net_amount = sell_stats.total_net or Decimal("0") if sell_stats else Decimal("0")
 
     return Position(
         quantity=_money(buy_quantity - sell_quantity),
@@ -255,8 +262,11 @@ def _calculate_trade_amounts(
     return Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
 
 
-def _get_portfolio(db: Session, name: str) -> Portfolio:
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == name)).scalar_one_or_none()
+def _get_portfolio(db: Session, name: str, lock: bool = False) -> Portfolio:
+    stmt = select(Portfolio).where(Portfolio.name == name)
+    if lock and db.bind is not None and db.bind.dialect.name != "sqlite":
+        stmt = stmt.with_for_update()
+    portfolio = db.execute(stmt).scalar_one_or_none()
     if portfolio is None:
         raise PaperTradingError(f"Portfolio not found: {name}")
     return portfolio

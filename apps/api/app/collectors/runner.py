@@ -175,6 +175,9 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
             flush=True,
         )
         return run.status == "success"
+    except Exception as e:
+        db.rollback()
+        raise e
     finally:
         db.close()
 

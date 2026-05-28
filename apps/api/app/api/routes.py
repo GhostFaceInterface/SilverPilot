@@ -109,7 +109,11 @@ def create_paper_trade(request: PaperTradeRequest, db: Session = Depends(get_db)
     try:
         trade, snapshot = execute_paper_trade(db, request)
     except PaperTradingError as exc:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise exc
     return PaperTradeResponse(
         trade={
             "id": trade.id,
@@ -375,22 +379,26 @@ def verify_agent_token(x_agent_token: str | None = Header(None), settings: Setti
 def create_agent_trace(
     request: LLMTraceCreate, db: Session = Depends(get_db), _: None = Depends(verify_agent_token)
 ) -> LLMTraceResponse:
-    trace = LLMCallTrace(
-        agent_name=request.agent_name,
-        model_name=request.model_name,
-        prompt_tokens=request.prompt_tokens,
-        completion_tokens=request.completion_tokens,
-        total_cost_usd=request.total_cost_usd,
-        latency_ms=request.latency_ms,
-        status=request.status,
-        prompt_raw=request.prompt_raw,
-        response_raw=request.response_raw,
-        error_message=request.error_message,
-    )
-    db.add(trace)
-    db.commit()
-    db.refresh(trace)
-    return trace
+    try:
+        trace = LLMCallTrace(
+            agent_name=request.agent_name,
+            model_name=request.model_name,
+            prompt_tokens=request.prompt_tokens,
+            completion_tokens=request.completion_tokens,
+            total_cost_usd=request.total_cost_usd,
+            latency_ms=request.latency_ms,
+            status=request.status,
+            prompt_raw=request.prompt_raw,
+            response_raw=request.response_raw,
+            error_message=request.error_message,
+        )
+        db.add(trace)
+        db.commit()
+        db.refresh(trace)
+        return trace
+    except Exception as exc:
+        db.rollback()
+        raise exc
 
 
 @router.get("/agent/traces", response_model=list[LLMTraceResponse])
@@ -479,13 +487,17 @@ def get_agent_traces_stats(db: Session = Depends(get_db), _: None = Depends(veri
 def create_agent_memory(
     request: AgentMemoryCreate, db: Session = Depends(get_db), _: None = Depends(verify_agent_token)
 ) -> AgentMemoryResponse:
-    memory_event = AgentMemoryEvent(
-        agent_name=request.agent_name, event_type=request.event_type, key=request.key, value_json=request.value_json
-    )
-    db.add(memory_event)
-    db.commit()
-    db.refresh(memory_event)
-    return memory_event
+    try:
+        memory_event = AgentMemoryEvent(
+            agent_name=request.agent_name, event_type=request.event_type, key=request.key, value_json=request.value_json
+        )
+        db.add(memory_event)
+        db.commit()
+        db.refresh(memory_event)
+        return memory_event
+    except Exception as exc:
+        db.rollback()
+        raise exc
 
 
 @router.get("/agent/memory", response_model=list[AgentMemoryResponse])
@@ -533,7 +545,11 @@ async def critique_risk_agent(
     try:
         return await run_signal_critique(db, signal_id=payload.signal_id)
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise exc
 
 
 def run_dataset_build_task(version: str) -> None:
@@ -617,6 +633,7 @@ async def run_orchestrate_background(signal_id: int | None = None) -> None:
         await run_multi_agent_analysis(db, signal_id=signal_id)
         logger.info("Multi-agent analysis background task completed successfully")
     except Exception as e:
+        db.rollback()
         logger.error(f"Error running multi-agent analysis in background: {e}", exc_info=True)
     finally:
         db.close()

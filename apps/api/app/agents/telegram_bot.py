@@ -676,8 +676,8 @@ async def process_telegram_update(update: dict, settings=None):
                     text=f"⚠️ Canlı analiz çalıştırılırken bir hata oluştu: {html.escape(str(e))}",
                     parse_mode="HTML",
                 )
-            except Exception:
-                pass
+            except Exception as send_err:
+                logger.error(f"Failed to send error notification to Telegram: {send_err}", exc_info=True)
             return
 
     try:

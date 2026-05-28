@@ -174,6 +174,21 @@ async def test_auto_trading_blended_bullish_consensus():
         db.add(portfolio)
         db.flush()
 
+        db.add(
+            PriceSnapshot(
+                asset_id=asset.id,
+                source="tcmb-today-xml",
+                buy_price=Decimal("32.00"),
+                sell_price=Decimal("32.00"),
+                mid_price=Decimal("32.00"),
+                currency="TRY",
+                spread_absolute=Decimal("0.0"),
+                spread_percent=Decimal("0.0"),
+                observed_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+        )
+        db.flush()
+
         seed_indicator_history(db, asset, count=16)
 
         settings = Settings(
@@ -225,7 +240,7 @@ async def test_auto_trading_blended_bullish_consensus():
             # Check PaperTrade record
             trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one_or_none()
             assert trade is not None
-            assert trade.fees == Decimal("0.05")
+            assert trade.fees == Decimal("0.001562")
 
             # Check silent value for notification (BULLISH is not silent)
             mock_bot_instance.send_message.assert_called_once()

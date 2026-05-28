@@ -63,6 +63,21 @@ async def test_auto_trading_buy_signal():
     db.add(portfolio)
     db.flush()
 
+    db.add(
+        PriceSnapshot(
+            asset_id=asset.id,
+            source="tcmb-today-xml",
+            buy_price=Decimal("32.00"),
+            sell_price=Decimal("32.00"),
+            mid_price=Decimal("32.00"),
+            currency="TRY",
+            spread_absolute=Decimal("0.0"),
+            spread_percent=Decimal("0.0"),
+            observed_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+    )
+    db.flush()
+
     # 2. Seed price snapshot and indicator for buy signal (RSI < 30)
     snapshot = PriceSnapshot(
         asset_id=asset.id,
@@ -123,11 +138,11 @@ async def test_auto_trading_buy_signal():
         # Check PaperTrade record created
         trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one_or_none()
         assert trade is not None
-        assert trade.price == Decimal("30.00")  # snapshot.buy_price
-        assert trade.fees == Decimal("0.05")
+        assert trade.price == Decimal("0.937500")  # snapshot.buy_price / 32
+        assert trade.fees == Decimal("0.001562")
 
-        # Verify portfolio cash balance updated (600 - net_amount)
-        assert portfolio.cash_balance < Decimal("1.00")
+        # Verify portfolio cash balance updated
+        assert portfolio.cash_balance == Decimal("0.000001")
 
         # Verify telegram message was sent
         mock_bot_instance.send_message.assert_called_once()
@@ -164,6 +179,21 @@ async def test_auto_trading_sell_signal():
         is_real_money=False,
     )
     db.add(portfolio)
+    db.flush()
+
+    db.add(
+        PriceSnapshot(
+            asset_id=asset.id,
+            source="tcmb-today-xml",
+            buy_price=Decimal("32.00"),
+            sell_price=Decimal("32.00"),
+            mid_price=Decimal("32.00"),
+            currency="TRY",
+            spread_absolute=Decimal("0.0"),
+            spread_percent=Decimal("0.0"),
+            observed_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+    )
     db.flush()
 
     # 2. Seed open position of 15 XAG
@@ -242,15 +272,12 @@ async def test_auto_trading_sell_signal():
         # Check PaperTrade record created
         trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_sell")).scalar_one_or_none()
         assert trade is not None
-        assert trade.price == Decimal("34.90")  # snapshot.sell_price
-        assert trade.fees == Decimal("0.05")
+        assert trade.price == Decimal("1.090625")  # snapshot.sell_price / 32
+        assert trade.fees == Decimal("0.001562")
         assert trade.quantity == Decimal("15.00")
 
         # Verify portfolio cash balance updated (100 + net_amount)
-        # gross = 15 * 34.90 = 523.50
-        # net = 523.50 - 0.05 = 523.45
-        # cash_balance = 100 + 523.45 = 623.45
-        assert portfolio.cash_balance == Decimal("623.45")
+        assert portfolio.cash_balance == Decimal("116.357813")
 
         # Verify telegram message was sent
         mock_bot_instance.send_message.assert_called_once()

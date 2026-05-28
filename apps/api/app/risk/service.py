@@ -765,14 +765,19 @@ def _global_price_window_summary(db: Session, *, asset_id: int, since: datetime,
 
 def _realized_loss_since(db: Session, *, portfolio_id: int, asset_id: int, since: datetime) -> Decimal:
     trades = db.execute(
-        select(PaperTrade)
+        select(
+            PaperTrade.quantity,
+            PaperTrade.net_amount,
+            PaperTrade.action,
+            PaperTrade.created_at,
+        )
         .where(
             PaperTrade.portfolio_id == portfolio_id,
             PaperTrade.asset_id == asset_id,
             PaperTrade.action.in_(("paper_buy", "paper_sell")),
         )
         .order_by(PaperTrade.created_at.asc(), PaperTrade.id.asc())
-    ).scalars()
+    ).all()
 
     buy_quantity = Decimal("0")
     buy_net_amount = Decimal("0")
