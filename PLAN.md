@@ -1,71 +1,58 @@
-# Implementation Plan: DeepSeek-Based Hermes Agent & Advanced News Sentiment Analysis (REVISED v4)
+# Implementation Plan: SilverPilot Derin Kod Denetimi ve Zafiyet Analizi (Audit & Hardening)
 
-Bu revize edilmiş plan, SilverPilot sistemine küresel ve yerel düzeyde **sadece kurumsal, profesyonel ve prestijli** ekonomi/finans kaynaklarından gelen verileri tarayan, spekülasyon ve alaka filtreleri uygulayan, ağırlıklı bir konsensüs skoru üreten ve bu skoru otomatik veto mekanizmasına ("Yüce Hakem") aktaran DeepSeek tabanlı **Hermes Agent** yapısının entegrasyonunu hedefler.
-
-Kullanıcı yönlendirmesi ve saptamaları doğrultusunda, **tüm bireysel yatırımcı yorumları, forumlar, investing.com tartışmaları ve crowd-sourced (halk tabanlı) spekülatif kaynaklar mimariden ve plandan TAMAMEN ÇIKARILMIŞTIR.** Sistemin profesyonel yapısına uygun olarak, sadece dünya çapında ve Türkiye'de saygınlığı tartışmasız olan, verileri stabil RSS veya API kanallarından sorunsuz alınabilen **kurumsal referans kaynakları** entegre edilecektir.
-
----
-
-## 🔍 Nihai Kurumsal & Profesyonel Haber Kaynakları
-Veri toplama skili (Python Ingestion Skill) tarafından taranacak ve IP engeli vb. sorunlar yaratmayan, dünya çapında/yerel düzeyde saygın kaynaklar şunlardır:
-
-### 1. Küresel Kurumsal Referanslar (Global Institutional Sources)
-- **Kitco Metals (kitco.com) [Küresel Kıymetli Madenler Otoritesi]:** Dünya kıymetli madenler piyasasının haber teknik analiz merkezidir. Profesyonel analist makaleleri ve gümüş haberleri RSS beslemesiyle çekilir.
-- **Bloomberg & Reuters (Yahoo Finance API/RSS kanalları üzerinden):** Küresel emtia fiyatlamaları, merkez bankası politikaları ve makroekonomik kararlar için mutlak kurumsal referanstır.
-- **LBMA (London Bullion Market Association) & Silver Institute:** Gümüş arz-talep dengesi ve kurumsal fiyatlama verileri için resmi referans raporları.
-
-### 2. Türkiye Yerel Kurumsal Referanslar (Turkish Corporate Sources)
-- **Bloomberg HT (bloomberght.com) [Türkiye Ekonomi Referansı]:** Türkiye'deki en prestijli, resmi ve profesyonel ekonomi haberciliği platformudur. Sadece makro analizler ve resmi veriler çekilir (hiçbir bireysel yorum içermez).
-- **GCM Yatırım (Günlük Gümüş Raporları) [Yerel Kurumsal Analiz]:** Profesyonel araştırma departmanı tarafından hazırlanan günlük resmi teknik ve temel gümüş analiz bültenleri (spekülasyondan arınmış kurumsal veri).
+Bu plan, yapay zeka desteğiyle geliştirilmiş SilverPilot platformunun tüm kritik modüllerini, veri yollarını, veritabanı transaction güvenlik katmanlarını ve finansal risk yönetim mekanizmalarını parça parça taramak, AI kaynaklı mantıksal hataları ve mimari açıkları tespit edip gidermek amacıyla hazırlanmış **Derin Kod Denetimi ve Sıkılaştırma (Audit & Hardening)** yol haritasıdır.
 
 ---
 
 ## 🛡️ Risk ve Bağlam Analizi
-- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Duyarlılık tabanlı veto kuralları ve risk limitleri), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Veri bütünlüğü ve yeni haber metadata şemaları).
-- **Etkilenen Dosyalar/Bileşenler:**
-  - `.env` ve `.env.example` [MODIFY] -> `HERMES_VETO_THRESHOLD` ve kaynak bazlı ağırlık katsayılarının (`WEIGHT_GLOBAL_CORP=0.6` [Bloomberg/Reuters/Kitco], `WEIGHT_LOCAL_CORP=0.4` [Bloomberg HT/GCM]) eklenmesi.
-  - `apps/api/app/collectors/public_sources.py` [MODIFY] -> Sadece bu kurumsal kaynakların RSS/API beslemelerini toplayan ve veritabanına kaydeden Python toplayıcıları.
-  - `apps/api/app/agents/hermes.py` [NEW] -> Tek bir LLM çağrısıyla (DeepSeek v4-pro) kurumsal haber paketlerini analiz eden ve ağırlıklı sentiment skorunu hesaplayan Hermes Agent motoru.
-  - `apps/api/app/services/strategy.py` [MODIFY] -> `StrategyRunner.apply_agent_filters` metodunun `.env` üzerinden okunan veto eşiğine göre güncellenmesi.
+- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Finansal limitler ve risk geçitleri), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md) (Veri şemaları ve entegrasyon sözleşmeleri).
+- **Hedef Tehdit Vektörleri:**
+  1. **SQLAlchemy Oturum Sızıntıları:** Kapatılmayan session'lar, transaction havuzunun şişmesi ve `DetachedInstanceError` hataları.
+  2. **Finansal Risk Geçidi Açıkları:** Stale data (bayat fiyat verisi) kullanımı, bakiye doğrulama bypass açıkları, hatalı gerçekleşen stop-loss tetikleyicileri.
+  3. **Yarış Durumları (Race Conditions):** Eşzamanlı isteklerde (özellikle toplayıcılar ve trade emirleri çalışırken) oluşabilecek veri kilitlenmeleri.
+  4. **Hata Yakalama Gaps (Exception Swallowing):** Hataların sessizce yutulması nedeniyle sistemin çöktüğü halde çalışıyor görünmesi.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi
 
-- `[x]` **Faz 1: Python Tabanlı Kurumsal Haber Toplama Skili (Ajan: data-engineer)**
-  - `[x]` Gümüş için Yahoo Finance RSS (`SI=F`), Kitco Metals RSS, Bloomberg HT Ekonomi RSS ve GCM Yatırım bülten toplayıcılarını yazmak.
-  - `[x]` Python seviyesinde **Ön Filtreleme & Temizleme:**
-    - RSS'ten gelen haberler arasından sadece gümüş ("silver", "gümüş", "xag") ve kritik makro olayları ("fed rate", "faiz", "enflasyon", "inflation") içeren girdileri kabul etmek.
-    - LLM'e sadece bu temizlenmiş ve doğrudan hedefe odaklı kurumsal haber/analiz başlıklarını ve özetlerini sunmak (böylece gereksiz token tüketimi sıfırlanır).
-  - *DoD (Tamamlanma Tanımı):* `pytest tests/test_collectors.py` ile kurumsal toplayıcıların Türkiye ve küresel kaynaklardan verileri hatasız çekmesi, filtrelemesi ve veritabanına kaydetmesi.
+- `[x]` **Faz 1: Altyapı, Veri Tabanı ve Oturum Güvenliği (Bölge 1)**
+  - **Denetlenecek Alanlar:** `apps/api/app/core/`, `apps/api/app/models/`, `apps/api/app/schemas/`
+  - [x] **DB Session Lifecycle Audit:** Veritabanı oturumlarının (session) FastAPI dependency injection yapısında (`get_db`) düzgün kapatıldığını doğrulamak.
+  - [x] **Transaction Leak Checks:** Kod tabanında `db.commit()` veya `db.rollback()` işlemlerinin asenkron/senkron döngülerde açık bağlantı (connection leak) bırakıp bırakmadığını denetlemek.
+  - [x] **Pydantic Validation Gaps:** Pydantic şemalarında (`schemas/`) eksik tip doğrulamaları ve runtime çökmelerine neden olabilecek zayıf veri tiplerini tespit etmek.
+  - *Ajanlar:* `backend-architect`, `debugger-agent`
+  - *DoD (Tamamlanma Tanımı):* Mevcut yerel testlerin sıfır hata ile geçmesi ve SQLAlchemy bağlantı havuzu (connection pool) sızıntı testinin başarıyla tamamlanması.
 
-- `[x]` **Faz 2: DeepSeek-Hermes Agent Tasarımı & Kurumsal Analiz Motoru (Ajan: backend-architect)**
-  - `[x]` `apps/api/app/agents/hermes.py` dosyasını oluşturmak. Bu modülde DeepSeek LLM (`deepseek-v4-pro` veya `deepseek-r1`) kullanılarak derlenmiş kurumsal paketler analiz edilecektir.
-  - `[x]` LLM, her haber girdisi için şu analizleri yapacaktır:
-    - **Sentiment:** BULLISH (+1), BEARISH (-1), NEUTRAL (0).
-    - **Relevance (0.0 - 1.0):** Gümüş piyasası ile doğrudan alaka düzeyi.
-    - **Speculation (0.0 - 1.0):** clickbait, sansasyonellik veya kanıtsız iddia puanı.
-  - `[x]` Ağırlıklı nihai sentiment skoru formülünü kodlamak:
-    $$\text{Duyarlılık Skoru} = \text{Sentiment}_{küresel\_kurumsal} \times W_{glob\_corp} + \text{Sentiment}_{yerel\_kurumsal} \times W_{local\_corp}$$
-    *(Not: Her bileşen kendi içinde Spekülasyon ve Alaka filtreleriyle ağırlıklandırılacaktır.)*
-  - `[x]` Skoru `AgentMemoryEvent` tablosuna `hermes-agent` adıyla kaydetmek.
-  - *DoD:* Hermes Agent'ın tek tek haberleri analiz ederek ağırlıklı skoru başarıyla hesaplaması.
+- `[ ]` **Faz 2: Veri Toplama, Entegrasyonlar ve LLM Katmanı (Bölge 2)**
+  - **Denetlenecek Alanlar:** `apps/api/app/collectors/`, `apps/api/app/llm/`
+  - [ ] **Collector Robustness Audit:** Harici servislerden (TCMB, Yahoo, Kuveyt vb.) veri çeken toplayıcıların ağ kesintilerinde, hatalı JSON/XML yanıtlarında veya timeout durumlarında çökmeden hata loglaması ve kaldığı yerden devam etmesi (graceful degradation).
+  - [ ] **Duplicate Data Prevention:** Mükerrer fiyat kayıtlarının veritabanına yazılmasını önleyen unique index ve constraint yapılarının doğrulanması.
+  - [ ] **LLM Gateway Exception Handling:** DeepSeek API kesintilerinde veya bütçe aşımlarında (`DEEPSEEK_DAILY_BUDGET_USD`) sistemin çökmeden nötr kararlarla yoluna devam edebilme mekanizmasının denetimi.
+  - *Ajanlar:* `data-engineer`, `security-auditor`
+  - *DoD:* Ağ kesinti taklit edilen (mocked network failures) kolektör testlerinin başarıyla geçmesi.
 
-- `[x]` **Faz 3: Yüce Hakem Veto Entegrasyonu & .env Konfigürasyonu (Ajan: backend-architect)**
-  - `[x]` `.env` ve `.env.example` dosyalarına `HERMES_VETO_THRESHOLD` (Varsayılan: `-0.45`) parametresini eklemek.
-  - `[x]` `apps/api/app/services/strategy.py` içindeki `StrategyRunner.apply_agent_filters` metodunu güncellemek. Statik veto yerine, veritabanındaki son `hermes-agent` skorunu okup bu değer `HERMES_VETO_THRESHOLD` değerinden küçükse `BUY` sinyalini veto edip `HOLD` yapmak.
-  - `[x]` Sistem denetim ajanı olan `apps/api/app/agents/auditor.py` içerisindeki agent listesine `hermes-agent`'ı dahil etmek.
-  - *DoD:* Strateji motorunun .env üzerinden okunan eşik değerine göre veto filtresini başarıyla uygulaması.
+- `[ ]` **Faz 3: Karar Algoritmaları, Paper Trading ve Risk Motoru (Bölge 3)**
+  - **Denetlenecek Alanlar:** `apps/api/app/services/`, `apps/api/app/paper_trading/`, `apps/api/app/risk/`
+  - [ ] **Pre-Trade Risk Engine Deep Dive:** Risk motorundaki bayat veri kontrolünün (`evaluate_paper_trade_risk`) milisaniyelik gecikmeleri veya geciken zaman dilimlerini (timezones) doğru yakaladığından emin olunması.
+  - [ ] **Balance and Equity Guard:** Yetersiz bakiye durumlarında paper trade alımlarının kesinlikle engellenmesi, negatif nakit veya negatif varlık bakiyesi oluşma ihtimallerinin bertaraf edilmesi.
+  - [ ] **Stop-Loss and Slippage Accuracy:** Stop-loss hesaplamalarının ve komisyon oranlarının (fees, taxes) gerçeğe uygun şekilde uygulandığının ve slipaj (fiyat kayması) durumlarının simüle edilme doğruluğunun denetimi.
+  - [ ] **Strategy Engine Boundary Checks:** `StrategyRunner` içerisindeki indikatör eşik değerlerinin (RSI sınırları vb.) sınır durumlarında (edge-cases) hatalı karar vermediğinin doğrulanması.
+  - *Ajanlar:* `backend-architect`, `data-engineer`, `debugger-agent`
+  - *DoD:* Özel olarak hazırlanmış uç sınır durum (edge-case / boundary) paper-trade simülasyon testlerinin yazılması ve başarıyla geçmesi.
 
-- `[x]` **Faz 4: Kalite Kontrol & Simülasyon Testleri (Ajan: quality-engineer)**
-  - `[x]` Hermes Agent için mock kurumsal haber paketleri ile pytest test senaryoları yazmak.
-  - `[x]` Ağırlıklı formülün ve filtreleme mantığının matematiksel olarak doğru çalıştığını doğrulamak.
-  - *DoD:* `pytest tests/test_hermes_agent.py` test süitinin %100 başarıyla tamamlanması.
+- `[ ]` **Faz 4: Dış Arayüzler, Ajanlar ve Telegram Entegrasyonu (Bölge 4)**
+  - **Denetlenecek Alanlar:** `apps/api/app/api/`, `apps/api/app/agents/` (auditor, news, hermes), Telegram Bot
+  - [ ] **FastAPI Router Authorization & OWASP:** API uç noktalarında yetkisiz erişim kontrolleri (Zero-Trust denetimi) ve SQL injection / parametre manipülasyonu açıklarının taranması.
+  - [ ] **Agent Memory Persistence Audits:** `auditor-agent`, `news-agent` ve `hermes-agent` bellek durumlarının (`AgentMemoryEvent`) veritabanında doğru indexlendiğinin ve sorguların şişmeye neden olmadığının doğrulanması.
+  - [ ] **Telegram Webhook/Polling Connection Stability:** Ağ kopmalarında veya Telegram API sınırlamalarında (rate-limiting) bildirimlerin yutulmaması için kuyruklama mekanizmasının ve hata toleransının denetlenmesi.
+  - *Ajanlar:* `security-auditor`, `quality-engineer`
+  - *DoD:* API ve Ajan uç noktaları için OWASP güvenlik taramalarının yeşil çıkması.
 
 ---
 
 ## ❓ Açık Sorular
 
 > [!IMPORTANT]
-> 1. **Küresel / Yerel Ağırlık Dağılımı:** Varsayılan katsayıları `Küresel Kurumsal Haberler (Bloomberg/Reuters/Kitco) = %60` (`WEIGHT_GLOBAL_CORP`) ve `Yerel Kurumsal Haberler (Bloomberg HT/GCM) = %40` (`WEIGHT_LOCAL_CORP`) olarak belirledim. Bu dağılım sizin için uygun mudur?
-> 2. **Varsayılan Veto Eşiği (-0.45):** Eşik değeri `.env` parametresi üzerinden dinamik olacaktır. Başlangıç eşiği olarak `-0.45` değerini onaylıyor musunuz?
+> 1. **Model Tercihi:** Bu derin denetim ve hata ayıklama operasyonu yüksek muhakeme gerektirdiğinden, kritik inceleme adımlarında **Gemini 3.5 Pro** modeli ile çalışmayı öneriyoruz. Bu model geçiş protokolünü onaylıyor musunuz?
+> 2. **Faz-Faz İlerleme:** Denetim sırasında tespit edeceğimiz açıkları anında düzelterek mi ilerleyelim, yoksa her fazın sonunda toplu bir bulgu raporu sunup onayınızı aldıktan sonra mı düzeltmeleri uygulayalım? *(Önerimiz: Tespit edilen zafiyetlerin anında düzeltilip test edilerek faza dahil edilmesidir.)*

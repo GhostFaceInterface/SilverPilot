@@ -139,6 +139,7 @@ class DeepSeekGateway:
                 db.add(trace)
                 db.commit()
             except Exception as db_err:
+                db.rollback()
                 logger.error(f"Failed to log LLM call trace to database: {db_err}")
 
         if status == "FAILED":
@@ -274,6 +275,7 @@ class DeepSeekGateway:
                 db.add(trace)
                 db.commit()
             except Exception as db_err:
+                db.rollback()
                 logger.error(f"Failed to log LLM call trace in generate_structured_completion: {db_err}")
 
 
@@ -345,6 +347,7 @@ def trace_llm(agent_name: str, model_name: str):
                     db.add(trace)
                     db.commit()
                 except Exception as db_err:
+                    db.rollback()
                     logger.error(f"trace_llm decorator failed to save trace: {db_err}")
 
         return async_wrapper

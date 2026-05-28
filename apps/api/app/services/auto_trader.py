@@ -186,7 +186,12 @@ async def run_auto_trading(db: Session = None):
         return
 
     if db is not None:
-        await _run_auto_trading_impl(db, settings)
+        try:
+            await _run_auto_trading_impl(db, settings)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Auto trading loop encountered a fatal exception on shared session: {e}", exc_info=True)
+            raise e
     else:
         from app.core.db import SessionLocal
 
@@ -194,6 +199,7 @@ async def run_auto_trading(db: Session = None):
         try:
             await _run_auto_trading_impl(db_session, settings)
         except Exception as e:
+            db_session.rollback()
             logger.error(f"Auto trading loop encountered a fatal exception: {e}", exc_info=True)
         finally:
             db_session.close()
