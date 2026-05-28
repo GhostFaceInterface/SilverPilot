@@ -41,11 +41,11 @@ Bu plan, yapay zeka desteğiyle geliştirilmiş SilverPilot platformunun tüm kr
   - *Ajanlar:* `backend-architect`, `data-engineer`, `debugger-agent`
   - *DoD:* Özel olarak hazırlanmış uç sınır durum (edge-case / boundary) paper-trade simülasyon testlerinin yazılması ve başarıyla geçmesi.
 
-- `[ ]` **Faz 4: Dış Arayüzler, Ajanlar ve Telegram Entegrasyonu (Bölge 4)**
+- `[x]` **Faz 4: Dış Arayüzler, Ajanlar ve Telegram Entegrasyonu (Bölge 4)**
   - **Denetlenecek Alanlar:** `apps/api/app/api/`, `apps/api/app/agents/` (auditor, news, hermes), Telegram Bot
-  - [ ] **FastAPI Router Authorization & OWASP:** API uç noktalarında yetkisiz erişim kontrolleri (Zero-Trust denetimi) ve SQL injection / parametre manipülasyonu açıklarının taranması.
-  - [ ] **Agent Memory Persistence Audits:** `auditor-agent`, `news-agent` ve `hermes-agent` bellek durumlarının (`AgentMemoryEvent`) veritabanında doğru indexlendiğinin ve sorguların şişmeye neden olmadığının doğrulanması.
-  - [ ] **Telegram Webhook/Polling Connection Stability:** Ağ kopmalarında veya Telegram API sınırlamalarında (rate-limiting) bildirimlerin yutulmaması için kuyruklama mekanizmasının ve hata toleransının denetlenmesi.
+  - [x] **FastAPI Router Authorization & OWASP:** API uç noktalarında yetkisiz erişim kontrolleri (Zero-Trust denetimi) ve SQL injection / parametre manipülasyonu açıklarının taranması.
+  - [x] **Agent Memory Persistence Audits:** `auditor-agent`, `news-agent` ve `hermes-agent` bellek durumlarının (`AgentMemoryEvent`) veritabanında doğru indexlendiğinin ve sorguların şişmeye neden olmadığının doğrulanması.
+  - [x] **Telegram Webhook/Polling Connection Stability:** Ağ kopmalarında veya Telegram API sınırlamalarında (rate-limiting) bildirimlerin yutulmaması için kuyruklama mekanizmasının ve hata toleransının denetlenmesi.
   - *Ajanlar:* `security-auditor`, `quality-engineer`
   - *DoD:* API ve Ajan uç noktaları için OWASP güvenlik taramalarının yeşil çıkması.
 

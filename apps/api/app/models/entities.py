@@ -352,3 +352,11 @@ class HistoricalAgentCache(Base):
 Index(
     "ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at
 )
+
+Index(
+    "ix_agent_memory_events_composite",
+    AgentMemoryEvent.agent_name,
+    AgentMemoryEvent.event_type,
+    AgentMemoryEvent.key,
+    AgentMemoryEvent.created_at,
+)

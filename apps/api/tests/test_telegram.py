@@ -499,3 +499,43 @@ def test_telegram_canli_report_html_safety_merciless():
 
     db.close()
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.mark.anyio
+async def test_send_telegram_notification_retry():
+    settings = Settings(telegram_bot_token="test_token_123", telegram_chat_id=987654)
+    trade_data = {
+        "action": "paper_buy",
+        "price": 32.50,
+        "quantity": 10.0,
+        "net_amount": 325.0,
+        "fees": 0.05,
+        "cash_balance": 2175.0,
+        "xag_balance": 10.0,
+        "strategy_name": "rsi",
+        "indicators": {},
+        "risk_decision": {
+            "decision": "allow",
+            "reason_code": "RISK_CHECK_PASSED",
+            "risk_level": "low",
+        }
+    }
+
+    from telegram.error import RetryAfter
+
+    mock_bot_instance = MagicMock()
+    mock_bot_instance.send_message = AsyncMock()
+    mock_bot_instance.send_message.side_effect = [RetryAfter(retry_after=1.0), AsyncMock()]
+
+    with (
+        patch("app.services.auto_trader.Bot") as MockBot,
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        MockBot.return_value = mock_bot_instance
+
+        from app.services.auto_trader import send_telegram_notification
+        await send_telegram_notification(trade_data, settings)
+
+        assert mock_bot_instance.send_message.call_count == 2
+        mock_sleep.assert_called_once_with(2.0)  # e.retry_after (1.0) + 1.0
+

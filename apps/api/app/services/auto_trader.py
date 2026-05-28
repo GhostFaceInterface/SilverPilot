@@ -164,17 +164,43 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         msg += f"💵 <b>Nakit Bakiyesi:</b> {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
         msg += f"{indicator_details}{risk_info}"
 
-    try:
-        bot = Bot(token=settings.telegram_bot_token)
-        await bot.send_message(
-            chat_id=settings.telegram_chat_id,
-            text=msg,
-            parse_mode="HTML",
-            disable_notification=disable_notification,
-        )
-        logger.info(f"Telegram notification sent successfully (silent={disable_notification}).")
-    except Exception as e:
-        logger.error(f"Failed to send Telegram notification: {e}", exc_info=True)
+    import asyncio
+    from telegram.error import RetryAfter, TelegramError
+
+    attempts = 3
+    backoff = 2.0
+    for attempt in range(1, attempts + 1):
+        try:
+            bot = Bot(token=settings.telegram_bot_token)
+            await bot.send_message(
+                chat_id=settings.telegram_chat_id,
+                text=msg,
+                parse_mode="HTML",
+                disable_notification=disable_notification,
+            )
+            logger.info(f"Telegram notification sent successfully (silent={disable_notification}, attempt {attempt}/{attempts}).")
+            return
+        except RetryAfter as e:
+            wait_time = e.retry_after + 1.0
+            if attempt == attempts:
+                logger.error(f"Failed to send Telegram notification due to rate limits after {attempts} attempts.", exc_info=True)
+                break
+            logger.warning(f"Telegram rate limit hit (RetryAfter). Waiting {wait_time}s before retry (attempt {attempt}/{attempts})...")
+            await asyncio.sleep(wait_time)
+        except TelegramError as e:
+            if attempt == attempts:
+                logger.error(f"Failed to send Telegram notification after {attempts} attempts: {e}", exc_info=True)
+                break
+            wait_time = backoff * attempt
+            logger.warning(f"Telegram API error: {e}. Retrying in {wait_time}s (attempt {attempt}/{attempts})...")
+            await asyncio.sleep(wait_time)
+        except Exception as e:
+            if attempt == attempts:
+                logger.error(f"Unexpected connection error sending Telegram notification after {attempts} attempts: {e}", exc_info=True)
+                break
+            wait_time = backoff * attempt
+            logger.warning(f"Connection error sending Telegram notification: {e}. Retrying in {wait_time}s (attempt {attempt}/{attempts})...")
+            await asyncio.sleep(wait_time)
 
 
 async def run_auto_trading(db: Session = None):
