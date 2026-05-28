@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from telegram import Bot
 
 from app.core.config import get_settings
-from app.models import Asset, PriceSnapshot, TechnicalIndicator, Portfolio, Signal
+from app.models import Asset, PriceSnapshot, TechnicalIndicator, Portfolio, Signal, AgentMemoryEvent
 from app.services.strategy import StrategyRunner
 from app.paper_trading.service import execute_paper_trade, calculate_position
 from app.schemas.paper_trading import PaperTradeRequest
@@ -294,6 +294,31 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     logger.info(f"Strategy evaluation: action={action}, reason={reason_code}")
 
+    # Retrieve news_sentiment: fetch latest 'news-agent' or 'hermes-agent' event from db, defaulting to 'NEUTRAL'
+    news_sentiment = "NEUTRAL"
+    latest_event = db.execute(
+        select(AgentMemoryEvent)
+        .where(AgentMemoryEvent.agent_name.in_(["news-agent", "hermes-agent"]))
+        .order_by(AgentMemoryEvent.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if latest_event and latest_event.value_json:
+        news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
+
+    risk_decision_val = "APPROVED"
+
+    filtered_action, filter_reason = StrategyRunner.apply_agent_filters(
+        action=action,
+        news_sentiment=news_sentiment,
+        risk_decision=risk_decision_val,
+        db=db,
+    )
+    if filtered_action != action:
+        logger.info(f"Agent filters vetoed action {action} -> {filtered_action} (reason: {filter_reason})")
+        action = filtered_action
+        reason_code = filter_reason
+
     # 5. Create Signal record
     details = {
         "strategy_name": settings.strategy_name,
@@ -344,12 +369,16 @@ async def _run_auto_trading_impl(db: Session, settings):
                 fees=Decimal("0.05"),
                 taxes=Decimal("0"),
             )
+            original_commit = db.commit
+            db.commit = db.flush
             try:
-                trade, snapshot = execute_paper_trade(db, request)
+                with db.begin_nested():
+                    trade, snapshot = execute_paper_trade(db, request)
                 logger.info(f"Auto trader BUY executed: trade_id={trade.id}, status={trade.action}")
             except Exception:
-                db.rollback()
                 logger.exception("Failed to execute auto trader BUY")
+            finally:
+                db.commit = original_commit
         else:
             logger.warning(f"Insufficient cash balance to buy: {cash}")
 
@@ -364,12 +393,16 @@ async def _run_auto_trading_impl(db: Session, settings):
             fees=Decimal("0.05"),
             taxes=Decimal("0"),
         )
+        original_commit = db.commit
+        db.commit = db.flush
         try:
-            trade, snapshot = execute_paper_trade(db, request)
+            with db.begin_nested():
+                trade, snapshot = execute_paper_trade(db, request)
             logger.info(f"Auto trader SELL executed: trade_id={trade.id}, status={trade.action}")
         except Exception:
-            db.rollback()
             logger.exception("Failed to execute auto trader SELL")
+        finally:
+            db.commit = original_commit
 
     # 7. Extract notification data prior to commit/close to avoid DetachedInstanceError
     notification_data = {

@@ -27,6 +27,8 @@ JOB_CHOICES = (
     "tcmb-usd-try",
     "fed-rss",
     "fred-macro",
+    "hermes-agent",
+    "news-agent",
 )
 
 
@@ -34,6 +36,44 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
     selected_job = job or args.job
     db = SessionLocal()
     try:
+        if selected_job == "hermes-agent":
+            import asyncio
+            from app.agents.hermes import run_hermes_sentiment_analysis
+            try:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    asyncio.ensure_future(run_hermes_sentiment_analysis(db))
+                else:
+                    asyncio.run(run_hermes_sentiment_analysis(db))
+            except Exception as e:
+                print(f"Error running hermes-agent: {e}", flush=True)
+                return False
+            print(f"job={selected_job} status=success", flush=True)
+            return True
+
+        if selected_job == "news-agent":
+            import asyncio
+            from app.agents.news import run_news_sentiment_analysis
+            try:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    asyncio.ensure_future(run_news_sentiment_analysis(db))
+                else:
+                    asyncio.run(run_news_sentiment_analysis(db))
+            except Exception as e:
+                print(f"Error running news-agent: {e}", flush=True)
+                return False
+            print(f"job={selected_job} status=success", flush=True)
+            return True
+
         if selected_job == "kuveyt-silver":
             run, raw_inserted, snapshot = collect_kuveyt_public_silver(db)
             snapshot_id = snapshot.id if snapshot is not None else None

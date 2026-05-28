@@ -756,7 +756,18 @@ def latest_collector_run(db: Session) -> CollectorRun | None:
 
 
 def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
-    runs = db.execute(select(CollectorRun).order_by(CollectorRun.started_at.desc())).scalars()
+    from sqlalchemy import func
+    subq = (
+        select(func.max(CollectorRun.id))
+        .group_by(CollectorRun.collector_name, CollectorRun.source)
+        .subquery()
+    )
+    runs = db.execute(
+        select(CollectorRun)
+        .where(CollectorRun.id.in_(select(subq)))
+        .order_by(CollectorRun.started_at.desc())
+    ).scalars().all()
+
     latest_by_collector: dict[tuple[str, str], CollectorRun] = {}
     for run in runs:
         key = (run.collector_name, run.source)

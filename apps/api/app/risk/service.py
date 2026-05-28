@@ -770,6 +770,7 @@ def _realized_loss_since(db: Session, *, portfolio_id: int, asset_id: int, since
             PaperTrade.portfolio_id == portfolio_id,
             PaperTrade.asset_id == asset_id,
             PaperTrade.action.in_(("paper_buy", "paper_sell")),
+            PaperTrade.created_at >= since,
         )
         .order_by(PaperTrade.created_at.asc(), PaperTrade.id.asc())
     ).scalars()
