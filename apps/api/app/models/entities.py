@@ -18,6 +18,13 @@ class Asset(Base):
 
     price_snapshots: Mapped[list["PriceSnapshot"]] = relationship(back_populates="asset")
 
+    @property
+    def currency(self) -> str:
+        if self.symbol == "XAG_GRAM":
+            return "TRY"
+        return "USD"
+
+
 
 class PriceSnapshot(Base):
     __tablename__ = "price_snapshots"

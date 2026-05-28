@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_DOWN
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot
+from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, RawFxRate
 from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
 
@@ -51,7 +51,21 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
 
     current_position = calculate_position(db, portfolio.id, asset.id)
 
-    quantity, price, gross_amount, net_amount = _calculate_trade_amounts(request)
+    # FX conversion logic when asset.currency != portfolio.base_currency
+    fx_rate = Decimal("1.0")
+    if asset.currency != portfolio.base_currency:
+        fx_rate = _get_fx_rate(db, portfolio.base_currency, asset.currency)
+        
+        # Convert prices and expenses to base currency (USD) so downstream steps
+        # (risk checks, database record, snapshot mark price) see USD normalized values.
+        request.buy_price = _money(request.buy_price / fx_rate)
+        request.sell_price = _money(request.sell_price / fx_rate)
+        request.fees = _money(request.fees / fx_rate)
+        request.taxes = _money(request.taxes / fx_rate)
+        if request.expected_exit_price is not None:
+            request.expected_exit_price = _money(request.expected_exit_price / fx_rate)
+
+    quantity, price, gross_amount, net_amount = _calculate_trade_amounts(request, fx_rate=Decimal("1.0"))
     risk_decision = evaluate_paper_trade_risk(
         db,
         request=request,
@@ -156,26 +170,84 @@ def calculate_position(db: Session, portfolio_id: int, asset_id: int) -> Positio
     )
 
 
-def _calculate_trade_amounts(request: PaperTradeRequest) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+def _get_fx_rate(db: Session, base_currency: str, quote_currency: str) -> Decimal:
+    if base_currency == quote_currency:
+        return Decimal("1.0")
+
+    # We query the PriceSnapshot table first
+    stmt = (
+        select(PriceSnapshot)
+        .where(
+            PriceSnapshot.source.in_([
+                "tcmb-today-xml",
+                "tcmb",
+                "yahoo-usd-try",
+                "yahoo_usd_try",
+                "yahoo-usdtry",
+                "usdtry=x",
+                "usdtry",
+            ])
+        )
+        .order_by(PriceSnapshot.observed_at.desc())
+        .limit(1)
+    )
+    fx_snap = db.execute(stmt).scalar_one_or_none()
+    if fx_snap is not None:
+        fx_rate = fx_snap.mid_price
+    else:
+        # Fallback to RawFxRate
+        stmt_raw = (
+            select(RawFxRate)
+            .where(
+                RawFxRate.base_currency == base_currency,
+                RawFxRate.quote_currency == quote_currency,
+            )
+            .order_by(RawFxRate.observed_at.desc())
+            .limit(1)
+        )
+        raw_fx = db.execute(stmt_raw).scalar_one_or_none()
+        if raw_fx is not None:
+            fx_rate = raw_fx.rate
+        else:
+            raise PaperTradingError(
+                f"No valid FX conversion rate found for {base_currency}/{quote_currency} in the database."
+            )
+
+    if fx_rate <= 0:
+        raise PaperTradingError(f"Invalid FX rate found: {fx_rate}")
+
+    return fx_rate
+
+
+def _calculate_trade_amounts(
+    request: PaperTradeRequest,
+    fx_rate: Decimal = Decimal("1.0"),
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    # Normalizes prices, fees, and taxes to portfolio's base currency using fx_rate if applicable
+    buy_price = _money(request.buy_price / fx_rate)
+    sell_price = _money(request.sell_price / fx_rate)
+    fees = _money(request.fees / fx_rate)
+    taxes = _money(request.taxes / fx_rate)
+
     if request.action == "paper_buy":
-        price = request.buy_price
+        price = buy_price
         quantity = request.quantity
         if quantity is None:
-            spendable = request.cash_amount - request.fees - request.taxes
+            spendable = request.cash_amount - fees - taxes
             if spendable <= 0:
                 raise PaperTradingError("cash_amount must exceed fees and taxes")
             quantity = (spendable / price).quantize(MONEY_QUANT, rounding=ROUND_DOWN)
         if quantity <= 0:
             raise PaperTradingError("paper_buy quantity must be greater than zero")
         gross_amount = _money(quantity * price)
-        net_amount = _money(gross_amount + request.fees + request.taxes)
+        net_amount = _money(gross_amount + fees + taxes)
         return quantity, price, gross_amount, net_amount
 
     if request.action == "paper_sell":
         quantity = request.quantity or Decimal("0")
-        price = request.sell_price
+        price = sell_price
         gross_amount = _money(quantity * price)
-        net_amount = _money(gross_amount - request.fees - request.taxes)
+        net_amount = _money(gross_amount - fees - taxes)
         if net_amount < 0:
             raise PaperTradingError("fees and taxes cannot exceed paper sell proceeds")
         return quantity, price, gross_amount, net_amount

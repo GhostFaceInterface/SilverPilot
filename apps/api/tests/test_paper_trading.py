@@ -31,6 +31,35 @@ def make_client():
             is_real_money=False,
         )
     )
+    db.flush()
+
+    fx_run = CollectorRun(
+        collector_name="tcmb_usd_try",
+        source="tcmb-today-xml",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        details_json={},
+    )
+    db.add(fx_run)
+    db.flush()
+
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="tcmb-today-xml",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("32.000000"),
+            observed_at=datetime.now(UTC),
+            fetched_at=datetime.now(UTC),
+            raw_payload_hash="default-fx-hash",
+            parser_version="tcmb-today-xml-v1",
+            payload_json={},
+        )
+    )
     db.commit()
     db.close()
 
@@ -242,7 +271,7 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
         },
     )
     assert buy_response.status_code == 200
-    assert buy_response.json()["snapshot"]["cash_balance"] == "2398.800000"
+    assert buy_response.json()["snapshot"]["cash_balance"] == "2496.837500"
     assert buy_response.json()["risk_decision"]["decision"] == "allow"
     assert buy_response.json()["risk_decision"]["reason_code"] == "RISK_CHECK_PASSED"
     assert buy_response.json()["trade"]["risk_decision_id"] == buy_response.json()["risk_decision"]["id"]
@@ -261,7 +290,7 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     assert sell_response.status_code == 200
 
     snapshot = sell_response.json()["snapshot"]
-    assert snapshot["cash_balance"] == "2495.800000"
+    assert snapshot["cash_balance"] == "2499.868750"
     assert Decimal(snapshot["portfolio_value"]) < Decimal("2500.000000")
     assert Decimal(snapshot["realized_pnl"]) < Decimal("0")
 
@@ -274,7 +303,7 @@ def test_buy_cannot_make_cash_balance_negative():
         "/paper-trades",
         json={
             "action": "paper_buy",
-            "quantity": "300",
+            "quantity": "9000",
             "buy_price": "10.00",
             "sell_price": "9.80",
             "fees": "0",
@@ -749,3 +778,96 @@ def test_daily_loss_limit_with_old_buy_trade():
     assert response.json()["trade"]["action"] == "blocked"
     assert response.json()["risk_decision"]["decision"] == "blocked"
     assert response.json()["risk_decision"]["reason_code"] == "DAILY_LOSS_LIMIT_REACHED"
+
+
+def test_cross_currency_fx_rate_conversion():
+    client, testing_session = make_client()
+
+    # 1. First, try a buy when NO FX rate is present in database.
+    db = testing_session()
+    try:
+        db.query(RawFxRate).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    response_no_fx = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "10",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "1.00",
+            "taxes": "0",
+        },
+    )
+    assert response_no_fx.status_code == 400
+    assert "No valid FX conversion rate found" in response_no_fx.json()["detail"]
+
+    # 2. Now seed a PriceSnapshot for FX rate
+    db = testing_session()
+    try:
+        seed_execution_critical_data(testing_session)
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        from app.models import PriceSnapshot
+        db.add(
+            PriceSnapshot(
+                asset_id=asset.id,
+                source="tcmb-today-xml",
+                buy_price=Decimal("32.000000"),
+                sell_price=Decimal("32.000000"),
+                mid_price=Decimal("32.000000"),
+                currency="TRY",
+                spread_absolute=Decimal("0.0"),
+                spread_percent=Decimal("0.0"),
+                observed_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # 3. Perform a paper buy trade
+    buy_response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "10",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "1.00",
+            "taxes": "0",
+        },
+    )
+    assert buy_response.status_code == 200
+    
+    snapshot = buy_response.json()["snapshot"]
+    assert snapshot["cash_balance"] == "2496.837500"
+    assert buy_response.json()["trade"]["price"] == "0.312500"
+    assert buy_response.json()["trade"]["fees"] == "0.031250"
+    assert buy_response.json()["trade"]["taxes"] == "0.006250"
+    assert buy_response.json()["trade"]["gross_amount"] == "3.125000"
+    assert buy_response.json()["trade"]["net_amount"] == "3.162500"
+
+    # 4. Perform a paper sell trade
+    sell_response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_sell",
+            "quantity": "10",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "1.00",
+            "taxes": "0",
+        },
+    )
+    assert sell_response.status_code == 200
+
+    sell_snapshot = sell_response.json()["snapshot"]
+    assert sell_snapshot["cash_balance"] == "2499.868750"
+    assert sell_response.json()["trade"]["price"] == "0.306250"
+    assert sell_response.json()["trade"]["fees"] == "0.031250"
+    assert sell_response.json()["trade"]["taxes"] == "0.000000"
+    assert sell_response.json()["trade"]["gross_amount"] == "3.062500"
+    assert sell_response.json()["trade"]["net_amount"] == "3.031250"
