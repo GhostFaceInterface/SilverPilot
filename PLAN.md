@@ -24,11 +24,11 @@ Bu plan, yapay zeka desteğiyle geliştirilmiş SilverPilot platformunun tüm kr
   - *Ajanlar:* `backend-architect`, `debugger-agent`
   - *DoD (Tamamlanma Tanımı):* Mevcut yerel testlerin sıfır hata ile geçmesi ve SQLAlchemy bağlantı havuzu (connection pool) sızıntı testinin başarıyla tamamlanması.
 
-- `[ ]` **Faz 2: Veri Toplama, Entegrasyonlar ve LLM Katmanı (Bölge 2)**
+- `[x]` **Faz 2: Veri Toplama, Entegrasyonlar ve LLM Katmanı (Bölge 2)**
   - **Denetlenecek Alanlar:** `apps/api/app/collectors/`, `apps/api/app/llm/`
-  - [ ] **Collector Robustness Audit:** Harici servislerden (TCMB, Yahoo, Kuveyt vb.) veri çeken toplayıcıların ağ kesintilerinde, hatalı JSON/XML yanıtlarında veya timeout durumlarında çökmeden hata loglaması ve kaldığı yerden devam etmesi (graceful degradation).
-  - [ ] **Duplicate Data Prevention:** Mükerrer fiyat kayıtlarının veritabanına yazılmasını önleyen unique index ve constraint yapılarının doğrulanması.
-  - [ ] **LLM Gateway Exception Handling:** DeepSeek API kesintilerinde veya bütçe aşımlarında (`DEEPSEEK_DAILY_BUDGET_USD`) sistemin çökmeden nötr kararlarla yoluna devam edebilme mekanizmasının denetimi.
+  - [x] **Collector Robustness Audit:** Harici servislerden (TCMB, Yahoo, Kuveyt vb.) veri çeken toplayıcıların ağ kesintilerinde, hatalı JSON/XML yanıtlarında veya timeout durumlarında çökmeden hata loglaması ve kaldığı yerden devam etmesi (graceful degradation).
+  - [x] **Duplicate Data Prevention:** Mükerrer fiyat kayıtlarının veritabanına yazılmasını önleyen unique index ve constraint yapılarının doğrulanması.
+  - [x] **LLM Gateway Exception Handling:** DeepSeek API kesintilerinde veya bütçe aşımlarında (`DEEPSEEK_DAILY_BUDGET_USD`) sistemin çökmeden nötr kararlarla yoluna devam edebilme mekanizmasının denetimi.
   - *Ajanlar:* `data-engineer`, `security-auditor`
   - *DoD:* Ağ kesinti taklit edilen (mocked network failures) kolektör testlerinin başarıyla geçmesi.
 

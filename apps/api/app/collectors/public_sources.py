@@ -1258,17 +1258,22 @@ def _fetch_with_retry(
                     details={"attempts": attempt, "timeout_seconds": timeout_seconds},
                 ) from exc
         except httpx.HTTPStatusError as exc:
-            raise GlobalSilverProviderError(
-                "HTTP_ERROR",
-                f"{source} returned HTTP {exc.response.status_code}",
-                details={"status_code": exc.response.status_code, "attempts": attempt},
-            ) from exc
+            is_transient = exc.response.status_code in (408, 429) or (500 <= exc.response.status_code < 600)
+            if attempt >= attempts or not is_transient:
+                raise GlobalSilverProviderError(
+                    "HTTP_ERROR",
+                    f"{source} returned HTTP {exc.response.status_code}",
+                    details={"status_code": exc.response.status_code, "attempts": attempt},
+                ) from exc
+            logger.warning(f"Transient HTTPStatusError {exc.response.status_code} on attempt {attempt}/{attempts} for {source}: {exc}. Retrying...")
         except httpx.RequestError as exc:
-            raise GlobalSilverProviderError(
-                "HTTP_ERROR",
-                f"{source} request failed",
-                details={"attempts": attempt},
-            ) from exc
+            if attempt >= attempts:
+                raise GlobalSilverProviderError(
+                    "HTTP_ERROR",
+                    f"{source} request failed",
+                    details={"attempts": attempt},
+                ) from exc
+            logger.warning(f"RequestError on attempt {attempt}/{attempts} for {source}: {exc}. Retrying...")
         if attempt < attempts and backoff_seconds > 0:
             time.sleep(backoff_seconds * attempt)
     reason = "TIMEOUT" if last_timeout else "HTTP_ERROR"
@@ -1315,17 +1320,22 @@ def _fetch_with_retry_yahoo(
                     details={"attempts": attempt, "timeout_seconds": timeout_seconds},
                 ) from exc
         except httpx.HTTPStatusError as exc:
-            raise GlobalSilverProviderError(
-                "HTTP_ERROR",
-                f"{source} returned HTTP {exc.response.status_code}",
-                details={"status_code": exc.response.status_code, "attempts": attempt},
-            ) from exc
+            is_transient = exc.response.status_code in (408, 429) or (500 <= exc.response.status_code < 600)
+            if attempt >= attempts or not is_transient:
+                raise GlobalSilverProviderError(
+                    "HTTP_ERROR",
+                    f"{source} returned HTTP {exc.response.status_code}",
+                    details={"status_code": exc.response.status_code, "attempts": attempt},
+                ) from exc
+            logger.warning(f"Transient HTTPStatusError {exc.response.status_code} on attempt {attempt}/{attempts} for {source}: {exc}. Retrying...")
         except httpx.RequestError as exc:
-            raise GlobalSilverProviderError(
-                "HTTP_ERROR",
-                f"{source} request failed",
-                details={"attempts": attempt},
-            ) from exc
+            if attempt >= attempts:
+                raise GlobalSilverProviderError(
+                    "HTTP_ERROR",
+                    f"{source} request failed",
+                    details={"attempts": attempt},
+                ) from exc
+            logger.warning(f"RequestError on attempt {attempt}/{attempts} for {source}: {exc}. Retrying...")
         if attempt < attempts and backoff_seconds > 0:
             time.sleep(backoff_seconds * attempt)
     reason = "TIMEOUT" if last_timeout else "HTTP_ERROR"
@@ -1614,31 +1624,60 @@ def collect_kuveyt_usd_try(
     from app.collectors.service import ingest_fx_rate, start_collector_run, finish_collector_run
 
     try:
-        page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
-        core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)
-        core_js = _fetch_text(core_script_url, settings=settings, client=client)
-        finance_portal_url = parse_kuveyt_finance_portal_endpoint(core_js, base_url=settings.kuveyt_silver_url)
-        raw_payload = _fetch_text(finance_portal_url, settings=settings, client=client)
-    except CollectorError as exc:
-        run = start_collector_run(
-            db,
-            collector_name="kuveyt_usd_try",
-            source="kuveyt-public-silver-page",
-            records_seen=0,
-            details_json={},
-        )
-        finish_collector_run(db, run, status="failed", error_message=str(exc))
-        db.commit()
-        return run, False
+        try:
+            page_html = _fetch_text(settings.kuveyt_silver_url, settings=settings, client=client)
+            core_script_url = discover_kuveyt_core_script_url(page_html, base_url=settings.kuveyt_silver_url)
+            core_js = _fetch_text(core_script_url, settings=settings, client=client)
+            finance_portal_url = parse_kuveyt_finance_portal_endpoint(core_js, base_url=settings.kuveyt_silver_url)
+            raw_payload = _fetch_text(finance_portal_url, settings=settings, client=client)
+        except Exception as exc:
+            run = start_collector_run(
+                db,
+                collector_name="kuveyt_usd_try",
+                source="kuveyt-public-silver-page",
+                records_seen=0,
+                details_json={},
+            )
+            finish_collector_run(db, run, status="failed", error_message=str(exc))
+            db.commit()
+            return run, False
 
-    fetched_at = _to_utc(datetime.now(UTC))
-    try:
-        parsed = parse_kuveyt_finance_portal_json_usd_try(
-            raw_payload,
+        fetched_at = _to_utc(datetime.now(UTC))
+        try:
+            parsed = parse_kuveyt_finance_portal_json_usd_try(
+                raw_payload,
+                fetched_at=fetched_at,
+                finance_portal_url=finance_portal_url,
+            )
+        except Exception as exc:
+            run = start_collector_run(
+                db,
+                collector_name="kuveyt_usd_try",
+                source="kuveyt-public-silver-page",
+                records_seen=0,
+                details_json={},
+            )
+            finish_collector_run(db, run, status="failed", error_message=str(exc))
+            db.commit()
+            return run, False
+
+        run, inserted = ingest_fx_rate(
+            db,
+            source="kuveyt-public-silver-page",
+            base_currency=parsed.base_currency,
+            quote_currency=parsed.quote_currency,
+            rate=parsed.rate,
+            observed_at=parsed.observed_at,
             fetched_at=fetched_at,
-            finance_portal_url=finance_portal_url,
+            payload=parsed.payload,
+            raw_payload=raw_payload,
+            parser_version=KUVEYT_PARSER_VERSION,
+            collector_name="kuveyt_usd_try",
         )
-    except CollectorError as exc:
+        return run, inserted
+    except Exception as exc:
+        db.rollback()
+        logger.exception(f"Fatal error in collect_kuveyt_usd_try: {exc}")
         run = start_collector_run(
             db,
             collector_name="kuveyt_usd_try",
@@ -1649,18 +1688,3 @@ def collect_kuveyt_usd_try(
         finish_collector_run(db, run, status="failed", error_message=str(exc))
         db.commit()
         return run, False
-
-    run, inserted = ingest_fx_rate(
-        db,
-        source="kuveyt-public-silver-page",
-        base_currency=parsed.base_currency,
-        quote_currency=parsed.quote_currency,
-        rate=parsed.rate,
-        observed_at=parsed.observed_at,
-        fetched_at=fetched_at,
-        payload=parsed.payload,
-        raw_payload=raw_payload,
-        parser_version=KUVEYT_PARSER_VERSION,
-        collector_name="kuveyt_usd_try",
-    )
-    return run, inserted
