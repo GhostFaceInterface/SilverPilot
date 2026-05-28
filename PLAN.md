@@ -32,12 +32,12 @@ Bu plan, yapay zeka desteğiyle geliştirilmiş SilverPilot platformunun tüm kr
   - *Ajanlar:* `data-engineer`, `security-auditor`
   - *DoD:* Ağ kesinti taklit edilen (mocked network failures) kolektör testlerinin başarıyla geçmesi.
 
-- `[ ]` **Faz 3: Karar Algoritmaları, Paper Trading ve Risk Motoru (Bölge 3)**
+- `[x]` **Faz 3: Karar Algoritmaları, Paper Trading ve Risk Motoru (Bölge 3)**
   - **Denetlenecek Alanlar:** `apps/api/app/services/`, `apps/api/app/paper_trading/`, `apps/api/app/risk/`
-  - [ ] **Pre-Trade Risk Engine Deep Dive:** Risk motorundaki bayat veri kontrolünün (`evaluate_paper_trade_risk`) milisaniyelik gecikmeleri veya geciken zaman dilimlerini (timezones) doğru yakaladığından emin olunması.
-  - [ ] **Balance and Equity Guard:** Yetersiz bakiye durumlarında paper trade alımlarının kesinlikle engellenmesi, negatif nakit veya negatif varlık bakiyesi oluşma ihtimallerinin bertaraf edilmesi.
-  - [ ] **Stop-Loss and Slippage Accuracy:** Stop-loss hesaplamalarının ve komisyon oranlarının (fees, taxes) gerçeğe uygun şekilde uygulandığının ve slipaj (fiyat kayması) durumlarının simüle edilme doğruluğunun denetimi.
-  - [ ] **Strategy Engine Boundary Checks:** `StrategyRunner` içerisindeki indikatör eşik değerlerinin (RSI sınırları vb.) sınır durumlarında (edge-cases) hatalı karar vermediğinin doğrulanması.
+  - [x] **Pre-Trade Risk Engine Deep Dive:** Risk motorundaki bayat veri kontrolünün (`evaluate_paper_trade_risk`) milisaniyelik gecikmeleri veya geciken zaman dilimlerini (timezones) doğru yakaladığından emin olunması.
+  - [x] **Balance and Equity Guard:** Yetersiz bakiye durumlarında paper trade alımlarının kesinlikle engellenmesi, negatif nakit veya negatif varlık bakiyesi oluşma ihtimallerinin bertaraf edilmesi.
+  - [x] **Stop-Loss and Slippage Accuracy:** Stop-loss hesaplamalarının ve komisyon oranlarının (fees, taxes) gerçeğe uygun şekilde uygulandığının ve slipaj (fiyat kayması) durumlarının simüle edilme doğruluğunun denetimi.
+  - [x] **Strategy Engine Boundary Checks:** `StrategyRunner` içerisindeki indikatör eşik değerlerinin (RSI sınırları vb.) sınır durumlarında (edge-cases) hatalı karar vermediğinin doğrulanması.
   - *Ajanlar:* `backend-architect`, `data-engineer`, `debugger-agent`
   - *DoD:* Özel olarak hazırlanmış uç sınır durum (edge-case / boundary) paper-trade simülasyon testlerinin yazılması ve başarıyla geçmesi.
 

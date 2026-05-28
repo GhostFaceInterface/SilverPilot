@@ -675,3 +675,78 @@ def test_risk_status_returns_recent_decision_counts():
     assert response.json()["recent_decisions"] == [
         {"decision": "allow", "reason_code": "RISK_CHECK_PASSED", "count": 1}
     ]
+
+
+def test_daily_loss_limit_with_old_buy_trade():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+
+    db = testing_session()
+    try:
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        decision = RiskDecision(
+            decision="allow",
+            reason_code="RISK_CHECK_PASSED",
+            risk_level="low",
+            confidence=Decimal("1.0000"),
+            details_json={},
+        )
+        db.add(decision)
+        db.flush()
+
+        now = datetime.now(UTC)
+        buy_created_at = now - timedelta(hours=25)
+        sell_created_at = now - timedelta(hours=1)
+
+        db.add_all(
+            [
+                PaperTrade(
+                    portfolio_id=portfolio.id,
+                    asset_id=asset.id,
+                    action="paper_buy",
+                    quantity=Decimal("10.000000"),
+                    price=Decimal("10.000000"),
+                    gross_amount=Decimal("100.000000"),
+                    fees=Decimal("0.000000"),
+                    taxes=Decimal("0.000000"),
+                    net_amount=Decimal("100.000000"),
+                    risk_decision_id=decision.id,
+                    created_at=buy_created_at,
+                ),
+                PaperTrade(
+                    portfolio_id=portfolio.id,
+                    asset_id=asset.id,
+                    action="paper_sell",
+                    quantity=Decimal("10.000000"),
+                    price=Decimal("6.500000"),
+                    gross_amount=Decimal("65.000000"),
+                    fees=Decimal("0.000000"),
+                    taxes=Decimal("0.000000"),
+                    net_amount=Decimal("65.000000"),
+                    risk_decision_id=decision.id,
+                    created_at=sell_created_at,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["decision"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "DAILY_LOSS_LIMIT_REACHED"
+
