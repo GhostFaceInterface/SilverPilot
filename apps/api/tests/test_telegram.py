@@ -518,7 +518,7 @@ async def test_send_telegram_notification_retry():
             "decision": "allow",
             "reason_code": "RISK_CHECK_PASSED",
             "risk_level": "low",
-        }
+        },
     }
 
     from telegram.error import RetryAfter
@@ -534,8 +534,8 @@ async def test_send_telegram_notification_retry():
         MockBot.return_value = mock_bot_instance
 
         from app.services.auto_trader import send_telegram_notification
+
         await send_telegram_notification(trade_data, settings)
 
         assert mock_bot_instance.send_message.call_count == 2
         mock_sleep.assert_called_once_with(2.0)  # e.retry_after (1.0) + 1.0
-

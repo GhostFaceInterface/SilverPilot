@@ -39,6 +39,7 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
         if selected_job == "hermes-agent":
             import asyncio
             from app.agents.hermes import run_hermes_sentiment_analysis
+
             try:
                 try:
                     loop = asyncio.get_running_loop()
@@ -58,6 +59,7 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
         if selected_job == "news-agent":
             import asyncio
             from app.agents.news import run_news_sentiment_analysis
+
             try:
                 try:
                     loop = asyncio.get_running_loop()

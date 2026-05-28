@@ -749,4 +749,3 @@ def test_daily_loss_limit_with_old_buy_trade():
     assert response.json()["trade"]["action"] == "blocked"
     assert response.json()["risk_decision"]["decision"] == "blocked"
     assert response.json()["risk_decision"]["reason_code"] == "DAILY_LOSS_LIMIT_REACHED"
-

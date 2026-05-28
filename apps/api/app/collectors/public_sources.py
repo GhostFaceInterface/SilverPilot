@@ -1265,7 +1265,9 @@ def _fetch_with_retry(
                     f"{source} returned HTTP {exc.response.status_code}",
                     details={"status_code": exc.response.status_code, "attempts": attempt},
                 ) from exc
-            logger.warning(f"Transient HTTPStatusError {exc.response.status_code} on attempt {attempt}/{attempts} for {source}: {exc}. Retrying...")
+            logger.warning(
+                f"Transient HTTPStatusError {exc.response.status_code} on attempt {attempt}/{attempts} for {source}: {exc}. Retrying..."
+            )
         except httpx.RequestError as exc:
             if attempt >= attempts:
                 raise GlobalSilverProviderError(
@@ -1327,7 +1329,9 @@ def _fetch_with_retry_yahoo(
                     f"{source} returned HTTP {exc.response.status_code}",
                     details={"status_code": exc.response.status_code, "attempts": attempt},
                 ) from exc
-            logger.warning(f"Transient HTTPStatusError {exc.response.status_code} on attempt {attempt}/{attempts} for {source}: {exc}. Retrying...")
+            logger.warning(
+                f"Transient HTTPStatusError {exc.response.status_code} on attempt {attempt}/{attempts} for {source}: {exc}. Retrying..."
+            )
         except httpx.RequestError as exc:
             if attempt >= attempts:
                 raise GlobalSilverProviderError(
