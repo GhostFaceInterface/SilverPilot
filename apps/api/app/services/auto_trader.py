@@ -181,7 +181,9 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
             logger.info(f"Telegram notification sent successfully (silent={disable_notification}, attempt {attempt}/{attempts}).")
             return
         except RetryAfter as e:
-            wait_time = e.retry_after + 1.0
+            from datetime import timedelta
+            seconds = e.retry_after.total_seconds() if isinstance(e.retry_after, timedelta) else float(e.retry_after)
+            wait_time = seconds + 1.0
             if attempt == attempts:
                 logger.error(f"Failed to send Telegram notification due to rate limits after {attempts} attempts.", exc_info=True)
                 break

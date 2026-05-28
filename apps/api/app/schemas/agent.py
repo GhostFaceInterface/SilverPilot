@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LLMTraceCreate(BaseModel):
@@ -21,8 +21,7 @@ class LLMTraceResponse(LLMTraceCreate):
     id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AgentMemoryCreate(BaseModel):
@@ -36,8 +35,7 @@ class AgentMemoryResponse(AgentMemoryCreate):
     id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RiskCritiqueRequest(BaseModel):
@@ -52,8 +50,7 @@ class ReportResponse(BaseModel):
     payload_json: dict
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrchestrateRunRequest(BaseModel):

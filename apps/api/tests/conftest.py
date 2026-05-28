@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+os.environ.setdefault("PTB_TIMEDELTA", "1")
 
 import pytest
 from sqlalchemy import create_engine, event
