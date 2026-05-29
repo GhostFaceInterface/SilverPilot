@@ -811,6 +811,7 @@ def test_cross_currency_fx_rate_conversion():
         seed_execution_critical_data(testing_session)
         asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
         from app.models import PriceSnapshot
+
         db.add(
             PriceSnapshot(
                 asset_id=asset.id,
@@ -841,7 +842,7 @@ def test_cross_currency_fx_rate_conversion():
         },
     )
     assert buy_response.status_code == 200
-    
+
     snapshot = buy_response.json()["snapshot"]
     assert snapshot["cash_balance"] == "2496.837500"
     assert buy_response.json()["trade"]["price"] == "0.312500"

@@ -55,7 +55,7 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
     fx_rate = Decimal("1.0")
     if asset.currency != portfolio.base_currency:
         fx_rate = _get_fx_rate(db, portfolio.base_currency, asset.currency)
-        
+
         # Convert prices and expenses to base currency (USD) so downstream steps
         # (risk checks, database record, snapshot mark price) see USD normalized values.
         request.buy_price = _money(request.buy_price / fx_rate)
@@ -185,15 +185,17 @@ def _get_fx_rate(db: Session, base_currency: str, quote_currency: str) -> Decima
     stmt = (
         select(PriceSnapshot)
         .where(
-            PriceSnapshot.source.in_([
-                "tcmb-today-xml",
-                "tcmb",
-                "yahoo-usd-try",
-                "yahoo_usd_try",
-                "yahoo-usdtry",
-                "usdtry=x",
-                "usdtry",
-            ])
+            PriceSnapshot.source.in_(
+                [
+                    "tcmb-today-xml",
+                    "tcmb",
+                    "yahoo-usd-try",
+                    "yahoo_usd_try",
+                    "yahoo-usdtry",
+                    "usdtry=x",
+                    "usdtry",
+                ]
+            )
         )
         .order_by(PriceSnapshot.observed_at.desc())
         .limit(1)

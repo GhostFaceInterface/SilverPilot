@@ -25,7 +25,6 @@ class Asset(Base):
         return "USD"
 
 
-
 class PriceSnapshot(Base):
     __tablename__ = "price_snapshots"
 
