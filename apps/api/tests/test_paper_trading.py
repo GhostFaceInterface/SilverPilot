@@ -893,3 +893,96 @@ def test_concurrency_race_condition_under_locking():
         assert "FOR UPDATE" in compiled
     finally:
         db.close()
+
+
+def test_is_comex_market_closed():
+    from app.risk.service import is_comex_market_closed
+    from app.core.config import get_settings
+    from datetime import datetime, timezone
+
+    settings = get_settings()
+    original_env = settings.app_env
+    settings.app_env = "production"  # Temporarily override test flag
+
+    try:
+        # America/New_York (EST/EDT) time check:
+
+        # 1. Wednesday 12:00 EDT (UTC-4) -> Wednesday 16:00 UTC
+        wed_noon_utc = datetime(2026, 5, 27, 16, 0, tzinfo=timezone.utc)
+        assert is_comex_market_closed(wed_noon_utc) is False
+
+        # 2. Saturday 12:00 EDT -> Saturday 16:00 UTC
+        sat_noon_utc = datetime(2026, 5, 30, 16, 0, tzinfo=timezone.utc)
+        assert is_comex_market_closed(sat_noon_utc) is True
+
+        # 3. Friday 18:00 EDT (Market Closed) -> Friday 22:00 UTC
+        fri_late_utc = datetime(2026, 5, 29, 22, 0, tzinfo=timezone.utc)
+        assert is_comex_market_closed(fri_late_utc) is True
+
+        # 4. Sunday 12:00 EDT (Market Closed) -> Sunday 16:00 UTC
+        sun_noon_utc = datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc)
+        assert is_comex_market_closed(sun_noon_utc) is True
+
+        # 5. Sunday 19:00 EDT (Market Open) -> Sunday 23:00 UTC
+        sun_open_utc = datetime(2026, 5, 31, 23, 0, tzinfo=timezone.utc)
+        assert is_comex_market_closed(sun_open_utc) is False
+
+        # 6. Tuesday 17:30 EDT (Daily Maintenance Window) -> Tuesday 21:30 UTC
+        tue_maint_utc = datetime(2026, 5, 26, 21, 30, tzinfo=timezone.utc)
+        assert is_comex_market_closed(tue_maint_utc) is True
+    finally:
+        settings.app_env = original_env
+
+
+def test_stale_execution_critical_data_bypassed_when_market_closed():
+    from app.risk.service import evaluate_paper_trade_risk, TradeAmounts
+    from app.schemas.paper_trading import PaperTradeRequest
+    from app.core.config import get_settings
+    from datetime import datetime, timezone, timedelta
+
+    client, testing_session = make_client()
+    db = testing_session()
+    try:
+        # Seed stale data from 2 hours ago
+        seed_execution_critical_data(testing_session, observed_at=datetime.now(timezone.utc) - timedelta(hours=2))
+
+        # Temporarily mock to production so market closure checks are active
+        settings = get_settings()
+        original_env = settings.app_env
+        settings.app_env = "production"
+
+        # Saturday noon UTC (Market closed)
+        sat_now = datetime(2026, 5, 30, 16, 0, tzinfo=timezone.utc)
+
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        from app.paper_trading.service import calculate_position, _calculate_trade_amounts
+
+        req = PaperTradeRequest(
+            action="paper_buy",
+            quantity=Decimal("1"),
+            buy_price=Decimal("10.00"),
+            sell_price=Decimal("9.80"),
+            fees=Decimal("0"),
+            taxes=Decimal("0"),
+        )
+        pos = calculate_position(db, portfolio.id, asset.id)
+        qty, prc, gross, net = _calculate_trade_amounts(req, fx_rate=Decimal("1.0"))
+
+        try:
+            decision = evaluate_paper_trade_risk(
+                db,
+                request=req,
+                portfolio=portfolio,
+                asset=asset,
+                position=pos,
+                amounts=TradeAmounts(quantity=qty, price=prc, gross_amount=gross, net_amount=net),
+                now=sat_now,
+            )
+            # The stale check must be bypassed! Risk check should pass.
+            assert decision.decision == "allow"
+            assert decision.reason_code == "RISK_CHECK_PASSED"
+        finally:
+            settings.app_env = original_env
+    finally:
+        db.close()

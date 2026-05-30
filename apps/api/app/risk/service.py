@@ -17,6 +17,42 @@ PERCENT_QUANT = Decimal("0.000001")
 NEAR_LIMIT_USED_PERCENT = Decimal("80.000000")
 
 
+def is_comex_market_closed(dt: datetime) -> bool:
+    """
+    Checks if the COMEX precious metals market is closed.
+    COMEX trading hours: Sun 18:00 ET to Fri 17:00 ET.
+    Daily maintenance window: 17:00 to 18:00 ET.
+    """
+    settings = get_settings()
+    if settings.app_env == "test":
+        return False
+
+    from zoneinfo import ZoneInfo
+
+    et_tz = ZoneInfo("America/New_York")
+    et_dt = dt.astimezone(et_tz)
+    weekday = et_dt.weekday()  # 0 = Monday, ..., 4 = Friday, 5 = Saturday, 6 = Sunday
+    hour = et_dt.hour
+
+    # 1. Weekend closure
+    # Friday after 17:00 ET
+    if weekday == 4 and hour >= 17:
+        return True
+    # Saturday (all day)
+    if weekday == 5:
+        return True
+    # Sunday before 18:00 ET
+    if weekday == 6 and hour < 18:
+        return True
+
+    # 2. Daily maintenance window (17:00 - 18:00 ET)
+    # Mon-Thu daily maintenance
+    if weekday in {0, 1, 2, 3} and hour == 17:
+        return True
+
+    return False
+
+
 @dataclass(frozen=True)
 class TradeAmounts:
     quantity: Decimal
@@ -59,7 +95,10 @@ def evaluate_paper_trade_risk(
     asset: Asset,
     position: PositionLike,
     amounts: TradeAmounts,
+    now: datetime | None = None,
 ) -> RiskDecision:
+    if now is None:
+        now = datetime.now(UTC)
     settings = get_settings()
 
     if request.action == "hold":
@@ -83,7 +122,7 @@ def evaluate_paper_trade_risk(
     if spread_decision is not None:
         return spread_decision
 
-    data_decision = _execution_data_block(db, stale_after_minutes=settings.risk_data_stale_after_minutes)
+    data_decision = _execution_data_block(db, stale_after_minutes=settings.risk_data_stale_after_minutes, now=now)
     if data_decision is not None:
         return data_decision
 
@@ -373,10 +412,16 @@ def _spread_block(db: Session, *, request: PaperTradeRequest, max_spread_percent
     )
 
 
-def _execution_data_block(db: Session, *, stale_after_minutes: int) -> RiskDecision | None:
+def _execution_data_block(db: Session, *, stale_after_minutes: int, now: datetime | None = None) -> RiskDecision | None:
+    if now is None:
+        now = datetime.now(UTC)
     health = collector_health(db, stale_after_minutes=stale_after_minutes)
     execution_status = health["execution_critical_status"]
     if execution_status not in {"blocked", "stale"}:
+        return None
+
+    if execution_status == "stale" and is_comex_market_closed(now):
+        # Allow the trade to proceed since the stale state is due to market closure!
         return None
 
     execution_critical = health["execution_critical"]
