@@ -29,6 +29,7 @@ Always output a structured, step-by-step implementation plan divided into highly
 - **Definition of Done:** Machine-readable or manual verification command per phase.
 
 ## 6. Required Checks Before Acting
+- Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Read `.agent/memory/` files (specifically `project-conventions.md`, `project-history.md`, and `tech-decisions.md`) to understand current project state and phase limits.
 - Verify if any conflicting roadmap milestones exist in `docs/ROADMAP.md`.
 

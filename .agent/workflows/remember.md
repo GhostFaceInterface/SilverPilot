@@ -52,7 +52,32 @@ When `/remember` is triggered:
 4. **Announce and Sync**
    - Report the update in the chat output using the standard format so that other agents in cascaded/nested contexts instantly align.
 
+### 5. Memory Ownership & Authority (Hafıza Sahipliği ve Yetki Sınırları)
+
+Bellek kirliliğini ve uyuşmazlıkları önlemek amacıyla, her bir bellek dosyasının güncellenmesinden sorumlu birincil "Ajan Sahipleri" tanımlanmıştır. Bir ajan sadece kendi yetki alanındaki veya kendisine atanmış olan görev tipine bağlı hafızaları güncellemelidir:
+
+- **Feedback History (`feedback-history.md`):**
+  - **Sorumlu Ajanlar:** `debugger-agent` (çözülen hatalar sonrası), `security-auditor` (tespit edilen açıklar sonrası) ve `quality-engineer` (test/CI sorunları sonrası).
+  - **Yetki Sınırı:** Sadece geçmiş hataları, regresyon engellerini ve yasakları yazar.
+
+- **Technical Stack Decisions (`tech-decisions.md`):**
+  - **Sorumlu Ajanlar:** `backend-architect` (FastAPI/DB kararları), `data-engineer` (kollektör, matematik ve veri kısıtları) ve `archaeologist-agent` (Strangler Fig veya göç kararları).
+  - **Yetki Sınırı:** Kütüphane, API limitleri, veritabanı şema kararlarını yazar.
+
+- **Project Conventions (`project-conventions.md`):**
+  - **Sorumlu Ajan:** `project-planner` (proje anayasası ve TIER 0 kurallarının düzenlenmesi).
+  - **Yetki Sınırı:** Proje amaçları, kuralları ve dizin standartlarını yazar.
+
+- **Project History (`project-history.md`):**
+  - **Sorumlu Ajan:** `project-planner` ve orkestrasyon hattını başarıyla tamamlayan aktif süpervizör.
+  - **Yetki Sınırı:** Tamamlanan fazlar, kilometre taşları ve VPS dağıtım loglarını yazar.
+
+- **User Preferences (`user-preferences.md`):**
+  - **Sorumlu Ajan:** `project-planner` (kullanıcı stil, renk veya terminal tercihlerini beyan ettiğinde).
+  - **Yetki Sınırı:** Kullanıcı alışkanlıkları ve stil kısıtlarını yazar.
+
 ---
+
 
 ## Output Format
 

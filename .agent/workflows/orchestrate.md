@@ -18,8 +18,11 @@ Defines the sequential multi-agent execution pipeline when a large, complex, or 
 - **Interactive Model Selection:** Proactively suggest model transitions (Flash vs Pro) to the user based on task complexity and agent requirements.
 - **Safety Gate (Mandatory):** Before any code is merged, executed, or reported as complete, the `quality-engineer` must write the tests AND the `safety-gatekeeper` must perform a paranoid pre-execution review. Code must be approved by the `safety-gatekeeper` before actual test suite execution and final completion.
 - **Auto Commit & Push (Mandatory):** If all code passes the static safety gate AND the active test suite executes successfully with zero errors/regressions, the agent **MUST** automatically commit and push the changes to avoid requiring manual git actions from the user.
+- **Infinite Loop Protection (Döngü Sınırı ve Güvenli Durma):** Kod yazımı, güvenlik kontrolü veya test çalıştırma aşamaları üst üste **3 kez başarısız olursa** orchestrator döngüyü sürdürmemelidir. Akışı durdurup `debugger-agent`'a geçiş yapmalı, 5 Neden analiziyle hata raporunu derlemeli ve kullanıcıya Socratic kapı üzerinden açıklama sorarak devretmelidir.
+- **Port ve Git Kısıtları Uyum Güvencesi:** Yazılan kodun VPS Port İzolasyonuna (veritabanı işlemleri sadece FastAPI HTTP uç noktaları üzerinden) uyduğundan emin olunmalıdır. Ayrıca, otomatik commit işlemi sırasında yerel `pre-commit` (Ruff format ve lint) kancasının tetikleneceği unutulmamalı; eğer commit ruff hatalarından dolayı reddedilirse bu durum yakalanıp otomatik düzeltilmelidir.
 
 ---
+
 
 ## 3. Recommended Patterns
 
@@ -39,8 +42,31 @@ graph TD
     I -->|Flash Model: Verifications & Run Tests| K{All Tests Pass?}
     K -->|No: Fail| C
     K -->|Yes: Pass| L[Auto Commit & Push]
-    L --> J[Final Orchestration Report]
+    L --> M[Memory Sync: /remember]
+    M --> J[Final Orchestration Report]
 ```
+
+### Orchestration Sequences by Task Type (Göreve Özel Orkestrasyon Sıraları)
+
+Görevin türüne göre orkestrasyon hattına dahil olacak ajanların sırası ve sorumluluk geçişleri değişiklik gösterir:
+
+#### 1. Yeni Özellik Geliştirme (Feature Development Pipeline)
+Amacı sisteme yeni bir kabiliyet veya modül eklemektir:
+`project-planner` (Plan & DoD) $\rightarrow$ `scout-agent` (Keşif) $\rightarrow$ `backend-architect` (Şema & API) veya `data-engineer` (Kollektör & Matematik) $\rightarrow$ `quality-engineer` (Test Tasarımı) $\rightarrow$ `safety-gatekeeper` (Statik Güvenlik & Doğrulama) $\rightarrow$ `quality-engineer` (Testlerin Çalıştırılması) $\rightarrow$ `/remember` (Hafıza Eşleme).
+
+#### 2. Hata Ayıklama (Bug Fix Pipeline)
+Amacı var olan bir hatayı veya testi izole edip kalıcı olarak çözmektir:
+`project-planner` (Plan) $\rightarrow$ **`debugger-agent` (5 Neden Analizi, Hata İzolasyonu & Reproduce)** $\rightarrow$ `backend-architect` veya `data-engineer` (Düzeltme Kodu) $\rightarrow$ `quality-engineer` (Regresyon Önleyici Testler) $\rightarrow$ `safety-gatekeeper` (Statik Güvenlik Onayı) $\rightarrow$ `quality-engineer` (Pytest Çalıştırma) $\rightarrow$ **`/remember` (feedback-history.md güncellemesi)**.
+
+#### 3. Kod Yenileme & Göç (Refactoring & Migration Pipeline)
+Amacı legacy kodları (Hermes göçü vb.) Strangler Fig ile bozmadan taşımaktır:
+`project-planner` (Plan) $\rightarrow$ **`archaeologist-agent` (Eski Kod Analizi, Chesterton Fence Denetimi & Strangler Fig Tasarımı)** $\rightarrow$ `backend-architect` (Yeni Modül & Temiz Arayüz) $\rightarrow$ `quality-engineer` (Karakterizasyon & Golden Master Testleri) $\rightarrow$ `safety-gatekeeper` (Bağlaşım [Coupling] ve Mimari Denetim) $\rightarrow$ `quality-engineer` (Test Çalıştırma) $\rightarrow$ `/remember` (tech-decisions.md güncellemesi).
+
+#### 4. Güvenlik Sıkılaştırması (Security Hardening Pipeline)
+Amacı OWASP 2025 açıklarını tespit etmek ve kapatmaktır:
+`project-planner` (Plan) $\rightarrow$ **`security-auditor` (Sızma/Zafiyet Analizi, Secrets denetimi & IDOR kontrolü)** $\rightarrow$ `backend-architect` (Güvenli Parametrik Sorgular & Auth Dependency) $\rightarrow$ `quality-engineer` (Negatif Test Senaryoları) $\rightarrow$ `safety-gatekeeper` (Zero-Trust API Sınır Denetimi) $\rightarrow$ `quality-engineer` (Test Çalıştırma) $\rightarrow$ `/remember` (feedback-history.md veya tech-decisions.md güncellemesi).
+
+---
 
 ### A. Local Subagent Delegation Policy
 Antigravity supports spawning specialized subagents via `define_subagent` and `invoke_subagent`. To optimize context limits and keep conversations high-signal:
@@ -91,6 +117,7 @@ To save user overhead and ensure a streamlined delivery cycle, git tasks are aut
 - [ ] Did the agent prompt the user to switch back to Gemini 3.5 Flash before running tests or writing documentation?
 - [ ] Have all pytest tests passed under the subagent's execution check?
 - [ ] **[Git Automation]** Are all successful changes committed via Conventional Commits and pushed automatically to the remote repository?
+- [ ] **[Memory Sync]** Has the `/remember` workflow been triggered to persist learning outcomes and completed milestones in the developer memory?
 
 ---
 
@@ -103,4 +130,5 @@ When a user requests a major feature like "Simulated portfolio risk warning when
 5. **Safety Gate (Pro):** Spawn `safety-gatekeeper-subagent` to statically inspect code and tests under paranoid scenarios. Issue the final `APPROVED` verdict.
 6. **Verify & Test (Flash):** Ask the user to switch back to Gemini 3.5 Flash. Spawn `quality-subagent` to run `pytest` and verify zero-regression.
 7. **Commit & Push (Flash):** Stage the changed code and test files (`git add ...`), commit with `feat: add volatility-based portfolio risk checks`, and immediately run `git push`.
-8. **Report (Flash):** Compile and deliver a concise orchestration summary.
+8. **Memory Sync (Flash):** Trigger the `/remember` workflow to save learnings and completed phase details in Geliştirme Belleği (`.agent/memory/`).
+9. **Report (Flash):** Compile and deliver a concise orchestration summary.

@@ -26,14 +26,13 @@ Görevin kapsamına göre AI asistanı ilgili uzman ajan kimliğine bürünmeli 
 | Sistematik hata ayıklama, 5 Neden analizi ve kök neden tespiti | `debugger-agent` | `.agent/agents/debugger-agent.md` |
 | OWASP 2025 güvenlik denetimleri, API güvenliği ve zero-trust | `security-auditor` | `.agent/agents/security-auditor.md` |
 | Eski kod refactoring ve "Strangler Fig" ile kod taşıma / yenileme | `archaeologist-agent` | `.agent/agents/archaeologist-agent.md` |
-| Streamlit arayüzleri, modern Python dashboard'ları ve UI/UX tasarımı | `frontend-architect` | `.agent/agents/frontend-architect.md` |
 | Test yazımı (pytest), Docker Compose ve CI/CD doğrulaması | `quality-engineer` | `.agent/agents/quality-engineer.md` |
 | Kodlar çalıştırılmadan önce derin statik analiz ve test gerçekçiliği denetimi | `safety-gatekeeper` | `.agent/agents/safety-gatekeeper.md` |
 
 ## 4. Tool Usage Rules (Araç Kullanım Kuralları)
 - **Keşfet:** Herhangi bir dosyayı düzenlemeden veya yeni dosya oluşturmadan önce mevcut repo yapısını (`list_dir`, `grep_search`) okuyun.
 - **Minimalizm:** Kesinlikle gereksiz, kullanılmayacak veya mükerrer (duplicate) dosya açmayın.
-- **Hedefli Okuma:** Büyük dosyaları tamamen okuyup bağlam limitlerini (context) doldurmak yerine, hedef satır aralıklarını (`view_file` ile start/end belirterek) inceleyin.
+- **RTK AI (Read Target Keylines / Rust Token Killer) (Zorunlu TIER 0):** Büyük dosyaları tamamen okuyup bağlam limitlerini (context) doldurmak yerine, münasip olan her anda hedef satır aralıklarını (`view_file` aracında `StartLine` ve `EndLine` belirterek) inceleyin. Token israfını durdurmak için bu kuralın uygulanması anayasal bir zorunluluktur.
 - **Etki Alanı Analizi:** Bir dosyayı değiştirmeden önce, o dosyanın hangi modülleri veya bağımlılıkları etkileyeceğini belirleyin.
 - **Değişiklik Beyanı:** Herhangi bir kod yazma veya dosya değiştirme işlemine başlamadan önce hangi dosyaların, hangi satır aralıklarının değişeceğini kullanıcıya bildirin.
 

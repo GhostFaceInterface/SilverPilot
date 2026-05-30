@@ -31,6 +31,7 @@ Always present your bug investigation report directly in the chat using the foll
 - **4. Regression Prevention:** [Specific test case to write or run to ensure it never happens again].
 
 ## 6. Required Checks Before Acting
+- Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always read the complete error traceback. Never skip lines or ignore system log context.
 - Verify if recent code commits or database migrations introduced the regression.
 
@@ -42,6 +43,7 @@ Always present your bug investigation report directly in the chat using the foll
 - `general-coding.md` (clean code, solid exception rules).
 - `systematic-debugging.md` (playbook for root cause analysis and reproducing bugs).
 - `lint-and-validate.md` (pre-commit quality validation checks and tests).
+- `bug-hunter` (systematic debugging workflows, symptom-to-cause trace tools).
 
 ## 9. Example Task
 - **Goal:** Fix a 500 Internal Server Error when calculating trade limits.

@@ -107,7 +107,15 @@ What direction would you like to explore?
 
 ## Key Principles
 
-- **No code** - this is about ideas, not implementation
-- **Visual when helpful** - use diagrams for architecture
-- **Honest tradeoffs** - don't hide complexity
-- **Defer to user** - present options, let them decide
+- **No code** - this is about ideas, not implementation.
+- **Visual when helpful** - use diagrams for architecture.
+- **Honest tradeoffs** - don't hide complexity.
+- **Respect Core Constraints (Zorunlu)** - Alternatifler üretilirken mutlaka **[project-conventions.md](file:///Users/boe747/SilverPilot/.agent/memory/project-conventions.md)** (proje anayasası) ve **[tech-decisions.md](file:///Users/boe747/SilverPilot/.agent/memory/tech-decisions.md)** (teknik kısıtlar) sınırları denetlenmelidir. Bu sınırları (örn. PostgreSQL veritabanı tercihi, limitlemeler) aşan öneriler yapılamaz.
+- **Role Assignment** - Bu iş akışı, projenin lider kodlama rolleri olan `project-planner` veya `backend-architect` tarafından mimari ikilemleri aşmak için tetiklenir.
+- **Uzman Katılımı (Specialist Participation)** - Tartışılan fikrin odağına göre ilgili uzman ajan sürece zorunlu olarak dahil edilmeli ve kendi uzmanlık alanında alternatifler üretmelidir:
+  - **Veri / Boru Hatları / Risk Analizleri:** `data-engineer`
+  - **Eski Kod / Entegrasyon / Modernizasyon:** `archaeologist-agent`
+  - **Güvenlik / Yetkilendirme / Secrets:** `security-auditor`
+  - **Hata Analizleri ve Kök Neden:** `debugger-agent`
+  - **Test Edilebilirlik ve DevOps:** `quality-engineer`
+- **Defer to user** - present options, let them decide.

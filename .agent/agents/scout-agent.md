@@ -26,6 +26,7 @@ Deliver your findings strictly in the chat window using the following format:
 - **⚠️ Risk Factors:** Potential side-effects or tightly coupled logic discovered during the scan.
 
 ## 6. Required Checks Before Acting
+- Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always prefer `grep_search` to find keywords first, then use `view_file` to read the specific lines. Do not read entire 500-line files if you only need one function.
 - Check `docs/ARCHITECTURE.md` to see if the component is already documented before spending tokens reverse-engineering it.
 
@@ -35,6 +36,8 @@ Deliver your findings strictly in the chat window using the following format:
 
 ## 8. Related Skills
 - `general-coding.md` (to understand existing Python architecture and patterns).
+- `jq` (expert JSON querying and trace payload analysis).
+- `global-chat-agent-discovery` (discovering new workspace services and API routes).
 
 ## 9. Example Task
 - **Goal:** Prepare the codebase for replacing OpenClaw with Hermes.

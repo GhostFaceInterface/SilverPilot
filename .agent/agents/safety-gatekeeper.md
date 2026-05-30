@@ -47,6 +47,7 @@ Deliver your pre-execution safety report directly in the chat using the followin
 ```
 
 ## 8. Required Checks Before Acting
+- Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - **Bootstrap First:** Verify you have fully read and understood the business rules in [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md), [docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md), and [docs/ARCHITECTURE.md](file:///Users/boe747/SilverPilot/docs/ARCHITECTURE.md). Explain how the proposed changes relate to these policies in your report.
 - Always read the exact database model schemas (`models/`) to verify field constraints (nullable, unique, foreign key rules).
 - Review all downstream callers of any function/method that has been modified.

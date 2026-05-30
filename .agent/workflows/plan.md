@@ -15,8 +15,9 @@ Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hat
 
 ## 2. Rules & Steps (Adım Adım Planlama Süreci)
 
-### Adım 1: Keşif ve Etki Alanı Tespiti (Scouting)
+### Adım 1: Keşif ve Bellek Kontrolü (Scouting & Memory Verification)
 - **Mükerrer Keşif Yasağı (No Redundant Scouting):** Eğer kullanıcı görev açıklamasında veya konuşma bağlamında gerekli keşif sonuçlarını, dosya yollarını ve arka planı zaten sağlamışsa, bağımsız bir keşif ajanı (`scout-agent`) tetiklemeyin ve sıfırdan arama yapmayın. Doğrudan kullanıcının sağladığı bağlam üzerinden planlama adımına geçin. Güçlü modelle (Pro) çalışırken gereksiz arama yapmak büyük oranda token israfına yol açar.
+- **Kalıcı Bellek Kontrolü (Zorunlu):** Planı hazırlamadan önce mutlaka Geliştirme Belleği (`.agent/memory/`) altındaki **[project-conventions.md](file:///Users/boe747/SilverPilot/.agent/memory/project-conventions.md)** (proje anayasası), **[tech-decisions.md](file:///Users/boe747/SilverPilot/.agent/memory/tech-decisions.md)** (aktif mimari kararlar) ve **[feedback-history.md](file:///Users/boe747/SilverPilot/.agent/memory/feedback-history.md)** (geçmiş hatalar ve yasaklar) dökümanlarını inceleyin. Planı bu kısıtlara ve kurallara tam uyumlu şekilde hazırlayın.
 - Eğer kullanıcının vermediği, doğrulanması zorunlu kritik bir dosya varsa, sadece o dosyayı hedefleyerek okuyun (Adım 3'teki RTK kurallarına uyun).
 - Değişiklik yapılacak alanların finansal risk boyutunu ölçmek için **[docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md)** ve veri bütünlüğü için **[docs/DATA_CONTRACTS.md](file:///Users/boe747/SilverPilot/docs/DATA_CONTRACTS.md)** dosyalarını inceleyin.
 
@@ -42,12 +43,14 @@ Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hat
 
 ---
 
-## 3. Token Economy & RTK (Read Target Keylines) Protocol (Token Tasarrufu ve RTK Protokolü)
-Güçlü modellerin (Gemini 3.5 Pro) planlama veya analiz aşamalarında gereksiz yere yüksek miktarda token tüketmesini önlemek için şu kurallara uymak zorunludur:
+## 3. Token Economy & RTK AI (Read Target Keylines / Rust Token Killer) Protocol
 
-- **RTK (Read Target Keylines - Hedef Satır Aralığı Okuma):** Bir kod dosyasını kontrol etmeniz veya incelemeniz gerektiğinde, dosyayı asla tamamen okumayın (`view_file` aracında satır sınırı belirtmeden çağırmak büyük token kaybına sebep olur). Her zaman `StartLine` ve `EndLine` belirterek sadece ilgili satır aralığını/fonksiyonları okuyun.
+Güçlü modellerin (Gemini 3.5 Pro) planlama veya analiz aşamalarında gereksiz yere yüksek miktarda token tüketmesini önlemek ve maliyetleri öldürmek için **RTK AI** kurallarına uymak zorunludur:
+
+- **RTK AI (Read Target Keylines / Rust Token Killer) (Zorunlu TIER 0):** Bir kod dosyasını kontrol etmeniz veya incelemeniz gerektiğinde, dosyayı asla tamamen okumayın (`view_file` aracında satır sınırı belirtmeden çağırmak büyük token kaybına sebep olur). Münasip olan her anda `StartLine` ve `EndLine` belirterek sadece ilgili satır aralığını/fonksiyonları okuyun.
 - **Alt Ajan Bağlam Ayrımı (Subagent Context Isolation):** Büyük arama veya tarama işlemleri kaçınılmaz ise, bu işlemleri ana konuşmanın bağlam limitini doldurmamak için izole `scout-subagent` ile çalıştırıp sadece neticelerini ana konuşmaya aktarın.
 - **Gereksiz Dosya Okuma Yasağı:** Yalnızca plan kapsamına giren ve etki alanında olan dosyaları okuyun. Projenin bağımsız kısımlarını okumaktan kaçının.
+
 
 ---
 
@@ -87,7 +90,16 @@ Plan oluştururken her zaman aşağıdaki markdown şablonunu kullanın:
 > - Sorulan kritik mimari soru veya parametre detayı?
 ```
 
+### 4.1. Ajan Atama Kuralları (Agent Assignment Rules)
+
+Görev tipine göre plana dahil edilecek doğru ajanlar seçilmeli ve fazlara atanmalıdır:
+- **Yeni Özellik (Feature Development):** Altyapı/Şema için `backend-architect`, Veri Toplayıcılar/Metrikler için `data-engineer`, Test Tasarımı için `quality-engineer`, Paranoid Analiz için `safety-gatekeeper`.
+- **Hata Ayıklama (Bug Fix):** Hatayı bulma, izole etme ve 5 Neden analizi hazırlama için `debugger-agent`, düzeltmeyi yazmak için `backend-architect` veya `data-engineer`.
+- **Kod Yenileme/Göç (Refactoring/Migration):** Eski sistem analizi, Strangler Fig arayüzü tasarımı ve güvenlik etki haritası için `archaeologist-agent`, yeni mimari implementasyonu için `backend-architect`.
+- **Güvenlik Sıkılaştırması (Security Audit):** OWASP 2025 denetimi ve yetkilendirme (IDOR vb.) açıkları analizi için `security-auditor`.
+
 ---
+
 
 ## 5. Anti-Patterns (Kaçınılması Gereken Hatalar)
 - **Onay Almadan Kodlama:** Kullanıcı onay vermeden gizlice backend kodu yazmaya veya dosya değiştirmeye başlamak.

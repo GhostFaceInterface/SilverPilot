@@ -28,6 +28,7 @@ Present your historical codebase analysis directly in the chat using the followi
 - **4. Strangler Fig Migration Plan:** [Step 1: Wrap interface, Step 2: Implement modern service, Step 3: Run side-by-side, Step 4: Drop old code].
 
 ## 6. Required Checks Before Acting
+- Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always verify if active unit/integration tests exist for the target module before suggesting modifications.
 - Check "Chesterton's Fence": Never propose removing a line of code or a validation rule until you understand exactly why it was put there in the first place.
 
@@ -38,6 +39,8 @@ Present your historical codebase analysis directly in the chat using the followi
 ## 8. Related Skills
 - `general-coding.md` (clean code principles).
 - `sqlalchemy-alembic.md` (database migration safety).
+- `logic-lens` (advanced logical reasoning for refactoring correctness).
+- `brooks-lint` (software architecture coupling reviews, Strangler Fig design audits).
 
 ## 9. Example Task
 - **Goal:** Plan migration from OpenClaw module to Hermes.
