@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-27
+updated: 2026-05-30
 ---
 
 
@@ -108,3 +108,6 @@ updated: 2026-05-27
   Where sources are mapped: Global Authority (Kitco, FXStreet, Reuters, Fed; weight = 0.5), Local Expert (GCM, Bloomberg HT; weight = 0.3), and Local Forum (Investing.com; weight = 0.2).
 - **Yüce Hakem Veto Filter:** The weighted sentiment score is dynamically integrated in `StrategyRunner.apply_agent_filters`. If the score falls below `HERMES_VETO_THRESHOLD` (configurable via `.env`, default `-0.45`), `BUY` signals are overridden to `HOLD` with `AGENT_VETO_HERMES_BEARISH_NEWS`.
 - **System Auditor & Unit Tests:** Registered `hermes-agent` in the `auditor-agent` inspection loop and added a thorough E2E test suite in `test_hermes_agent.py` achieving 100% correct E2E test coverage across all 159 tests.
+
+## 17. Git Pre-Commit Formatting & Lint Hook (May 2026)
+- **Lightweight Local Git Hook:** A git `pre-commit` hook is established under `.git/hooks/pre-commit`. On every git commit, it automatically runs Ruff format (`.venv/bin/ruff format`) and Ruff check (`.venv/bin/ruff check --fix`) on staged Python files and auto-stages any modified changes. This enforces absolute styling conformity before files are committed, preventing Ruff format checks from breaking GitHub Actions CI pipelines.
