@@ -111,3 +111,7 @@ updated: 2026-05-30
 
 ## 17. Git Pre-Commit Formatting & Lint Hook (May 2026)
 - **Lightweight Local Git Hook:** A git `pre-commit` hook is established under `.git/hooks/pre-commit`. On every git commit, it automatically runs Ruff format (`.venv/bin/ruff format`) and Ruff check (`.venv/bin/ruff check --fix`) on staged Python files and auto-stages any modified changes. This enforces absolute styling conformity before files are committed, preventing Ruff format checks from breaking GitHub Actions CI pipelines.
+
+## 18. COMEX Off-Hours STALE_DATA Bypass Rule (May 2026)
+- **Timezone-Aware Off-Hours Logic:** Implemented timezone-aware detection using `zoneinfo` ("America/New_York") to bypass the strict `STALE_DATA` trade veto during weekends (Friday 17:00 ET to Sunday 18:00 ET) and daily maintenance windows (17:00 to 18:00 ET) since data scrapers do not fetch new prices while COMEX is closed. This allows paper trading and weekend simulations to run smoothly on the latest known closing price.
+- **Deterministic Testing Safety:** Added a dynamic check so that when `settings.app_env == "test"`, the bypass evaluates to `False`, safeguarding existing unit and integration tests from losing determinism.
