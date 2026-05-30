@@ -246,6 +246,19 @@ async def run_auto_trading(db: Session = None):
 
 
 async def _run_auto_trading_impl(db: Session, settings):
+    # 0. Pazartesi Isınma Süresi Kontrolü (Indicator Warmup)
+    # Pazar 18:00 - 18:05 ET arası (piyasa açılışının ilk 5 dakikası) işlemler ertelenir
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    et_tz = ZoneInfo("America/New_York")
+    now_et = datetime.now(timezone.utc).astimezone(et_tz)
+    if now_et.weekday() == 6 and now_et.hour == 18 and now_et.minute < 5:
+        logger.info(
+            "COMEX market opening warmup window active (Sunday 18:00-18:05 ET). Holding trading to let indicators heat up."
+        )
+        return
+
     # 1. Fetch portfolio 'gram-paper'
     portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
     if not portfolio:

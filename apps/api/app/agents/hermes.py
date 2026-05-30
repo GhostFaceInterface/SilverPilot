@@ -264,6 +264,41 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     db.commit()
     db.refresh(event)
 
+    # 8. Hafta Sonu Telegram Bildirim Entegrasyonu
+    try:
+        from app.risk.service import is_comex_market_closed
+
+        if is_comex_market_closed(now) and settings.telegram_bot_token and settings.telegram_chat_id:
+            from telegram import Bot
+            import asyncio
+
+            telegram_text = (
+                f"🏛️ <b>SilverPilot Hafta Sonu Nöbetçi Raporu</b>\n\n"
+                f"Geçtiğimiz 6 saat boyunca gelen makroekonomik haberler analiz edildi:\n\n"
+                f"📊 <b>Genel Sentiment Skoru:</b> <code>{final_score:.4f}</code>\n"
+                f"🎯 <b>Karar:</b> <b>{final_sentiment}</b>\n"
+                f"📰 <b>İncelenen Haber Sayısı:</b> {len(analyzed_articles)} adet\n\n"
+                f"💡 <i>Pazartesi açılış emri hazırlığı için nöbetçi mod aktif olarak haber akışını izlemeye devam ediyor.</i>"
+            )
+
+            bot = Bot(token=settings.telegram_bot_token)
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                asyncio.ensure_future(
+                    bot.send_message(chat_id=settings.telegram_chat_id, text=telegram_text, parse_mode="HTML")
+                )
+            else:
+                asyncio.run(bot.send_message(chat_id=settings.telegram_chat_id, text=telegram_text, parse_mode="HTML"))
+
+            logger.info("Telegram weekend sentiment report sent successfully.")
+    except Exception as telegram_err:
+        logger.error(f"Failed to send Telegram weekend sentiment report: {telegram_err}", exc_info=True)
+
     logger.info(
         f"Hermes weighted sentiment analysis completed and saved successfully. Event ID: {event.id}, Score: {final_score:.4f}"
     )

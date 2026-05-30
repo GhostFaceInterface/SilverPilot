@@ -420,10 +420,6 @@ def _execution_data_block(db: Session, *, stale_after_minutes: int, now: datetim
     if execution_status not in {"blocked", "stale"}:
         return None
 
-    if execution_status == "stale" and is_comex_market_closed(now):
-        # Allow the trade to proceed since the stale state is due to market closure!
-        return None
-
     execution_critical = health["execution_critical"]
     reason_code = "MISSING_DATA" if execution_status == "blocked" else "STALE_DATA"
     return _decision(

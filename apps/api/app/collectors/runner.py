@@ -231,8 +231,41 @@ def main() -> None:
     if not args.loop and not success:
         raise SystemExit(1)
     while args.loop:
-        time.sleep(args.interval_seconds)
-        run_jobs(args)
+        from app.risk.service import is_comex_market_closed
+        from datetime import datetime, UTC
+
+        now = datetime.now(UTC)
+        is_closed = is_comex_market_closed(now)
+
+        if is_closed:
+            # Sleep 6 hours (21600 seconds) when COMEX is closed
+            sleep_interval = 21600
+        else:
+            sleep_interval = args.interval_seconds
+
+        time.sleep(sleep_interval)
+
+        now_after_sleep = datetime.now(UTC)
+        is_closed_after_sleep = is_comex_market_closed(now_after_sleep)
+
+        if is_closed_after_sleep:
+            original_jobs = args.jobs
+            original_job = args.job
+            allowed_jobs = {"fed-rss", "hermes-agent", "news-agent"}
+
+            if args.jobs:
+                current_jobs_list = [j.strip() for j in args.jobs.split(",") if j.strip() in allowed_jobs]
+                args.jobs = ",".join(current_jobs_list)
+
+            if args.job not in allowed_jobs:
+                args.job = "fed-rss"
+
+            run_jobs(args)
+
+            args.jobs = original_jobs
+            args.job = original_job
+        else:
+            run_jobs(args)
 
 
 if __name__ == "__main__":

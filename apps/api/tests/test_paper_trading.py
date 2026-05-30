@@ -934,7 +934,7 @@ def test_is_comex_market_closed():
         settings.app_env = original_env
 
 
-def test_stale_execution_critical_data_bypassed_when_market_closed():
+def test_stale_execution_critical_data_blocked_when_market_closed():
     from app.risk.service import evaluate_paper_trade_risk, TradeAmounts
     from app.schemas.paper_trading import PaperTradeRequest
     from app.core.config import get_settings
@@ -979,9 +979,9 @@ def test_stale_execution_critical_data_bypassed_when_market_closed():
                 amounts=TradeAmounts(quantity=qty, price=prc, gross_amount=gross, net_amount=net),
                 now=sat_now,
             )
-            # The stale check must be bypassed! Risk check should pass.
-            assert decision.decision == "allow"
-            assert decision.reason_code == "RISK_CHECK_PASSED"
+            # The stale check must block the pipeline since bypass is removed.
+            assert decision.decision == "blocked"
+            assert decision.reason_code == "STALE_DATA"
         finally:
             settings.app_env = original_env
     finally:
