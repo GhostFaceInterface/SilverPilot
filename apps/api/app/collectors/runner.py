@@ -251,14 +251,10 @@ def main() -> None:
         if is_closed_after_sleep:
             original_jobs = args.jobs
             original_job = args.job
-            allowed_jobs = {"fed-rss", "hermes-agent", "news-agent"}
 
-            if args.jobs:
-                current_jobs_list = [j.strip() for j in args.jobs.split(",") if j.strip() in allowed_jobs]
-                args.jobs = ",".join(current_jobs_list)
-
-            if args.job not in allowed_jobs:
-                args.job = "fed-rss"
+            # Run all weekend sentinel jobs sequentially to ensure feed update and Telegram report trigger
+            args.jobs = "fed-rss,news-agent,hermes-agent"
+            args.job = "fed-rss"
 
             run_jobs(args)
 
