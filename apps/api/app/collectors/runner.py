@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import time
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -32,24 +31,15 @@ JOB_CHOICES = (
 )
 
 
-def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
+async def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
     selected_job = job or args.job
     db = SessionLocal()
     try:
         if selected_job == "hermes-agent":
-            import asyncio
             from app.agents.hermes import run_hermes_sentiment_analysis
 
             try:
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-
-                if loop and loop.is_running():
-                    asyncio.ensure_future(run_hermes_sentiment_analysis(db))
-                else:
-                    asyncio.run(run_hermes_sentiment_analysis(db))
+                await run_hermes_sentiment_analysis(db)
             except Exception as e:
                 print(f"Error running hermes-agent: {e}", flush=True)
                 return False
@@ -57,19 +47,10 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
             return True
 
         if selected_job == "news-agent":
-            import asyncio
             from app.agents.news import run_news_sentiment_analysis
 
             try:
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-
-                if loop and loop.is_running():
-                    asyncio.ensure_future(run_news_sentiment_analysis(db))
-                else:
-                    asyncio.run(run_news_sentiment_analysis(db))
+                await run_news_sentiment_analysis(db)
             except Exception as e:
                 print(f"Error running news-agent: {e}", flush=True)
                 return False
@@ -119,19 +100,10 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
 
             settings = get_settings()
             if settings.auto_trading_enabled:
-                import asyncio
                 from app.services.auto_trader import run_auto_trading
 
                 try:
-                    try:
-                        loop = asyncio.get_running_loop()
-                    except RuntimeError:
-                        loop = None
-
-                    if loop and loop.is_running():
-                        asyncio.ensure_future(run_auto_trading())
-                    else:
-                        asyncio.run(run_auto_trading())
+                    await run_auto_trading(db=db)
                 except Exception as e:
                     print(f"Error running auto trading: {e}", flush=True)
             return run.status == "success"
@@ -182,10 +154,10 @@ def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
         db.close()
 
 
-def run_jobs(args: argparse.Namespace) -> bool:
+async def run_jobs(args: argparse.Namespace) -> bool:
     success = True
     for job in parse_collector_jobs(args.jobs, fallback_job=args.job):
-        success = run_once(args, job=job) and success
+        success = (await run_once(args, job=job)) and success
     return success
 
 
@@ -199,7 +171,7 @@ def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:
     return jobs
 
 
-def main() -> None:
+async def main_async() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser(description="Run SilverPilot collector jobs.")
     parser.add_argument("--loop", action="store_true", help="Run continuously.")
@@ -227,12 +199,13 @@ def main() -> None:
     if args.interval_seconds <= 0:
         raise ValueError("interval-seconds must be greater than zero")
 
-    success = run_jobs(args)
+    success = await run_jobs(args)
     if not args.loop and not success:
         raise SystemExit(1)
     while args.loop:
         from app.risk.service import is_comex_market_closed
         from datetime import datetime, UTC
+        import asyncio
 
         now = datetime.now(UTC)
         is_closed = is_comex_market_closed(now)
@@ -243,7 +216,7 @@ def main() -> None:
         else:
             sleep_interval = args.interval_seconds
 
-        time.sleep(sleep_interval)
+        await asyncio.sleep(sleep_interval)
 
         now_after_sleep = datetime.now(UTC)
         is_closed_after_sleep = is_comex_market_closed(now_after_sleep)
@@ -260,12 +233,18 @@ def main() -> None:
             if args.job not in allowed_jobs:
                 args.job = "fed-rss"
 
-            run_jobs(args)
+            await run_jobs(args)
 
             args.jobs = original_jobs
             args.job = original_job
         else:
-            run_jobs(args)
+            await run_jobs(args)
+
+
+def main() -> None:
+    import asyncio
+
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

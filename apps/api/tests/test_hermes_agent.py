@@ -1,7 +1,7 @@
 import pytest
 import json
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime, timezone, timedelta
 
 from app.core.config import get_settings
@@ -228,6 +228,7 @@ async def test_hermes_weekend_telegram_dispatch_success(db_session):
     ):
         mock_response = AsyncMock()
         mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
         mock_response.json = lambda: {
             "choices": [
                 {
@@ -302,6 +303,7 @@ async def test_hermes_weekend_telegram_dispatch_failure_resilience(db_session):
     ):
         mock_response = AsyncMock()
         mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
         mock_response.json = lambda: {
             "choices": [
                 {
@@ -328,3 +330,41 @@ async def test_hermes_weekend_telegram_dispatch_failure_resilience(db_session):
         assert event.agent_name == "hermes-agent"
         assert event.value_json["score"] > 0.0
         mock_send.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_hermes_llm_failure_graceful_recovery(db_session):
+    from app.models import RawNews, CollectorRun
+
+    db_session.query(RawNews).delete()
+    db_session.commit()
+
+    run = CollectorRun(
+        collector_name="hermes-test",
+        source="test",
+        status="SUCCESS",
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    news = RawNews(
+        collector_run_id=run.id,
+        source="kitco-rss",
+        title="Silver news",
+        url="http://example.com/1",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        raw_payload_hash="h_fail",
+        parser_version="1.0",
+    )
+    db_session.add(news)
+    db_session.commit()
+
+    with patch("app.llm.gateway.DeepSeekGateway.generate_completion", side_effect=RuntimeError("LLM API Timeout")):
+        event = await run_hermes_sentiment_analysis(db_session)
+
+        assert event is not None
+        assert event.agent_name == "hermes-agent"
+        assert event.value_json["score"] == 0.0
+        assert event.value_json["sentiment"] == "NEUTRAL"
+        assert "LLM call failed" in event.value_json["summary_markdown"]

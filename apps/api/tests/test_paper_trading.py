@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import pytest
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -984,5 +985,138 @@ def test_stale_execution_critical_data_blocked_when_market_closed():
             assert decision.reason_code == "STALE_DATA"
         finally:
             settings.app_env = original_env
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize(
+    "loss_amount, should_block, expected_reason",
+    [
+        (Decimal("29.99"), False, ""),
+        (Decimal("30.00"), True, "DAILY_LOSS_LIMIT_REACHED"),
+        (Decimal("30.01"), True, "DAILY_LOSS_LIMIT_REACHED"),
+    ],
+)
+def test_daily_loss_limit_exact_boundaries(loss_amount, should_block, expected_reason):
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    seed_realized_loss(testing_session, loss=loss_amount, sell_created_at=datetime.now(UTC) - timedelta(hours=1))
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    if should_block:
+        assert response.json()["trade"]["action"] == "blocked"
+        assert response.json()["risk_decision"]["reason_code"] == expected_reason
+    else:
+        assert response.json()["risk_decision"]["reason_code"] != "DAILY_LOSS_LIMIT_REACHED"
+
+
+def test_portfolio_balance_reset_purges_history():
+    client, testing_session = make_client()
+    db = testing_session()
+    try:
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+
+        seed_execution_critical_data(testing_session)
+        seed_realized_loss(
+            testing_session, loss=Decimal("70.00"), sell_created_at=datetime.now(UTC) - timedelta(days=2)
+        )
+
+        from app.risk.service import evaluate_paper_trade_risk, TradeAmounts
+        from app.paper_trading.service import _calculate_trade_amounts, calculate_position
+        from app.schemas.paper_trading import PaperTradeRequest
+
+        req = PaperTradeRequest(
+            action="paper_buy",
+            quantity=Decimal("1"),
+            buy_price=Decimal("10.00"),
+            sell_price=Decimal("9.80"),
+            fees=Decimal("0"),
+            taxes=Decimal("0"),
+        )
+        qty, prc, gross, net = _calculate_trade_amounts(req, fx_rate=Decimal("1.0"))
+        pos = calculate_position(db, portfolio.id, asset.id)
+
+        decision = evaluate_paper_trade_risk(
+            db,
+            request=req,
+            portfolio=portfolio,
+            asset=asset,
+            position=pos,
+            amounts=TradeAmounts(quantity=qty, price=prc, gross_amount=gross, net_amount=net),
+            now=datetime.now(UTC),
+        )
+        assert decision.decision == "blocked"
+        assert decision.reason_code == "WEEKLY_LOSS_LIMIT_REACHED"
+
+        # Purge all paper_trades & reset cash balance to simulate refresh
+        db.query(PaperTrade).filter(PaperTrade.portfolio_id == portfolio.id).delete()
+        portfolio.cash_balance = Decimal("2500.000000")
+        portfolio.initial_cash = Decimal("2500.000000")
+        db.commit()
+
+        pos_after = calculate_position(db, portfolio.id, asset.id)
+        decision_after = evaluate_paper_trade_risk(
+            db,
+            request=req,
+            portfolio=portfolio,
+            asset=asset,
+            position=pos_after,
+            amounts=TradeAmounts(quantity=qty, price=prc, gross_amount=gross, net_amount=net),
+            now=datetime.now(UTC),
+        )
+
+        assert decision_after.reason_code != "WEEKLY_LOSS_LIMIT_REACHED"
+    finally:
+        db.close()
+
+
+def test_spread_limit_thresholds():
+    from app.risk.service import evaluate_paper_trade_risk, TradeAmounts
+    from app.paper_trading.service import _calculate_trade_amounts, calculate_position
+    from app.schemas.paper_trading import PaperTradeRequest
+
+    client, testing_session = make_client()
+    db = testing_session()
+    try:
+        seed_execution_critical_data(testing_session)
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+
+        req = PaperTradeRequest(
+            action="paper_buy",
+            quantity=Decimal("1"),
+            buy_price=Decimal("10.00"),
+            sell_price=Decimal("9.00"),
+            fees=Decimal("0"),
+            taxes=Decimal("0"),
+        )
+        qty, prc, gross, net = _calculate_trade_amounts(req, fx_rate=Decimal("1.0"))
+        pos = calculate_position(db, portfolio.id, asset.id)
+
+        decision = evaluate_paper_trade_risk(
+            db,
+            request=req,
+            portfolio=portfolio,
+            asset=asset,
+            position=pos,
+            amounts=TradeAmounts(quantity=qty, price=prc, gross_amount=gross, net_amount=net),
+            now=datetime.now(UTC),
+        )
+
+        assert decision.decision == "blocked"
+        assert decision.reason_code == "SPREAD_TOO_HIGH"
     finally:
         db.close()

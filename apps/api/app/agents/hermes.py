@@ -120,41 +120,46 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         {"role": "user", "content": user_prompt},
     ]
 
-    logger.info(f"Calling Hermes Agent LLM using model: {model} with {len(news_items)} news items.")
-    response = await DeepSeekGateway.generate_completion(
-        db=db,
-        agent_name="hermes-agent",
-        model=model,
-        messages=messages,
-        temperature=0.2,
-    )
-
-    raw_content = response.get("content", "").strip()
-
-    # Clean markdown block wrapping if LLM included them
-    if raw_content.startswith("```"):
-        lines = raw_content.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        raw_content = "\n".join(lines).strip()
-
-    if "```json" in raw_content:
-        raw_content = raw_content.split("```json")[1].split("```")[0].strip()
-    elif "```" in raw_content:
-        raw_content = raw_content.split("```")[1].split("```")[0].strip()
-
     parsed_list = []
+    llm_error_prefix = ""
     try:
-        parsed_list = json.loads(raw_content)
-        if not isinstance(parsed_list, list):
-            logger.warning("Parsed response is not a JSON array. Recovering to empty list.")
-            parsed_list = []
-    except Exception as parse_err:
-        logger.warning(
-            f"Failed to parse JSON from Hermes Agent LLM response. Raw content: {raw_content}. Error: {parse_err}"
+        logger.info(f"Calling Hermes Agent LLM using model: {model} with {len(news_items)} news items.")
+        response = await DeepSeekGateway.generate_completion(
+            db=db,
+            agent_name="hermes-agent",
+            model=model,
+            messages=messages,
+            temperature=0.2,
         )
+
+        raw_content = response.get("content", "").strip()
+
+        # Clean markdown block wrapping if LLM included them
+        if raw_content.startswith("```"):
+            lines = raw_content.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw_content = "\n".join(lines).strip()
+
+        if "```json" in raw_content:
+            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_content:
+            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+
+        try:
+            parsed_list = json.loads(raw_content)
+            if not isinstance(parsed_list, list):
+                logger.warning("Parsed response is not a JSON array. Recovering to empty list.")
+                parsed_list = []
+        except Exception as parse_err:
+            logger.warning(
+                f"Failed to parse JSON from Hermes Agent LLM response. Raw content: {raw_content}. Error: {parse_err}"
+            )
+    except Exception as llm_err:
+        logger.error(f"Hermes Agent LLM call failed. Gracefully recovering to neutral fallback: {llm_err}")
+        llm_error_prefix = f"⚠️ **LLM call failed:** {llm_err}. Fallback neutral score applied.\n\n"
 
     # If parsing failed or returned empty list, recover by creating a neutral fallback entry for each article
     if not parsed_list:
@@ -230,7 +235,7 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
 
     # Generate summary markdown report
     summary_markdown = (
-        f"### 🏛️ Hermes Sentiment Analysis Report\n\n"
+        f"{llm_error_prefix}### 🏛️ Hermes Sentiment Analysis Report\n\n"
         f"- **Overall Score**: `{final_score:.4f}` (Range: [-1.0, 1.0])\n"
         f"- **Resolved Sentiment**: `{final_sentiment}`\n"
         f"- **Veto Threshold**: `{veto_threshold}`\n\n"

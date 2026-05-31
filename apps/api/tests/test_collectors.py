@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 import time
+import pytest
 
 from fastapi.testclient import TestClient
 import httpx
@@ -590,8 +591,9 @@ def test_runner_reports_failed_collector_job(monkeypatch):
         lambda db: (failed_run, False, None),
     )
     args = SimpleNamespace(job="kuveyt-silver", jobs="")
+    import asyncio
 
-    assert run_jobs(args) is False
+    assert asyncio.run(run_jobs(args)) is False
 
 
 def test_yahoo_xag_usd_collector_writes_global_price_and_snapshot():
@@ -2326,3 +2328,48 @@ def test_kuveyt_hardening_cross_control_warning():
     finally:
         client.close()
         db.close()
+
+
+def test_kuveyt_public_silver_parser_raises_on_missing_labels():
+    from app.collectors.public_sources import CollectorError
+
+    with pytest.raises(CollectorError) as exc_info:
+        parse_kuveyt_public_silver_html(
+            "<html><body>Gram Gümüş Missing Alış entirely</body></html>",
+            fetched_at=datetime.now(UTC),
+        )
+    assert "could not find visible GMS buy/sell prices" in str(exc_info.value)
+
+
+def test_kuveyt_public_silver_parser_raises_on_inverted_spread():
+    from app.collectors.public_sources import CollectorError
+
+    with pytest.raises(CollectorError) as exc_info:
+        parse_kuveyt_public_silver_html(
+            """
+            <html>
+              <body>
+                <span>Gram Gümüş Alış</span><strong>45,00</strong>
+                <span>Gram Gümüş Satış</span><strong>42,00</strong>
+              </body>
+            </html>
+            """,
+            fetched_at=datetime.now(UTC),
+        )
+    assert "returned inverted silver spread" in str(exc_info.value)
+
+
+def test_fred_macro_observations_parser_raises_on_missing_values():
+    from app.collectors.public_sources import CollectorError
+
+    with pytest.raises(CollectorError) as exc_info:
+        parse_fred_observations("invalid json", series_id="DFF")
+    assert "response is not valid JSON" in str(exc_info.value)
+
+    with pytest.raises(CollectorError) as exc_info:
+        parse_fred_observations("{}", series_id="DFF")
+    assert "returned no observations" in str(exc_info.value)
+
+    with pytest.raises(CollectorError) as exc_info:
+        parse_fred_observations('{"observations": [{"value": "5.25"}]}', series_id="DFF")
+    assert "observation date is missing" in str(exc_info.value)
