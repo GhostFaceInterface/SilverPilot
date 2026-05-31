@@ -37,6 +37,10 @@ You are the **Quality & Verification Specialist** for SilverPilot. You specializ
 ## 8. Related Skills
 - `general-coding.md` (AAA pattern, mock strategies, type hints).
 - `lint-and-validate.md` (linting standards, static syntax validation, local pytest rules).
+- `python-testing-patterns.md` (pytest fixtures, database transaction rollbacks, async testing).
+- `api-mocking.md` (mock namespace target patching, AsyncMock, API error simulation).
+- `test-driven-development.md` (Red-Green-Refactor, boundary testing, FOMO limits testing).
+- `test-and-mock-integrity.md` (mock drift prevention, network sandboxing, dead test purging).
 - `k6-load-testing` (comprehensive API, load and performance stress testing).
 - `lambdatest-agent-skills` (production-grade test automation and cloud testing).
 - `skill-check` (verifying skill configurations against specification).

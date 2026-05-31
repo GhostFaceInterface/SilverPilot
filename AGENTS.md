@@ -34,6 +34,10 @@ Ajanların uymak zorunda olduğu teknik kurallar ve yönergeler:
 - **[fastapi.md](file:///Users/boe747/SilverPilot/.agent/skills/fastapi.md):** FastAPI router yapısı, DI (Depends) ve Pydantic şema kuralları.
 - **[sqlalchemy-alembic.md](file:///Users/boe747/SilverPilot/.agent/skills/sqlalchemy-alembic.md):** N+1 sorgu engelleme, index tasarımı ve Alembic kuralları.
 - **[security-rules.md](file:///Users/boe747/SilverPilot/.agent/skills/security-rules.md):** API güvenliği, yetkilendirme, OWASP 2025 ve zero-trust ilkeleri.
+- **[python-testing-patterns.md](file:///Users/boe747/SilverPilot/.agent/skills/python-testing-patterns.md):** Pytest test yazım standartları, transaction rollback ve asenkron test kuralları.
+- **[api-mocking.md](file:///Users/boe747/SilverPilot/.agent/skills/api-mocking.md):** API/Bot mocking, mock drift (sapma) tespiti ve test izolasyonu standartları.
+- **[test-driven-development.md](file:///Users/boe747/SilverPilot/.agent/skills/test-driven-development.md):** Red-Green-Refactor, limit/edge-case test tasarımları ve TDD disiplini.
+- **[test-and-mock-integrity.md](file:///Users/boe747/SilverPilot/.agent/skills/test-and-mock-integrity.md):** Mock namespace drift engelleme, ağ izolasyon güvenliği ve test bütünlüğü anayasası.
 - **[concise-planning.md](file:///Users/boe747/SilverPilot/.agent/skills/concise-planning.md):** Granüler, tek sorumluluklu ve eylem odaklı plan hazırlama standartları.
 - **[lint-and-validate.md](file:///Users/boe747/SilverPilot/.agent/skills/lint-and-validate.md):** Kod biçimlendirme, statik analiz ve yerel test çalıştırma kalite geçitleri.
 - **[systematic-debugging.md](file:///Users/boe747/SilverPilot/.agent/skills/systematic-debugging.md):** Kök neden tespiti (5 Neden analizi) ve hata ayıklama kılavuzu.

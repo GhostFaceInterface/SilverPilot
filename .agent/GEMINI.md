@@ -38,6 +38,7 @@ Görevin kapsamına göre AI asistanı ilgili uzman ajan kimliğine bürünmeli 
 
 ## 5. Change Safety Rules (Değişiklik Güvenliği)
 - **Çalışan Kodu Koruma:** Mevcut çalışan testleri, entegrasyonları ve veritabanı şemalarını bozacak kontrolsüz değişiklikler yapmayın.
+- **Tavizsiz Test ve Mock Bütünlüğü (TIER 0):** Projeye yeni eklenen her özellik için AAA standartlarında yeni testler yazılması zorunludur. Refaktör edilen kodlarda mock hedefleri (`patch(...)`) asıl çalıştırılan nihai modüle (`app.services.telegram.Bot` vb.) güncellenecek; eski demode testler temizlenecek ve ağ izolasyonu (network sandboxing) kesinlikle sürdürülecektir. Detaylar için `.agent/skills/test-and-mock-integrity.md` becerisine harfiyen riayet edilecektir.
 - **Gereksiz Refactor Yasağı:** Görevin kapsamı dışındaki kod bloklarını refactor etmeyin, "çalışıyorsa dokunma" ilkesini (scope dışı için) benimseyin.
 - **Sır Güvenliği:** Asla API anahtarı, şifreler, veritabanı kimlik bilgileri veya `.env` dosyası içeriklerini kodun içine yazmayın, loglamayın veya commit etmeyin.
 - **Yıkıcı İşlemler:** Silme işlemlerinde (veri tabanı tabloları, kod satırları vb.) kullanıcıdan açık ve net onay alın.
