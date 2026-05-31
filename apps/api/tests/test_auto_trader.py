@@ -120,7 +120,7 @@ async def test_auto_trading_buy_signal():
     with (
         patch("app.services.auto_trader.get_settings", return_value=settings),
         patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
-        patch("app.services.auto_trader.Bot") as MockBot,
+        patch("app.services.telegram.Bot") as MockBot,
     ):
         mock_bot_instance = AsyncMock()
         MockBot.return_value = mock_bot_instance
@@ -256,7 +256,7 @@ async def test_auto_trading_sell_signal():
     with (
         patch("app.services.auto_trader.get_settings", return_value=settings),
         patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk_decision),
-        patch("app.services.auto_trader.Bot") as MockBot,
+        patch("app.services.telegram.Bot") as MockBot,
     ):
         mock_bot_instance = AsyncMock()
         MockBot.return_value = mock_bot_instance

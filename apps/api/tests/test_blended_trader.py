@@ -211,7 +211,7 @@ async def test_auto_trading_blended_bullish_consensus():
             patch("app.services.auto_trader.get_settings", return_value=settings),
             patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
-            patch("app.services.auto_trader.Bot") as MockBot,
+            patch("app.services.telegram.Bot") as MockBot,
         ):
             mock_bot_instance = AsyncMock()
             MockBot.return_value = mock_bot_instance
@@ -295,7 +295,7 @@ async def test_auto_trading_blended_neutral_consensus_silent():
         with (
             patch("app.services.auto_trader.get_settings", return_value=settings),
             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
-            patch("app.services.auto_trader.Bot") as MockBot,
+            patch("app.services.telegram.Bot") as MockBot,
         ):
             mock_bot_instance = AsyncMock()
             MockBot.return_value = mock_bot_instance

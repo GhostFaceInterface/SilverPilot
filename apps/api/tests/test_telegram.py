@@ -528,7 +528,7 @@ async def test_send_telegram_notification_retry():
     mock_bot_instance.send_message.side_effect = [RetryAfter(retry_after=1.0), AsyncMock()]
 
     with (
-        patch("app.services.auto_trader.Bot") as MockBot,
+        patch("app.services.telegram.Bot") as MockBot,
         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
     ):
         MockBot.return_value = mock_bot_instance
@@ -539,3 +539,80 @@ async def test_send_telegram_notification_retry():
 
         assert mock_bot_instance.send_message.call_count == 2
         mock_sleep.assert_called_once_with(2.0)  # e.retry_after (1.0) + 1.0
+
+
+@pytest.mark.anyio
+async def test_send_telegram_message_success():
+    from app.services.telegram import send_telegram_message
+
+    with patch("app.services.telegram.Bot") as MockBot:
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.send_message = AsyncMock()
+        MockBot.return_value = mock_bot_instance
+
+        settings = Settings(telegram_bot_token="mock_token", telegram_chat_id=123)
+        res = await send_telegram_message(
+            bot_token=settings.telegram_bot_token, chat_id=str(settings.telegram_chat_id), text="Hello World"
+        )
+        assert res is True
+        mock_bot_instance.send_message.assert_called_once_with(
+            chat_id="123", text="Hello World", parse_mode="HTML", disable_notification=False
+        )
+
+
+@pytest.mark.anyio
+async def test_send_telegram_message_retry_after():
+    from app.services.telegram import send_telegram_message
+    from telegram.error import RetryAfter
+
+    with (
+        patch("app.services.telegram.Bot") as MockBot,
+        patch("app.services.telegram.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.send_message = AsyncMock()
+        # First call hits rate limit, second call succeeds
+        mock_bot_instance.send_message.side_effect = [RetryAfter(retry_after=0.5), AsyncMock()]
+        MockBot.return_value = mock_bot_instance
+
+        settings = Settings(telegram_bot_token="mock_token", telegram_chat_id=123)
+        res = await send_telegram_message(
+            bot_token=settings.telegram_bot_token,
+            chat_id=str(settings.telegram_chat_id),
+            text="Hello World",
+            attempts=3,
+        )
+        assert res is True
+        assert mock_bot_instance.send_message.call_count == 2
+        mock_sleep.assert_called_once_with(1.5)  # 0.5 retry_after + 1.0 delay
+
+
+@pytest.mark.anyio
+async def test_send_telegram_message_all_failures():
+    from app.services.telegram import send_telegram_message
+    from telegram.error import TelegramError
+
+    with (
+        patch("app.services.telegram.Bot") as MockBot,
+        patch("app.services.telegram.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.send_message = AsyncMock()
+        # Always fail with general telegram API error
+        mock_bot_instance.send_message.side_effect = TelegramError("API Error")
+        MockBot.return_value = mock_bot_instance
+
+        settings = Settings(telegram_bot_token="mock_token", telegram_chat_id=123)
+        res = await send_telegram_message(
+            bot_token=settings.telegram_bot_token,
+            chat_id=str(settings.telegram_chat_id),
+            text="Hello World",
+            attempts=3,
+            backoff=0.1,
+        )
+        assert res is False
+        assert mock_bot_instance.send_message.call_count == 3
+        # Should backoff exponentially: 0.1 * 1 = 0.1s, then 0.1 * 2 = 0.2s
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(0.1)
+        mock_sleep.assert_any_call(0.2)

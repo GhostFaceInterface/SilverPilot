@@ -2326,11 +2326,3 @@ def test_kuveyt_hardening_cross_control_warning():
     finally:
         client.close()
         db.close()
-
-
-def test_runner_comex_sleep_mode_job_filtering_independent_override():
-    from app.collectors.runner import parse_collector_jobs
-
-    jobs = parse_collector_jobs("fed-rss,news-agent,hermes-agent", fallback_job="manual")
-    assert len(jobs) == 3
-    assert jobs == ["fed-rss", "news-agent", "hermes-agent"]

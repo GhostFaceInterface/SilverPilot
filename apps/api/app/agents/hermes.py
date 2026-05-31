@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.llm.gateway import DeepSeekGateway
 from app.models.entities import RawNews, AgentMemoryEvent
+from app.services.telegram import send_telegram_message
 
 logger = logging.getLogger("silverpilot.agents.hermes")
 
@@ -269,9 +270,6 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         from app.risk.service import is_comex_market_closed
 
         if is_comex_market_closed(now) and settings.telegram_bot_token and settings.telegram_chat_id:
-            from telegram import Bot
-            import asyncio
-
             telegram_text = (
                 f"🏛️ <b>SilverPilot Hafta Sonu Nöbetçi Raporu</b>\n\n"
                 f"Geçtiğimiz 6 saat boyunca gelen makroekonomik haberler analiz edildi:\n\n"
@@ -281,19 +279,12 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
                 f"💡 <i>Pazartesi açılış emri hazırlığı için nöbetçi mod aktif olarak haber akışını izlemeye devam ediyor.</i>"
             )
 
-            bot = Bot(token=settings.telegram_bot_token)
-
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop and loop.is_running():
-                asyncio.ensure_future(
-                    bot.send_message(chat_id=settings.telegram_chat_id, text=telegram_text, parse_mode="HTML")
-                )
-            else:
-                asyncio.run(bot.send_message(chat_id=settings.telegram_chat_id, text=telegram_text, parse_mode="HTML"))
+            await send_telegram_message(
+                bot_token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
+                text=telegram_text,
+                parse_mode="HTML",
+            )
 
             logger.info("Telegram weekend sentiment report sent successfully.")
     except Exception as telegram_err:

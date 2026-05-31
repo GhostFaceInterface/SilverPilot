@@ -184,3 +184,147 @@ async def test_run_hermes_sentiment_analysis_empty_db(db_session):
     assert event.value_json["score"] == 0.0
     assert event.value_json["sentiment"] == "NEUTRAL"
     assert "No news articles found" in event.value_json["summary_markdown"]
+
+
+@pytest.mark.anyio
+async def test_hermes_weekend_telegram_dispatch_success(db_session):
+    from app.core.config import get_settings
+    from app.models import RawNews, CollectorRun
+
+    settings = get_settings()
+    settings.telegram_bot_token = "mock_token"
+    settings.telegram_chat_id = "123456"
+
+    # Add dummy collector run & RawNews
+    run = CollectorRun(
+        collector_name="hermes-test",
+        source="test",
+        status="SUCCESS",
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    news = RawNews(
+        collector_run_id=run.id,
+        source="kitco-rss",
+        title="Silver prices skyrocket!",
+        url="http://example.com/1",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        raw_payload_hash="h_integration",
+        parser_version="1.0",
+    )
+    db_session.add(news)
+    db_session.commit()
+
+    mock_llm_json = json.dumps(
+        [{"title": "Silver prices skyrocket!", "sentiment": "BULLISH", "relevance": 0.9, "speculation": 0.1}]
+    )
+
+    with (
+        patch("httpx.AsyncClient.post") as mock_post,
+        patch("app.risk.service.is_comex_market_closed", return_value=True),
+        patch("app.agents.hermes.send_telegram_message", new_callable=AsyncMock) as mock_send,
+    ):
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.json = lambda: {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": mock_llm_json,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 100},
+        }
+        mock_post.return_value = mock_response
+
+        # Execute agent analysis
+        event = await run_hermes_sentiment_analysis(db_session)
+
+        assert event is not None
+        # Assert send_telegram_message was successfully called and fully awaited
+        mock_send.assert_called_once()
+        args, kwargs = mock_send.call_args
+        assert kwargs["bot_token"] == "mock_token"
+        assert kwargs["chat_id"] == "123456"
+        assert "SilverPilot Hafta Sonu Nöbetçi Raporu" in kwargs["text"]
+        assert "Genel Sentiment Skoru" in kwargs["text"]
+
+
+@pytest.mark.anyio
+async def test_hermes_weekend_telegram_dispatch_failure_resilience(db_session):
+    from app.core.config import get_settings
+    from app.models import RawNews, CollectorRun
+
+    settings = get_settings()
+    settings.telegram_bot_token = "mock_token"
+    settings.telegram_chat_id = "123456"
+
+    # Clear previous events
+    db_session.query(AgentMemoryEvent).filter_by(agent_name="hermes-agent").delete()
+    db_session.commit()
+
+    # Add dummy RawNews
+    run = CollectorRun(
+        collector_name="hermes-test",
+        source="test",
+        status="SUCCESS",
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    news = RawNews(
+        collector_run_id=run.id,
+        source="kitco-rss",
+        title="Silver prices skyrocket!",
+        url="http://example.com/1",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        raw_payload_hash="h_integration2",
+        parser_version="1.0",
+    )
+    db_session.add(news)
+    db_session.commit()
+
+    mock_llm_json = json.dumps(
+        [{"title": "Silver prices skyrocket!", "sentiment": "BULLISH", "relevance": 0.9, "speculation": 0.1}]
+    )
+
+    with (
+        patch("httpx.AsyncClient.post") as mock_post,
+        patch("app.risk.service.is_comex_market_closed", return_value=True),
+        patch("app.agents.hermes.send_telegram_message", new_callable=AsyncMock) as mock_send,
+    ):
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.json = lambda: {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": mock_llm_json,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 100},
+        }
+        mock_post.return_value = mock_response
+
+        # Mock send_telegram_message to raise an error
+        mock_send.side_effect = Exception("Telegram Connection Failure")
+
+        # Execute
+        event = await run_hermes_sentiment_analysis(db_session)
+
+        # Verify it did not crash and saved the event cleanly in database
+        assert event is not None
+        assert event.agent_name == "hermes-agent"
+        assert event.value_json["score"] > 0.0
+        mock_send.assert_called_once()
