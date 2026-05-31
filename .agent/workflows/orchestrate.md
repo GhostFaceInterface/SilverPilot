@@ -72,8 +72,8 @@ Amacı OWASP 2025 açıklarını tespit etmek ve kapatmaktır:
 Antigravity supports spawning specialized subagents via `define_subagent` and `invoke_subagent`. To optimize context limits and keep conversations high-signal:
 1. **Scouting & Research:** Delegate large codebase searches and API analyses to a read-only `scout-subagent`. Enforce the usage of `@global-chat-agent-discovery` and `@jq` for parsing schemas.
 2. **Code Implementation:** For multi-file changes, spawn an isolated `backend-architect-subagent` or `data-engineer-subagent` using the `branch` or `share` workspace mode. This prevents intermediate compilation logs and temporary codes from bloating the main chat.
-3. **Quality & Test Design:** Spawn a `quality-subagent` to write clean, AAA pattern test files. Utilize `@lambdatest-agent-skills` or `@k6-load-testing` where load/E2E test automation is necessary.
-4. **Safety & Code Review:** Spawn a `safety-gatekeeper-subagent` (running Gemini 3.5 Pro) to review the written code changes and test cases *statically* before any execution. Enforce strict static rules utilizing `@logic-lens` (formal verification reasoning), `@brooks-lint` (coupling analysis), and `@codebase-audit-pre-push`.
+3. **Quality & Test Design:** Spawn a `quality-subagent` to write clean, AAA pattern test files. Utilize `@python-testing-patterns.md`, `@api-mocking.md`, `@test-driven-development.md`, and `@lambdatest-agent-skills` or `@k6-load-testing` where load/E2E test automation is necessary.
+4. **Safety & Code Review:** Spawn a `safety-gatekeeper-subagent` (running Gemini 3.5 Pro) to review the written code changes and test cases *statically* before any execution. Enforce strict static rules utilizing `@test-and-mock-integrity.md` (tavizsiz mock ve bütünlük denetimi), `@logic-lens` (formal verification reasoning), `@brooks-lint` (coupling analysis), and `@codebase-audit-pre-push`.
 5. **Quality & Test Execution:** Run the `pytest` test suites and environment smoke tests in a green, isolated terminal session, validated by `@squirrel` for a perfect delivery pipeline.
 
 ### B. Model Cascading Playbook (Flash vs Pro)
