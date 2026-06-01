@@ -167,11 +167,20 @@ def get_karzarar_text(db: Session) -> str:
     silver_qty = position.quantity
     avg_buy_cost = position.average_buy_cost
 
+    # Portfolio value & PNL calculations
+    portfolio_value = portfolio.cash_balance + (silver_qty * mid_price)
+    initial_balance = Decimal("2500")
+    total_pnl = portfolio_value - initial_balance
+
     unrealized_pnl = Decimal("0")
     if silver_qty > 0:
         unrealized_pnl = silver_qty * (mid_price - avg_buy_cost)
 
-    sign = "+" if unrealized_pnl >= 0 else ""
+    realized_pnl = total_pnl - unrealized_pnl
+
+    sign_unrealized = "+" if unrealized_pnl >= 0 else ""
+    sign_realized = "+" if realized_pnl >= 0 else ""
+    sign_total = "+" if total_pnl >= 0 else ""
 
     trades = (
         db.execute(
@@ -201,8 +210,10 @@ def get_karzarar_text(db: Session) -> str:
         "📈 <b>Açık Pozisyon ve Kar/Zarar Durumu</b>\n\n"
         f"🥈 <b>Açık Pozisyon:</b> {silver_qty:,.4f} XAG_GRAM\n"
         f"🏷️ <b>Ortalama Alış Maliyeti:</b> {avg_buy_cost:,.4f} USD/gram\n"
-        f"💸 <b>Anlık Gümüş Fiyatı:</b> {mid_price:,.4f} USD/gram\n"
-        f"📊 <b>Açık Pozisyon Kar/Zarar:</b> {sign}${unrealized_pnl:,.2f} USD\n\n"
+        f"💸 <b>Anlık Gümüş Fiyatı:</b> {mid_price:,.4f} USD/gram\n\n"
+        f"📊 <b>Açık Pozisyon Kar/Zarar:</b> {sign_unrealized}${unrealized_pnl:,.2f} USD\n"
+        f"💰 <b>Gerçekleşen Kar/Zarar:</b> {sign_realized}${realized_pnl:,.2f} USD\n"
+        f"🏆 <b>Toplam Net Kar/Zarar:</b> {sign_total}${total_pnl:,.2f} USD\n\n"
         f"🔄 <b>Son 5 Paper Trade İşlemi:</b>\n{trades_str}"
     )
 

@@ -97,6 +97,9 @@ def test_telegram_commands():
     # /karzarar
     karzarar_res = handle_telegram_command("/karzarar", db)
     assert "Açık Pozisyon ve Kar/Zarar Durumu" in karzarar_res
+    assert "Açık Pozisyon Kar/Zarar:" in karzarar_res
+    assert "Gerçekleşen Kar/Zarar:" in karzarar_res
+    assert "Toplam Net Kar/Zarar:" in karzarar_res
     assert "Son 5 Paper Trade İşlemi:" in karzarar_res
 
     # /ajanlar
@@ -347,6 +350,9 @@ def test_telegram_html_tag_balance_audit():
     karzarar_empty = get_karzarar_text(db)
     assert_html_balanced(karzarar_empty)
     assert "Açık Pozisyon ve Kar/Zarar Durumu" in karzarar_empty
+    assert "Açık Pozisyon Kar/Zarar:" in karzarar_empty
+    assert "Gerçekleşen Kar/Zarar:" in karzarar_empty
+    assert "Toplam Net Kar/Zarar:" in karzarar_empty
     assert "Henüz bir paper-trade işlemi bulunmuyor." in karzarar_empty
 
     # 4. Audit /karzarar (with trades)
@@ -366,6 +372,9 @@ def test_telegram_html_tag_balance_audit():
     db.commit()
     karzarar_filled = get_karzarar_text(db)
     assert_html_balanced(karzarar_filled)
+    assert "Açık Pozisyon Kar/Zarar:" in karzarar_filled
+    assert "Gerçekleşen Kar/Zarar:" in karzarar_filled
+    assert "Toplam Net Kar/Zarar:" in karzarar_filled
     assert "Son 5 Paper Trade İşlemi:" in karzarar_filled
     assert "Miktar: 10.0000" in karzarar_filled
 
