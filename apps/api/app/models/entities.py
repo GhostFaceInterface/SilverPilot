@@ -20,7 +20,7 @@ class Asset(Base):
 
     @property
     def currency(self) -> str:
-        if self.symbol == "XAG_GRAM":
+        if self.symbol == "XAG_TRY":
             return "TRY"
         return "USD"
 

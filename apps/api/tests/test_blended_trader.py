@@ -240,7 +240,7 @@ async def test_auto_trading_blended_bullish_consensus():
             # Check PaperTrade record
             trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one_or_none()
             assert trade is not None
-            assert trade.fees == Decimal("0.001562")
+            assert trade.fees == Decimal("0.050000")
 
             # Check silent value for notification (BULLISH is not silent)
             mock_bot_instance.send_message.assert_called_once()

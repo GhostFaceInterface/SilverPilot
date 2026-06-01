@@ -272,7 +272,7 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
         },
     )
     assert buy_response.status_code == 200
-    assert buy_response.json()["snapshot"]["cash_balance"] == "2496.837500"
+    assert buy_response.json()["snapshot"]["cash_balance"] == "2398.800000"
     assert buy_response.json()["risk_decision"]["decision"] == "allow"
     assert buy_response.json()["risk_decision"]["reason_code"] == "RISK_CHECK_PASSED"
     assert buy_response.json()["trade"]["risk_decision_id"] == buy_response.json()["risk_decision"]["id"]
@@ -291,7 +291,7 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     assert sell_response.status_code == 200
 
     snapshot = sell_response.json()["snapshot"]
-    assert snapshot["cash_balance"] == "2499.868750"
+    assert snapshot["cash_balance"] == "2495.800000"
     assert Decimal(snapshot["portfolio_value"]) < Decimal("2500.000000")
     assert Decimal(snapshot["realized_pnl"]) < Decimal("0")
 
@@ -787,6 +787,7 @@ def test_cross_currency_fx_rate_conversion():
     # 1. First, try a buy when NO FX rate is present in database.
     db = testing_session()
     try:
+        db.add(Asset(symbol="XAG_TRY", name="TRY Gram Silver", asset_type="metal", is_active=True))
         db.query(RawFxRate).delete()
         db.commit()
     finally:
@@ -795,6 +796,7 @@ def test_cross_currency_fx_rate_conversion():
     response_no_fx = client.post(
         "/paper-trades",
         json={
+            "asset_symbol": "XAG_TRY",
             "action": "paper_buy",
             "quantity": "10",
             "buy_price": "10.00",
@@ -810,7 +812,11 @@ def test_cross_currency_fx_rate_conversion():
     db = testing_session()
     try:
         seed_execution_critical_data(testing_session)
-        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_TRY").one_or_none()
+        if not asset:
+            asset = Asset(symbol="XAG_TRY", name="TRY Gram Silver", asset_type="metal", is_active=True)
+            db.add(asset)
+            db.flush()
         from app.models import PriceSnapshot
 
         db.add(
@@ -834,6 +840,7 @@ def test_cross_currency_fx_rate_conversion():
     buy_response = client.post(
         "/paper-trades",
         json={
+            "asset_symbol": "XAG_TRY",
             "action": "paper_buy",
             "quantity": "10",
             "buy_price": "10.00",
@@ -845,17 +852,18 @@ def test_cross_currency_fx_rate_conversion():
     assert buy_response.status_code == 200
 
     snapshot = buy_response.json()["snapshot"]
-    assert snapshot["cash_balance"] == "2496.837500"
+    assert snapshot["cash_balance"] == "2496.843750"
     assert buy_response.json()["trade"]["price"] == "0.312500"
     assert buy_response.json()["trade"]["fees"] == "0.031250"
-    assert buy_response.json()["trade"]["taxes"] == "0.006250"
+    assert buy_response.json()["trade"]["taxes"] == "0.000000"
     assert buy_response.json()["trade"]["gross_amount"] == "3.125000"
-    assert buy_response.json()["trade"]["net_amount"] == "3.162500"
+    assert buy_response.json()["trade"]["net_amount"] == "3.156250"
 
     # 4. Perform a paper sell trade
     sell_response = client.post(
         "/paper-trades",
         json={
+            "asset_symbol": "XAG_TRY",
             "action": "paper_sell",
             "quantity": "10",
             "buy_price": "10.00",
@@ -867,7 +875,7 @@ def test_cross_currency_fx_rate_conversion():
     assert sell_response.status_code == 200
 
     sell_snapshot = sell_response.json()["snapshot"]
-    assert sell_snapshot["cash_balance"] == "2499.868750"
+    assert sell_snapshot["cash_balance"] == "2499.875000"
     assert sell_response.json()["trade"]["price"] == "0.306250"
     assert sell_response.json()["trade"]["fees"] == "0.031250"
     assert sell_response.json()["trade"]["taxes"] == "0.000000"

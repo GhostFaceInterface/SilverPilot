@@ -138,11 +138,11 @@ async def test_auto_trading_buy_signal():
         # Check PaperTrade record created
         trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one_or_none()
         assert trade is not None
-        assert trade.price == Decimal("0.937500")  # snapshot.buy_price / 32
-        assert trade.fees == Decimal("0.001562")
+        assert trade.price == Decimal("30.000000")
+        assert trade.fees == Decimal("0.050000")
 
         # Verify portfolio cash balance updated
-        assert portfolio.cash_balance == Decimal("0.000001")
+        assert portfolio.cash_balance == Decimal("0.000000")
 
         # Verify telegram message was sent
         mock_bot_instance.send_message.assert_called_once()
@@ -272,12 +272,12 @@ async def test_auto_trading_sell_signal():
         # Check PaperTrade record created
         trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_sell")).scalar_one_or_none()
         assert trade is not None
-        assert trade.price == Decimal("1.090625")  # snapshot.sell_price / 32
-        assert trade.fees == Decimal("0.001562")
+        assert trade.price == Decimal("34.900000")
+        assert trade.fees == Decimal("0.050000")
         assert trade.quantity == Decimal("15.00")
 
         # Verify portfolio cash balance updated (100 + net_amount)
-        assert portfolio.cash_balance == Decimal("116.357813")
+        assert portfolio.cash_balance == Decimal("623.450000")
 
         # Verify telegram message was sent
         mock_bot_instance.send_message.assert_called_once()
