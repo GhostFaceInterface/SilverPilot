@@ -1,61 +1,42 @@
-# PLAN.md - Modüler Piyasa Takvimi & Yedekli RSS Haber Toplayıcı Entegrasyon Planı
+# Implementation Plan: İzole Codex Ajan Yapısı ve Savaş Odası Kurulumu [TAMAMLANDI]
 
-Bu plan, SilverPilot sistemindeki iki kritik eksikliği ve hatalı tetiklenmeyi gidermeyi amaçlar:
-1.  **Zamanlama ve Takvim Uyumsuzluğu:** Salı geceleri (New York saatiyle Pazartesi 17:00'deki günlük 1 saatlik bakım penceresinde) Telegram'a hatalı giden "Hafta Sonu Nöbetçi Raporu" sorununu çözmek için piyasa takvim kontrolünü modüler hale getirmek.
-2.  **Haber Akışı Eksikliği:** Sistemde tanımlı olan ancak toplayıcısı (collector) yazılmamış olan `"kitco-rss"`, `"bloomberght-rss"`, `"fxstreet-rss"`, ve `"investing-rss"` gibi zengin kaynaklar için modüler RSS kazıyıcılar yazmak. Aynı zamanda background lag durumunda analizcinin doğrudan canlı RSS çekimi yapmasını sağlayan **Demir Kalkan (Iron-Clad) Yedeklilik** mekanizmasını entegre etmek.
+Bu plan, SilverPilot projesinde Codex kullanımı için tamamen izole bir `.codex/` dizini oluşturmayı, Antigravity (`.agent/`) ve çalışma zamanı finansal ajanlarına (`agents/`) hiçbir şekilde dokunmadan Codex'in kendi kural, ajan, workflow, beceri ve yardımcı scriptlerini barındırmasını sağlar.
 
 ---
 
-## 👥 Görev Alacak Uzman Ajanlar
-
-Multi-Agent Orkestrasyonu kapsamında şu uzman ajanlar sequential olarak görev alacaktır:
-*   **`project-planner`:** Görevi fazlandırır, hedefleri belirler (bu plan).
-*   **`backend-architect`:** Modüler takvim fonksiyonlarını ve esnek RSS toplayıcı yapısını kodlar.
-*   **`quality-engineer`:** AAA standartlarında mock testlerini yazar ve pytest doğrulamalarını yapar.
-*   **`safety-gatekeeper`:** Statik kod denetimi ve secrets/sızıntı taraması gerçekleştirir.
+## 🛡️ Risk ve Bağlam Analizi
+- **Etkilenen Politikalar:** Projenin anayasal güvenlik sınırları (TIER 0) korunmuştur. Codex sisteminin ana sisteme ve Antigravity yapısına sızması tamamen engellenmiştir.
+- **Güvenli Erişim Sınırları:** Veri tabanı sorgulamalarında salt-okunur (read-only) güvenlik politikası uygulanacaktır.
 
 ---
 
-## 🛠️ Fazlar ve Görev Listesi (/orchestrate Uyumlu)
+## 🛠️ Fazlar ve Görev Listesi
 
-### Faz 1: Modüler Piyasa Takvimi Bölümlemesi (Backend Dev)
-*   **Ajan:** `backend-architect`
-*   `apps/api/app/risk/service.py` dosyasındaki takvim kontrolünü böl:
-    *   `is_comex_weekend(dt) -> bool`: Sadece gerçek hafta sonlarını (Cuma 17:00 ET - Pazar 18:00 ET) kapsar.
-    *   `is_comex_maintenance(dt) -> bool`: Hafta içi günlük 1 saatlik bakım penceresini (Pzt-Per 17:00 - 18:00 ET) kapsar.
-    *   `is_comex_market_closed(dt) -> bool`: Bu iki fonksiyonun birleşimidir (`weekend or maintenance`).
-*   `apps/api/app/agents/hermes.py` dosyasında Telegram bildirim koşulunu güncelle:
-    *   Rapor gönderimini `is_comex_market_closed` yerine sadece `is_comex_weekend` koşuluna bağla. Hafta içi bakım saatlerinde hafta sonu nöbetçi raporu gönderilmesini engelle.
+- `[x]` **Faz 1: Çekirdek Yapılandırma ve Dokümantasyon (`.codex/`)**
+  - `[x]` `.codex/config.toml` dosyasının oluşturulması (Ajan: `project-planner`)
+  - `[x]` `.codex/README.md` kılavuzunun hazırlanması
 
-### Faz 2: Modüler RSS Haber Kazıyıcıların Tasarımı (Backend Dev)
-*   **Ajan:** `backend-architect`
-*   `apps/api/app/collectors/public_sources.py` içerisine genel amaçlı, esnek RSS toplayıcısını ekle:
-    *   `RSS_FEEDS` haritasını oluştur (Kitco, Bloomberg HT, FXStreet, Investing RSS linkleri).
-    *   `collect_rss_news(db, *, source: str, url: str)` fonksiyonunu yaz. rate-limit korumalı `_fetch_text` kullanarak XML çeken, title/link/pubDate parsing yapan ve duplicate engelleyen yapı.
-    *   Bağlantı hatası durumunda alternatif (yedek) RSS beslemelerine geçebilen **Yedekli URL Hataları Yönetimi**.
-*   `apps/api/app/collectors/runner.py` dosyasındaki `JOB_CHOICES`'a yeni toplayıcıları ekle ve `run_once` akışına bağla.
+- `[x]` **Faz 2: Codex Özel Custom Ajanlarının Kurulumu (`.codex/agents/`)**
+  - `[x]` `scout.toml`, `architect.toml`, `troubleshooter.toml`, `db-investigator.toml` ve `implementation-worker.toml` dosyalarının oluşturulması (Ajan: `backend-architect`)
 
-### Faz 3: Demir Kalkan (Iron-Clad) Canlı RSS Çekim Yedekliliği
-*   **Ajan:** `backend-architect` & `data-engineer`
-*   `apps/api/app/agents/hermes.py` ve `news.py` içindeki analiz akışını güncelle:
-    *   Eğer son 24 saat içinde veri tabanına taze haber düşmemişse, doğrudan tarihi Fed tutanaklarına dönmek yerine, **analiz sırasında canlı ve inline olarak RSS kanallarından haber çekilmesini sağlayan** on-demand kurtarıcı tetikle. Bu sayede background servis gecikse dahi analiz daima taze haberler üzerinden çalışır.
+- `[x]` **Faz 3: Playbook ve Workflows (`.codex/workflows/`)**
+  - `[x]` `emergency-troubleshooting.md`, `architecture-audit.md` ve `db-diagnosis.md` dosyalarının oluşturulması (Ajan: `backend-architect`)
 
-### Faz 4: Şiddetli Test Aşaması (Quality Dev)
-*   **Ajan:** `quality-engineer`
-*   **Test Senaryoları:**
-    *   *Takvim Testi:* Hafta sonu, hafta içi açık saat ve hafta içi bakım saatleri için `is_comex_weekend` ve `is_comex_maintenance` çıktılarını doğrula.
-    *   *RSS Parser Testi:* Başarılı XML akışları, hatalı/bozuk XML şemaları, eksik alanlar ve mükerrer (duplicate) URL durumları için izole mock testleri yazar.
-    *   *Yedekleme Testi:* Birincil RSS adresi çöktüğünde sistemin yedek URL üzerinden başarıyla veri topladığını mock'lar üzerinden test eder.
-*   **DoD (Tamamlanma Tanımı):** Tüm testlerin lokalde `%100` başarıyla yeşillenmesi.
+- `[x]` **Faz 4: Codex Becerileri ve Prompt Şablonları (`.codex/skills/`, `.codex/prompts/`)**
+  - `[x]` FastAPI/SQLAlchemy, Alembic, Streamlit, Docker ve risk politikası becerilerinin markdown olarak hazırlanması
+  - `[x]` `incident-first-pass.md` ve `minimal-fix.md` şablonlarının oluşturulması (Ajan: `data-engineer`)
 
-### Faz 5: Statik Güvenlik Kapısı (Safety Gate)
-*   **Ajan:** `safety-gatekeeper`
-*   Yazılan kodların statik analizi, ağ sandboxing izolasyonu ve mock kalitesinin Gemini 3.5 Pro ile static audit edilmesi.
+- `[x]` **Faz 5: Karar Kayıtları ve Salt-Okunur Script (`.codex/memory/`, `.codex/scripts/`)**
+  - `[x]` `project-map.md`, `known-risks.md` ve `recurring-failures.md` bellek dosyalarının oluşturulması
+  - `[x]` `.codex/scripts/readonly-db-check.py` salt-okunur veritabanı introspeksiyon scriptinin yazılması (Ajan: `backend-architect`)
 
 ---
 
-## ❓ Kullanıcı Onayı Gerektiren Konular (Socratic Gate)
+## 📌 Onaylanan Kararlar (Socratic Gate)
 
-> [!IMPORTANT]
-> 1. **Model Geçiş Onayı:** Geliştirme, canlı kurtarma ve `safety-gatekeeper` statik analiz aşamalarında en üst düzey mantık doğruluğu sağlamak adına, plan onaylandıktan sonra modeli **Gemini 3.5 Pro** olarak değiştirmeyi onaylıyor musunuz?
-> 2. **RSS Haber Kaynakları:** Listelediğimiz 4 ana haber kaynağının (Kitco, Bloomberg HT, FXStreet, Investing) standart RSS şablonları üzerinden toplanmasını ve veri tabanında tekilleştirilmesini onaylıyor musunuz?
+> [!NOTE]
+> 1. **Model Yönlendirme:** Model cascading şu şekilde netleştirilmiştir:
+>    - Keşif/Tarama/Dosya Haritalama (`scout`, `db-investigator`, `deployment-investigator`, `test-verifier`): `gpt-5.4-mini`
+>    - Normal Kodlama/Hata Ayıklama (`implementation-worker`, `troubleshooter`): `gpt-5.5`
+>    - Ağır Muhakeme/Mimari/Risk/Final İnceleme (`architect`, `security-reviewer`, `final-reviewer`): `gpt-5.5-pro`
+> 2. **Veritabanı Politikası:** Normal koşullarda işlemler salt-okunur (read-only) yürüyecektir. Ancak kritik hata durumlarında manuel düzeltmeler için kullanıcı onayına başvurularak yazma/değişiklik işlemleri yapılabilecektir.

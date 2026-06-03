@@ -1,0 +1,11 @@
+# SilverPilot project-scoped Codex config.
+# Only Codex-specific settings live here.
+# Do not put auth tokens, API keys, provider config, database passwords, or secrets here.
+model_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[agents]
+max_threads = 5
+max_depth = 1
+job_max_runtime_seconds = 1800
