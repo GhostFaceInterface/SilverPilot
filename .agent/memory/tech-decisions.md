@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-05-30
+updated: 2026-06-03
 ---
 
 
@@ -115,3 +115,12 @@ updated: 2026-05-30
 ## 18. COMEX Off-Hours STALE_DATA Bypass Rule (May 2026)
 - **Timezone-Aware Off-Hours Logic:** Implemented timezone-aware detection using `zoneinfo` ("America/New_York") to bypass the strict `STALE_DATA` trade veto during weekends (Friday 17:00 ET to Sunday 18:00 ET) and daily maintenance windows (17:00 to 18:00 ET) since data scrapers do not fetch new prices while COMEX is closed. This allows paper trading and weekend simulations to run smoothly on the latest known closing price.
 - **Deterministic Testing Safety:** Added a dynamic check so that when `settings.app_env == "test"`, the bypass evaluates to `False`, safeguarding existing unit and integration tests from losing determinism.
+
+## 19. Codex Workspace & Model Cascading (June 2026)
+- **Codex Dizin İzolasyonu:** Codex'e ait tüm araç, şablon ve playybook konfigürasyonları `.codex/` dizininde izole edilmiştir.
+- **Model Cascading Kuralları:**
+  - Keşif/Tarama/Dosya Haritalama (`scout`, `db-investigator`, `deployment-investigator`, `test-verifier`): `gpt-5.4-mini`
+  - Normal Kodlama/Hata Ayıklama (`implementation-worker`, `troubleshooter`): `gpt-5.5`
+  - Ağır Muhakeme/Mimari/Risk/Final İnceleme (`architect`, `security-reviewer`, `final-reviewer`): `gpt-5.5-pro`
+- **Veritabanı Erişim Politikası:** İşlemler varsayılan olarak salt-okunur (read-only) yürüyecektir. Kritik kurtarma durumlarında veritabanı üzerinde değişiklik yapılması gerektiğinde, bu değişiklikler sadece kullanıcının açık onayı ile gerçekleştirilebilir.
+- **Ortak Geliştirici Hafızası:** Codex ve Antigravity sistemleri, dosya sapması (drift) ve uyuşmazlıkları önlemek için hafıza katmanı olarak ortaklaşa `.agent/memory/` dizinini (Single Source of Truth) kullanacaktır.

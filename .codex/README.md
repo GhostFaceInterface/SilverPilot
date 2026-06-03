@@ -4,8 +4,8 @@ Welcome to the isolated SilverPilot Codex workspace. This directory is reserved 
 
 > [!WARNING]
 > **Strict Isolation Policy:** 
-> - All Codex configurations, playbooks, prompts, memory, and utilities must live strictly within `.codex/`.
-> - Do not modify or contaminate the Antigravity framework directory (`.agent/`) or project-level root configurations like `AGENTS.md`.
+> - All Codex configurations, playbooks, prompts, and utilities must live strictly within `.codex/`.
+> - Do not modify or contaminate the Antigravity framework code or project-level root configurations like `AGENTS.md`.
 > - Do not confuse Codex custom subagents with runtime financial/data agents located under `/agents`.
 
 ---
@@ -17,7 +17,7 @@ Welcome to the isolated SilverPilot Codex workspace. This directory is reserved 
 - **`workflows/`**: Sequential operational playbooks for various incidents and audits.
 - **`skills/`**: Prototypical coding practices, patterns, and framework rules.
 - **`prompts/`**: Prepared templates for initial incident response and minimal code updates.
-- **`memory/`**: Codex-specific decision logs, known risks, and recurring failure checklists.
+- **Shared Memory (`.agent/memory/`)**: Shared centralized developer decision logs, known risks, and recurring failure checklists (Single Source of Truth).
 - **`scripts/`**: Controlled diagnostic and verification helper scripts.
 
 ---
