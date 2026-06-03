@@ -270,6 +270,19 @@ async def _run_auto_trading_impl(db: Session, settings):
     resolved_stance = "NEUTRAL"
     resolution_markdown = "Standard Strategy Selected."
 
+    # Retrieve latest 'hermes-agent' memory event from db
+    latest_event = db.execute(
+        select(AgentMemoryEvent)
+        .where(AgentMemoryEvent.agent_name == "hermes-agent")
+        .order_by(AgentMemoryEvent.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    hermes_sentiment = latest_event.value_json if latest_event else None
+    news_sentiment = "NEUTRAL"
+    if latest_event and latest_event.value_json:
+        news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
+
     # 4. Evaluate strategy
     if settings.strategy_name == "blended":
         regime_info = get_market_regime(db)
@@ -285,7 +298,9 @@ async def _run_auto_trading_impl(db: Session, settings):
             has_open_position=has_open_position,
         )
         # Call Supreme Consensus Engine
-        consensus_event = await run_blended_consensus_resolution(db, regime_info, strategy_votes, latest_snapshot)
+        consensus_event = await run_blended_consensus_resolution(
+            db, regime_info, strategy_votes, latest_snapshot, hermes_sentiment=hermes_sentiment
+        )
         resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
         resolution_markdown = consensus_event.value_json.get("resolution_markdown", "No details.")
 
@@ -312,18 +327,6 @@ async def _run_auto_trading_impl(db: Session, settings):
         )
 
     logger.info(f"Strategy evaluation: action={action}, reason={reason_code}")
-
-    # Retrieve news_sentiment: fetch latest 'news-agent' or 'hermes-agent' event from db, defaulting to 'NEUTRAL'
-    news_sentiment = "NEUTRAL"
-    latest_event = db.execute(
-        select(AgentMemoryEvent)
-        .where(AgentMemoryEvent.agent_name.in_(["news-agent", "hermes-agent"]))
-        .order_by(AgentMemoryEvent.created_at.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-
-    if latest_event and latest_event.value_json:
-        news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
 
     risk_decision_val = "APPROVED"
 

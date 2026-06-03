@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.llm.gateway import DeepSeekGateway
 from app.models import AgentMemoryEvent
-from app.agents.news import run_news_sentiment_analysis
+from app.agents.hermes import run_hermes_sentiment_analysis
 from app.agents.risk import run_signal_critique
 from app.agents.market_research import run_market_research_analysis
 from app.agents.ml_analyst import run_ml_inference_critique
@@ -33,11 +33,11 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
 
     # 1. Run Core and Auxiliary Agents Sequentially
 
-    # News Agent
+    # News Agent (Hermes)
     try:
-        results["news"] = await run_news_sentiment_analysis(db)
+        results["news"] = await run_hermes_sentiment_analysis(db)
     except Exception as e:
-        logger.exception("News agent execution failed")
+        logger.exception("Hermes agent execution failed")
         errors["news"] = str(e)
 
     # Risk Agent
@@ -293,11 +293,15 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
 
 
 async def run_blended_consensus_resolution(
-    db: Session, regime_info: dict, strategy_votes: dict, latest_snapshot
+    db: Session,
+    regime_info: dict,
+    strategy_votes: dict,
+    latest_snapshot,
+    hermes_sentiment: dict | None = None,
 ) -> AgentMemoryEvent:
     """
     Blended Agentic Regime & Consensus Engine (Supreme Arbiter).
-    Weights and resolves votes based on current Market Regime using deepseek-v4-pro.
+    Weights and resolves votes based on current Market Regime and Hermes news sentiment using deepseek-v4-pro.
     Saves the resolution into AgentMemoryEvent table under 'blended_consensus_resolution'.
     """
     from app.core.config import get_settings
@@ -308,10 +312,13 @@ async def run_blended_consensus_resolution(
     system_prompt = (
         "You are the Supreme Financial Arbiter and Blended Consensus Engine for SilverPilot.\n"
         "Your task is to weight and consolidate multiple strategy signals (RSI, Bollinger Bands, SMA Cross) "
-        "based on the detected Market Regime to determine a unified resolved stance.\n"
+        "and Hermes news sentiment based on the detected Market Regime to determine a unified resolved stance.\n"
         "Guideline weighting rules:\n"
-        "- In a SIDEWAYS regime, prioritize mean-reversion strategies like RSI and Bollinger Bands (e.g. 70-80% weight).\n"
-        "- In a TRENDING regime (TRENDING_UP / TRENDING_DOWN), prioritize trend-following strategies like SMA Cross (e.g. 70-80% weight).\n"
+        "- In a SIDEWAYS regime, prioritize mean-reversion strategies like RSI and Bollinger Bands (e.g. 70-80% weight). "
+        "Consider Hermes news sentiment with moderate weight (~20-30%).\n"
+        "- In a TRENDING regime (TRENDING_UP / TRENDING_DOWN), prioritize trend-following strategies like SMA Cross (e.g. 70-80% weight). "
+        "Consider Hermes news sentiment for confirmation (~10-20%).\n"
+        "- If the Hermes news sentiment score is strongly bearish (score < -0.45), raise warnings/caution and bias towards a BEARISH or NEUTRAL stance.\n"
         "You must output a unified consolidated resolved stance: BULLISH, BEARISH, or NEUTRAL.\n"
         "You must respond ONLY with a raw JSON object containing exactly the following keys:\n"
         '- "resolved_stance": string, must be one of "BULLISH", "BEARISH", or "NEUTRAL"\n'
@@ -337,6 +344,17 @@ async def run_blended_consensus_resolution(
         f"- Bollinger Bands: {strategy_votes.get('bollinger', {}).get('action')} ({strategy_votes.get('bollinger', {}).get('reason')})\n"
         f"- SMA Cross (20/50): {strategy_votes.get('sma_cross', {}).get('action')} ({strategy_votes.get('sma_cross', {}).get('reason')})\n"
     )
+
+    if hermes_sentiment:
+        score = hermes_sentiment.get("score", 0.0)
+        sentiment = hermes_sentiment.get("sentiment", "NEUTRAL")
+        articles_count = len(hermes_sentiment.get("articles") or [])
+        user_prompt += (
+            f"\nLatest Hermes News Sentiment:\n"
+            f"- Sentiment Score: {score:.4f}\n"
+            f"- Resolved Sentiment: {sentiment}\n"
+            f"- Number of Articles Analyzed: {articles_count}\n"
+        )
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -394,6 +412,7 @@ async def run_blended_consensus_resolution(
             "resolution_markdown": resolution_markdown,
             "regime_info": regime_info,
             "strategy_votes": strategy_votes,
+            "hermes_sentiment": hermes_sentiment,
             "recorded_at": now.isoformat(),
         },
     )

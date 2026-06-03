@@ -369,3 +369,66 @@ async def test_hermes_llm_failure_graceful_recovery(db_session):
         assert event.value_json["score"] == 0.0
         assert event.value_json["sentiment"] == "NEUTRAL"
         assert "LLM call failed" in event.value_json["summary_markdown"]
+
+
+@pytest.mark.anyio
+async def test_hermes_boost_converts_hold_to_buy(db_session):
+    """
+    Verifies that StrategyRunner promotes HOLD to BUY when:
+    - action is HOLD
+    - latest Hermes sentiment score is >= hermes_boost_threshold
+    - risk_decision is NOT REJECTED (e.g. APPROVED)
+    """
+    settings = get_settings()
+    settings.hermes_boost_threshold = Decimal("0.40")
+
+    # Clear previous hermes events
+    db_session.query(AgentMemoryEvent).filter_by(agent_name="hermes-agent").delete()
+    db_session.commit()
+
+    # Add a hermes sentiment event with a score >= 0.40 (e.g., 0.45)
+    event_boost = AgentMemoryEvent(
+        agent_name="hermes-agent",
+        event_type="hermes_sentiment",
+        key="latest_analysis",
+        value_json={"score": 0.45, "sentiment": "BULLISH"},
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(event_boost)
+    db_session.commit()
+
+    # Call apply_agent_filters and assert action gets promoted from HOLD to BUY
+    action, reason = StrategyRunner.apply_agent_filters("HOLD", "BULLISH", "APPROVED", db=db_session)
+    assert action == "BUY"
+    assert reason == "AGENT_BOOST_HERMES_BULLISH_NEWS"
+
+
+@pytest.mark.anyio
+async def test_hermes_boost_respects_risk_rejection(db_session):
+    """
+    Verifies that StrategyRunner does NOT promote HOLD to BUY even if
+    the latest Hermes sentiment score is >= hermes_boost_threshold when
+    risk_decision is REJECTED.
+    """
+    settings = get_settings()
+    settings.hermes_boost_threshold = Decimal("0.40")
+
+    # Clear previous hermes events
+    db_session.query(AgentMemoryEvent).filter_by(agent_name="hermes-agent").delete()
+    db_session.commit()
+
+    # Add a hermes sentiment event with a score >= 0.40 (e.g., 0.45)
+    event_boost = AgentMemoryEvent(
+        agent_name="hermes-agent",
+        event_type="hermes_sentiment",
+        key="latest_analysis",
+        value_json={"score": 0.45, "sentiment": "BULLISH"},
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(event_boost)
+    db_session.commit()
+
+    # Call apply_agent_filters and assert action remains HOLD due to risk rejection
+    action, reason = StrategyRunner.apply_agent_filters("HOLD", "BULLISH", "REJECTED", db=db_session)
+    assert action == "HOLD"
+    assert reason == ""
