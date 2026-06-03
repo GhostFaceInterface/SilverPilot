@@ -1,67 +1,61 @@
-# PLAN.md - Telegram `/karzarar` Gelişmiş PNL Entegrasyon Planı
+# PLAN.md - Modüler Piyasa Takvimi & Yedekli RSS Haber Toplayıcı Entegrasyon Planı
 
-Bu plan, kullanıcının `/cuzdan` (Cüzdan Değişim Özeti) ile `/karzarar` (Açık Pozisyon Kar/Zarar Durumu) komutları arasındaki kavramsal farkı (Açık pozisyon kapalıyken karın $0.00 görünmesi ancak cüzdanda karlı olunması) gidermeyi amaçlar. 
-
-Mevcut `/karzarar` komutu sadece **gerçekleşmemiş (unrealized) açık pozisyon karını** göstermektedir. Bu planla `/karzarar` komutunun kapsamı genişletilerek **Gerçekleşen (Realized) Kar/Zarar** ve **Toplam (Total) Kar/Zarar** kalemleri de rapora eklenecektir.
+Bu plan, SilverPilot sistemindeki iki kritik eksikliği ve hatalı tetiklenmeyi gidermeyi amaçlar:
+1.  **Zamanlama ve Takvim Uyumsuzluğu:** Salı geceleri (New York saatiyle Pazartesi 17:00'deki günlük 1 saatlik bakım penceresinde) Telegram'a hatalı giden "Hafta Sonu Nöbetçi Raporu" sorununu çözmek için piyasa takvim kontrolünü modüler hale getirmek.
+2.  **Haber Akışı Eksikliği:** Sistemde tanımlı olan ancak toplayıcısı (collector) yazılmamış olan `"kitco-rss"`, `"bloomberght-rss"`, `"fxstreet-rss"`, ve `"investing-rss"` gibi zengin kaynaklar için modüler RSS kazıyıcılar yazmak. Aynı zamanda background lag durumunda analizcinin doğrudan canlı RSS çekimi yapmasını sağlayan **Demir Kalkan (Iron-Clad) Yedeklilik** mekanizmasını entegre etmek.
 
 ---
 
-## 🔍 Kavramsal Fark ve Matematiksel Model
+## 👥 Görev Alacak Uzman Ajanlar
 
-Kullanıcı gümüş pozisyonunu tamamen kapattığında (`Açık Pozisyon: 0.0000 XAG_GRAM`):
-1.  **Açık Pozisyon (Unrealized) Kar/Zarar:** `silver_qty * (mid_price - avg_buy_cost)` formülü gereği **`$0.00 USD`** olur (Çünkü adet sıfırdır).
-2.  **Toplam Kar/Zarar (Total PNL):** Başlangıç bakiyesi ($2500 USD) ile anlık toplam portföy değeri (nakit bakiye + gümüş değeri) arasındaki net farktır:
-    $$\text{Toplam PNL} = (\text{Nakit Bakiye} + \text{Gümüş Adedi} \times \text{Anlık Fiyat}) - 2500$$
-3.  **Gerçekleşen Kar/Zarar (Realized PNL):** Toplam PNL'den Açık Pozisyon PNL'inin düşülmesiyle elde edilir:
-    $$\text{Gerçekleşen PNL} = \text{Toplam PNL} - \text{Açık Pozisyon PNL}$$
-
-Bu entegrasyon sayesinde kullanıcı, pozisyonu sıfır olsa dahi kapattığı işlemlerden elde ettiği **Gerçekleşen Karı** net bir şekilde görebilecektir.
+Multi-Agent Orkestrasyonu kapsamında şu uzman ajanlar sequential olarak görev alacaktır:
+*   **`project-planner`:** Görevi fazlandırır, hedefleri belirler (bu plan).
+*   **`backend-architect`:** Modüler takvim fonksiyonlarını ve esnek RSS toplayıcı yapısını kodlar.
+*   **`quality-engineer`:** AAA standartlarında mock testlerini yazar ve pytest doğrulamalarını yapar.
+*   **`safety-gatekeeper`:** Statik kod denetimi ve secrets/sızıntı taraması gerçekleştirir.
 
 ---
 
 ## 🛠️ Fazlar ve Görev Listesi (/orchestrate Uyumlu)
 
-### Faz 1: Stratejik Keşif ve Şema Doğrulaması (Scout)
-- [x] `apps/api/app/agents/telegram_bot.py` dosyasındaki `get_karzarar_text` ve `get_cuzdan_text` fonksiyon kodları analiz edildi.
-- *Ajanlar:* `scout-agent` (Tamamlandı)
+### Faz 1: Modüler Piyasa Takvimi Bölümlemesi (Backend Dev)
+*   **Ajan:** `backend-architect`
+*   `apps/api/app/risk/service.py` dosyasındaki takvim kontrolünü böl:
+    *   `is_comex_weekend(dt) -> bool`: Sadece gerçek hafta sonlarını (Cuma 17:00 ET - Pazar 18:00 ET) kapsar.
+    *   `is_comex_maintenance(dt) -> bool`: Hafta içi günlük 1 saatlik bakım penceresini (Pzt-Per 17:00 - 18:00 ET) kapsar.
+    *   `is_comex_market_closed(dt) -> bool`: Bu iki fonksiyonun birleşimidir (`weekend or maintenance`).
+*   `apps/api/app/agents/hermes.py` dosyasında Telegram bildirim koşulunu güncelle:
+    *   Rapor gönderimini `is_comex_market_closed` yerine sadece `is_comex_weekend` koşuluna bağla. Hafta içi bakım saatlerinde hafta sonu nöbetçi raporu gönderilmesini engelle.
 
-### Faz 2: Backend & Telegram Arayüz Entegrasyonu (Backend Dev)
-- [ ] `apps/api/app/agents/telegram_bot.py` içerisindeki `get_karzarar_text` fonksiyonunu güncelle.
-  - [ ] Portföy değerini (`portfolio_value = cash_balance + silver_value`) hesapla.
-  - [ ] Toplam PNL'i hesapla: `total_pnl = portfolio_value - 2500`.
-  - [ ] Açık Pozisyon (unrealized) PNL'i hesapla: `silver_qty * (mid_price - avg_buy_cost)` (adet > 0 ise).
-  - [ ] Gerçekleşen (realized) PNL'i hesapla: `realized_pnl = total_pnl - unrealized_pnl`.
-  - [ ] Çıktı metnini premium emojilerle zenginleştirerek her üç PNL kalemi de listelenecek şekilde formatla:
-    * `📊 Açık Pozisyon Kar/Zarar: +$0.00 USD`
-    * `💰 Gerçekleşen Kar/Zarar: +$26.58 USD`
-    * `🏆 Toplam Net Kar/Zarar: +$26.58 USD`
-- *Ajanlar:* `backend-architect`
-- *DoD (Tamamlanma Tanımı):* Çıktı formatının başarıyla oluşturulması ve syntax hatasız derlenmesi.
+### Faz 2: Modüler RSS Haber Kazıyıcıların Tasarımı (Backend Dev)
+*   **Ajan:** `backend-architect`
+*   `apps/api/app/collectors/public_sources.py` içerisine genel amaçlı, esnek RSS toplayıcısını ekle:
+    *   `RSS_FEEDS` haritasını oluştur (Kitco, Bloomberg HT, FXStreet, Investing RSS linkleri).
+    *   `collect_rss_news(db, *, source: str, url: str)` fonksiyonunu yaz. rate-limit korumalı `_fetch_text` kullanarak XML çeken, title/link/pubDate parsing yapan ve duplicate engelleyen yapı.
+    *   Bağlantı hatası durumunda alternatif (yedek) RSS beslemelerine geçebilen **Yedekli URL Hataları Yönetimi**.
+*   `apps/api/app/collectors/runner.py` dosyasındaki `JOB_CHOICES`'a yeni toplayıcıları ekle ve `run_once` akışına bağla.
 
-### Faz 3: Kalite Güvencesi & Pytest Entegrasyonu (Quality Dev)
-- [ ] `apps/api/tests/test_telegram.py` dosyasını güncelle veya yeni test senaryoları ekle:
-  - [ ] **Test Senaryosu 1 (Açık Pozisyonlu Durum):** Gümüş adedi > 0 iken hem unrealized, hem realized hem de total PNL'lerin doğru hesaplanıp metinde yer aldığını doğrula.
-  - [ ] **Test Senaryosu 2 (Kapalı Pozisyonlu Durum):** Gümüş adedi = 0 iken unrealized PNL'in 0.00, realized ve total PNL'in ise cüzdan karına eşit olduğunu ve metinde doğru gösterildiğini doğrula.
-- *Ajanlar:* `quality-engineer`
-- *DoD:* Eklenen `/karzarar` testlerinin lokalde `%100` başarıyla geçmesi.
+### Faz 3: Demir Kalkan (Iron-Clad) Canlı RSS Çekim Yedekliliği
+*   **Ajan:** `backend-architect` & `data-engineer`
+*   `apps/api/app/agents/hermes.py` ve `news.py` içindeki analiz akışını güncelle:
+    *   Eğer son 24 saat içinde veri tabanına taze haber düşmemişse, doğrudan tarihi Fed tutanaklarına dönmek yerine, **analiz sırasında canlı ve inline olarak RSS kanallarından haber çekilmesini sağlayan** on-demand kurtarıcı tetikle. Bu sayede background servis gecikse dahi analiz daima taze haberler üzerinden çalışır.
 
-### Faz 4: Güvenlik Kapısı & Kod Denetimi (Safety Gate)
-- [ ] `safety-gatekeeper` (Gemini 3.5 Pro) ile yazılan kodların ve test mocks yapılarının derinlemesine statik analizi.
-- [ ] Sıfır soket sızıntısı (sandboxing) ve sıfır mock sapması (mock drift) güvencesi.
-- *Ajanlar:* `safety-gatekeeper`
-- *DoD:* `safety-gatekeeper` tarafından kodların **APPROVED** (Onaylandı) verilmesi.
+### Faz 4: Şiddetli Test Aşaması (Quality Dev)
+*   **Ajan:** `quality-engineer`
+*   **Test Senaryoları:**
+    *   *Takvim Testi:* Hafta sonu, hafta içi açık saat ve hafta içi bakım saatleri için `is_comex_weekend` ve `is_comex_maintenance` çıktılarını doğrula.
+    *   *RSS Parser Testi:* Başarılı XML akışları, hatalı/bozuk XML şemaları, eksik alanlar ve mükerrer (duplicate) URL durumları için izole mock testleri yazar.
+    *   *Yedekleme Testi:* Birincil RSS adresi çöktüğünde sistemin yedek URL üzerinden başarıyla veri topladığını mock'lar üzerinden test eder.
+*   **DoD (Tamamlanma Tanımı):** Tüm testlerin lokalde `%100` başarıyla yeşillenmesi.
 
-### Faz 5: Doğrulama, Git Otomasyonu & Canlı Dağıtım (Deploy)
-- [ ] Yerel pytest süitini (`.venv/bin/pytest`) koştur ve regresyonsuz yeşillendiğini doğrula.
-- [ ] Başarılı kod değişikliklerini otomatik olarak Conventional Commits (`feat: integrate realized and total pnl calculation to telegram karzarar command`) ile commit et ve `push` yap.
-- [ ] `silverpilot-vps` sunucusuna bağlanarak `./scripts/deploy.sh -y` ile canlı sistemi güncelle ve doğrula.
-- *Ajanlar:* `quality-engineer`
-- *DoD:* VPS smoke testlerinin yeşil tamamlanması ve Telegram botundan `/karzarar` yazıldığında güncel ekranın alınması.
+### Faz 5: Statik Güvenlik Kapısı (Safety Gate)
+*   **Ajan:** `safety-gatekeeper`
+*   Yazılan kodların statik analizi, ağ sandboxing izolasyonu ve mock kalitesinin Gemini 3.5 Pro ile static audit edilmesi.
 
 ---
 
 ## ❓ Kullanıcı Onayı Gerektiren Konular (Socratic Gate)
 
 > [!IMPORTANT]
-> 1. **Başlangıç Bakiyesi Varsayımı:** Portföyün realized PNL hesabı için başlangıç bakiyesini `/cuzdan` komutuyla tam uyumlu olması adına sabit **`$2500 USD`** olarak kabul ediyoruz. Bunu onaylıyor musunuz?
-> 2. **Model Geçiş Protokolü:** Geliştirme adımları ve `safety-gatekeeper` paranoid kod review aşamalarında en üst düzey mantık doğruluğu sağlamak adına, plan onaylandıktan sonra modeli **Gemini 3.5 Pro** olarak değiştirmeyi onaylıyor musunuz?
+> 1. **Model Geçiş Onayı:** Geliştirme, canlı kurtarma ve `safety-gatekeeper` statik analiz aşamalarında en üst düzey mantık doğruluğu sağlamak adına, plan onaylandıktan sonra modeli **Gemini 3.5 Pro** olarak değiştirmeyi onaylıyor musunuz?
+> 2. **RSS Haber Kaynakları:** Listelediğimiz 4 ana haber kaynağının (Kitco, Bloomberg HT, FXStreet, Investing) standart RSS şablonları üzerinden toplanmasını ve veri tabanında tekilleştirilmesini onaylıyor musunuz?
