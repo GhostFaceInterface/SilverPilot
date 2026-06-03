@@ -42,6 +42,8 @@ updated: 2026-05-30
   - Fortified `test_hermes_agent.py` by resolving AsyncMock `raise_for_status` mock namespace drift warnings.
   - Authored a premium, AAA-pattern, network-sandboxed test suite containing robust parser validation edge cases (`test_kuveyt_public_silver_parser_raises_on_missing_labels`, `test_kuveyt_public_silver_parser_raises_on_inverted_spread`, `test_fred_macro_observations_parser_raises_on_missing_values`), portfolio balance reset telemetry purging verification (`test_portfolio_balance_reset_purges_history`), and precise realized loss limits boundary check parameters.
   - Successfully validated 100% green status across all 179 project tests with zero regressions or warnings.
+- **Phase 20 (Phase A: Data Pipeline Fix - June 2026):** Consolidated news agents by removing reference dependencies to the obsolete `news-agent` and establishing `hermes-agent` as the singular sentiment engine. Resolved datetime parsing limits in `public_sources.py` by adding RFC 2822, ISO 8601, and custom string strptime format handling. Re-scheduled background collector runs so that RSS feeds (`kitco-rss`, `bloomberght-rss`, `fxstreet-rss`, `investing-rss`) execute sequentially before `hermes-agent`. Fixed the weekend sentinel report's timing checks by implementing separate COMEX `is_comex_weekend()` and `is_comex_maintenance()` helper routines. Mitigated LLM call timeouts and daily budget drains by adding a `.limit(15)` constraint to the 24h recent news DB query. Successfully verified all 219 tests green, and deployed update to VPS with updated `.env.production` jobs.
+
 
 
 
