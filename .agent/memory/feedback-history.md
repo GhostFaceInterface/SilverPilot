@@ -29,6 +29,9 @@ updated: 2026-05-30
 
 - **Prevent Test Network Leakage from On-Demand Scrapers:** When writing agent or route tests that operate on clean or empty database scopes, ensure that on-demand collectors (such as `collect_rss_news` in `hermes-agent` or `news-agent`) are explicitly mocked. If the database is empty, the agents naturally trigger live scraper fallbacks, making actual HTTP requests and causing the test suite to leak to the network and fail with `401 Unauthorized` LLM gateway errors.
 - **Limit Prompt Sizes to Prevent LLM Timeouts:** When querying historical databases (such as `RawNews` from the last 24 hours) to build prompts for LLM agents, always apply a `.limit(N)` constraint (e.g., 10 or 15 items). During fresh runs or after scraping multiple feeds, the database can suddenly contain dozens of articles, causing the LLM to process massive prompts and output large JSON payloads that exceed standard HTTP timeouts (60s) and exhaust the daily budget.
+- **SQLite Timezone Naive Datetimes & Timezone-Aware Comparison**: When comparing timezone-aware python datetime objects (`datetime.now(timezone.utc)`) with datetimes retrieved from SQLite (which are often serialized as naive), make sure to normalize naive datetimes via `.replace(tzinfo=timezone.utc)` to prevent runtime comparison exceptions.
+- **Tuned On-Demand Scraper Guards**: Establish a dual-guard for on-demand live scraper fallbacks: (1) check if recent target news exists in the last 24h, and (2) verify if the latest fallback news in the DB is older than 48h. This protects against duplicate scraping loads during frequent trader check cycles.
+- **Ruff Validation & Pre-Commit Linting**: Be diligent with pre-commit hooks running Ruff validation: resolve unused local variables (by removing them or prefixing with `_`) and mark imports executed after `sys.path.insert` manipulations with `# noqa: E402`.
 
 
 
