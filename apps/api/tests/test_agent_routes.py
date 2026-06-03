@@ -197,7 +197,10 @@ def test_agent_trigger_endpoints():
 
     # 1. Test POST /agent/news/trigger
     assert client.post("/agent/news/trigger").status_code == 401
-    response = client.post("/agent/news/trigger", headers={"X-Agent-Token": "test_token"})
+    from unittest.mock import patch
+
+    with patch("app.collectors.public_sources.collect_rss_news", return_value=(None, 0)):
+        response = client.post("/agent/news/trigger", headers={"X-Agent-Token": "test_token"})
     assert response.status_code == 200
     data = response.json()
     assert data["agent_name"] == "news-agent"

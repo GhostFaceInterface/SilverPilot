@@ -57,6 +57,39 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         stmt_any = select(RawNews).order_by(desc(RawNews.fetched_at)).limit(15)
         news_items = db.execute(stmt_any).scalars().all()
 
+    # 4. On-demand live RSS fetch if database has no fresh articles
+    if not news_items:
+        logger.info("No news in database. Attempting on-demand live RSS fetch...")
+        try:
+            from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
+
+            for feed_source, feed_urls in RSS_FEEDS.items():
+                try:
+                    _run, _inserted = collect_rss_news(db, source=feed_source, urls=feed_urls)
+                    if _inserted > 0:
+                        logger.info(f"On-demand RSS fetch: {feed_source} inserted {_inserted} articles.")
+                except Exception as feed_err:
+                    logger.warning(f"On-demand RSS fetch failed for {feed_source}: {feed_err}")
+
+            # Re-query after on-demand fetch
+            stmt_retry = (
+                select(RawNews)
+                .where(RawNews.fetched_at >= twenty_four_hours_ago, RawNews.source.in_(list(TARGET_SOURCES)))
+                .order_by(desc(RawNews.fetched_at))
+            )
+            news_items = db.execute(stmt_retry).scalars().all()
+
+            if not news_items:
+                stmt_retry_any = (
+                    select(RawNews)
+                    .where(RawNews.source.in_(list(TARGET_SOURCES)))
+                    .order_by(desc(RawNews.fetched_at))
+                    .limit(15)
+                )
+                news_items = db.execute(stmt_retry_any).scalars().all()
+        except Exception as fetch_all_err:
+            logger.error(f"On-demand RSS fetch mechanism failed entirely: {fetch_all_err}")
+
     if not news_items:
         logger.warning("No news articles found in the database at all.")
         event = AgentMemoryEvent(
@@ -272,9 +305,9 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
 
     # 8. Hafta Sonu Telegram Bildirim Entegrasyonu
     try:
-        from app.risk.service import is_comex_market_closed
+        from app.risk.service import is_comex_weekend
 
-        if is_comex_market_closed(now) and settings.telegram_bot_token and settings.telegram_chat_id:
+        if is_comex_weekend(now) and settings.telegram_bot_token and settings.telegram_chat_id:
             telegram_text = (
                 f"🏛️ <b>SilverPilot Hafta Sonu Nöbetçi Raporu</b>\n\n"
                 f"Geçtiğimiz 6 saat boyunca gelen makroekonomik haberler analiz edildi:\n\n"

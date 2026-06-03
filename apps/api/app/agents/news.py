@@ -30,6 +30,33 @@ async def run_news_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         stmt_fallback = select(RawNews).order_by(desc(RawNews.fetched_at)).limit(10)
         news_items = db.execute(stmt_fallback).scalars().all()
 
+    # 3. On-demand live RSS fetch if database has no articles
+    if not news_items:
+        logger.info("No news in database. Attempting on-demand live RSS fetch...")
+        try:
+            from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
+
+            for feed_source, feed_urls in RSS_FEEDS.items():
+                try:
+                    _run, _inserted = collect_rss_news(db, source=feed_source, urls=feed_urls)
+                    if _inserted > 0:
+                        logger.info(f"On-demand RSS fetch: {feed_source} inserted {_inserted} articles.")
+                except Exception as feed_err:
+                    logger.warning(f"On-demand RSS fetch failed for {feed_source}: {feed_err}")
+
+            # Re-query after on-demand fetch
+            news_items = (
+                db.execute(
+                    select(RawNews)
+                    .where(RawNews.fetched_at >= twenty_four_hours_ago)
+                    .order_by(desc(RawNews.fetched_at))
+                )
+                .scalars()
+                .all()
+            )
+        except Exception as fetch_all_err:
+            logger.error(f"On-demand RSS fetch mechanism failed entirely: {fetch_all_err}")
+
     if not news_items:
         logger.warning("No news articles found in the database at all.")
         sentiment = "NEUTRAL"

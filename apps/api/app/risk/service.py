@@ -17,12 +17,8 @@ PERCENT_QUANT = Decimal("0.000001")
 NEAR_LIMIT_USED_PERCENT = Decimal("80.000000")
 
 
-def is_comex_market_closed(dt: datetime) -> bool:
-    """
-    Checks if the COMEX precious metals market is closed.
-    COMEX trading hours: Sun 18:00 ET to Fri 17:00 ET.
-    Daily maintenance window: 17:00 to 18:00 ET.
-    """
+def is_comex_weekend(dt: datetime) -> bool:
+    """Returns True only during actual COMEX weekend closure: Friday 17:00 ET to Sunday 18:00 ET."""
     settings = get_settings()
     if settings.app_env == "test":
         return False
@@ -34,7 +30,6 @@ def is_comex_market_closed(dt: datetime) -> bool:
     weekday = et_dt.weekday()  # 0 = Monday, ..., 4 = Friday, 5 = Saturday, 6 = Sunday
     hour = et_dt.hour
 
-    # 1. Weekend closure
     # Friday after 17:00 ET
     if weekday == 4 and hour >= 17:
         return True
@@ -45,12 +40,36 @@ def is_comex_market_closed(dt: datetime) -> bool:
     if weekday == 6 and hour < 18:
         return True
 
-    # 2. Daily maintenance window (17:00 - 18:00 ET)
+    return False
+
+
+def is_comex_maintenance(dt: datetime) -> bool:
+    """Returns True during weekday daily maintenance window: Mon-Thu 17:00-18:00 ET."""
+    settings = get_settings()
+    if settings.app_env == "test":
+        return False
+
+    from zoneinfo import ZoneInfo
+
+    et_tz = ZoneInfo("America/New_York")
+    et_dt = dt.astimezone(et_tz)
+    weekday = et_dt.weekday()
+    hour = et_dt.hour
+
     # Mon-Thu daily maintenance
     if weekday in {0, 1, 2, 3} and hour == 17:
         return True
 
     return False
+
+
+def is_comex_market_closed(dt: datetime) -> bool:
+    """
+    Checks if the COMEX precious metals market is closed.
+    COMEX trading hours: Sun 18:00 ET to Fri 17:00 ET.
+    Daily maintenance window: 17:00 to 18:00 ET.
+    """
+    return is_comex_weekend(dt) or is_comex_maintenance(dt)
 
 
 @dataclass(frozen=True)

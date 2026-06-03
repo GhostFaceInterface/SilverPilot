@@ -14,6 +14,7 @@ from app.collectors.public_sources import (
     collect_tcmb_usd_try,
 )
 from app.collectors.service import ingest_manual_price
+from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
 from app.core.db import SessionLocal
 from app.schemas.collectors import ManualPriceIngestRequest
 
@@ -27,7 +28,10 @@ JOB_CHOICES = (
     "fed-rss",
     "fred-macro",
     "hermes-agent",
-    "news-agent",
+    "kitco-rss",
+    "bloomberght-rss",
+    "fxstreet-rss",
+    "investing-rss",
 )
 
 
@@ -46,16 +50,17 @@ async def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
             print(f"job={selected_job} status=success", flush=True)
             return True
 
-        if selected_job == "news-agent":
-            from app.agents.news import run_news_sentiment_analysis
-
+        if selected_job in RSS_FEEDS:
             try:
-                await run_news_sentiment_analysis(db)
+                run, inserted = collect_rss_news(db, source=selected_job, urls=RSS_FEEDS[selected_job])
+                print(
+                    f"job={selected_job} collector_run_id={run.id} status={run.status} records_inserted={inserted}",
+                    flush=True,
+                )
+                return run.status == "success"
             except Exception as e:
-                print(f"Error running news-agent: {e}", flush=True)
+                print(f"Error running {selected_job}: {e}", flush=True)
                 return False
-            print(f"job={selected_job} status=success", flush=True)
-            return True
 
         if selected_job == "kuveyt-silver":
             run, raw_inserted, snapshot = collect_kuveyt_public_silver(db)
@@ -164,10 +169,24 @@ async def run_jobs(args: argparse.Namespace) -> bool:
 def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:
     jobs = [item.strip() for item in value.split(",") if item.strip()]
     if not jobs:
-        return [fallback_job]
+        jobs = [fallback_job]
     unknown = [job for job in jobs if job not in JOB_CHOICES]
     if unknown:
         raise ValueError(f"Unsupported collector job(s): {', '.join(unknown)}")
+
+    # Ensure RSS feeds are fetched before hermes-agent inside the runner list
+    if "hermes-agent" in jobs:
+        rss_keys = set(RSS_FEEDS.keys()) | {"fed-rss"}
+        has_rss = any(j in rss_keys for j in jobs)
+        if has_rss:
+            temp_jobs = [j for j in jobs if j != "hermes-agent"]
+            last_rss_idx = -1
+            for idx, j in enumerate(temp_jobs):
+                if j in rss_keys:
+                    last_rss_idx = idx
+            temp_jobs.insert(last_rss_idx + 1, "hermes-agent")
+            jobs = temp_jobs
+
     return jobs
 
 
@@ -224,7 +243,7 @@ async def main_async() -> None:
         if is_closed_after_sleep:
             original_jobs = args.jobs
             original_job = args.job
-            allowed_jobs = {"fed-rss", "hermes-agent", "news-agent"}
+            allowed_jobs = {"fed-rss", "hermes-agent", "kitco-rss", "bloomberght-rss", "fxstreet-rss", "investing-rss"}
 
             if args.jobs:
                 current_jobs_list = [j.strip() for j in args.jobs.split(",") if j.strip() in allowed_jobs]

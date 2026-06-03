@@ -41,6 +41,7 @@ METALS_DEV_PARSER_VERSION = "metals-dev-silver-spot-v1"
 GOLD_API_PARSER_VERSION = "gold-api-xag-usd-v1"
 TCMB_PARSER_VERSION = "tcmb-today-xml-v1"
 FED_RSS_PARSER_VERSION = "fed-rss-v1"
+GENERIC_RSS_PARSER_VERSION = "generic-rss-v1"
 FRED_OBSERVATIONS_PARSER_VERSION = "fred-observations-v1"
 
 
@@ -1516,10 +1517,40 @@ def _optional_element_text(element: ElementTree.Element, child_name: str) -> str
 def _parse_rss_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
+    val = value.strip()
+    if not val:
+        return None
+
+    parsed = None
+
+    # 1. Try RFC 2822
     try:
-        parsed = parsedate_to_datetime(value)
-    except (TypeError, ValueError) as exc:
-        raise CollectorError(f"Unsupported RSS datetime format: {value}") from exc
+        parsed = parsedate_to_datetime(val)
+    except (TypeError, ValueError):
+        pass
+
+    # 2. Try ISO 8601 (normalizing 'Z' to '+00:00')
+    if parsed is None:
+        iso_val = val
+        if iso_val.endswith("Z") or iso_val.endswith("z"):
+            iso_val = iso_val[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(iso_val)
+        except (TypeError, ValueError):
+            pass
+
+    # 3. Try custom formats
+    if parsed is None:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ"):
+            try:
+                parsed = datetime.strptime(val, fmt)
+                break
+            except ValueError:
+                continue
+
+    if parsed is None:
+        raise CollectorError(f"Unsupported RSS datetime format: {value}")
+
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
@@ -1692,3 +1723,146 @@ def collect_kuveyt_usd_try(
         finish_collector_run(db, run, status="failed", error_message=str(exc))
         db.commit()
         return run, False
+
+
+# ==============================================================================
+# Generic RSS News Collector with Failover URLs
+# ==============================================================================
+
+RSS_FEEDS: dict[str, list[str]] = {
+    "kitco-rss": [
+        "https://www.kitco.com/feed/rss/news/gold-silver",
+        "https://www.kitco.com/feed/rss/news",
+    ],
+    "bloomberght-rss": [
+        "https://www.bloomberght.com/rss",
+        "https://www.bloomberght.com/rss/tum-haberler",
+    ],
+    "fxstreet-rss": [
+        "https://www.fxstreet.com/rss/news",
+        "https://xml.fxstreet.com/news/forex-news/index.xml",
+    ],
+    "investing-rss": [
+        "https://www.investing.com/rss/news_287.rss",
+        "https://www.investing.com/rss/news_25.rss",
+    ],
+}
+
+
+def parse_generic_rss(raw_payload: str) -> list[ParsedNewsItem]:
+    """Parses a standard RSS 2.0 XML feed into ParsedNewsItem objects."""
+    root = ElementTree.fromstring(raw_payload)
+    channel = root.find("channel")
+    if channel is None:
+        # Try Atom format fallback
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        entries = root.findall("atom:entry", ns)
+        if not entries:
+            raise CollectorError("RSS feed has no <channel> or <entry> elements")
+        items = []
+        for entry in entries:
+            title_el = entry.find("atom:title", ns)
+            link_el = entry.find("atom:link", ns)
+            updated_el = entry.find("atom:updated", ns)
+            title = title_el.text.strip() if title_el is not None and title_el.text else None
+            link = link_el.attrib.get("href", "").strip() if link_el is not None else None
+            if not title or not link:
+                continue
+            published_at = _parse_rss_datetime(
+                updated_el.text.strip() if updated_el is not None and updated_el.text else None
+            )
+            items.append(
+                ParsedNewsItem(
+                    title=title,
+                    url=link,
+                    published_at=published_at,
+                    payload={"source_type": "atom_feed"},
+                )
+            )
+        return items
+
+    items = []
+    for item in channel.findall("item"):
+        title = _optional_element_text(item, "title")
+        link = _optional_element_text(item, "link")
+        if not title or not link:
+            continue
+        published_at = _parse_rss_datetime(_optional_element_text(item, "pubDate"))
+        guid = _optional_element_text(item, "guid")
+        description = _optional_element_text(item, "description")
+        categories = [cat.text.strip() for cat in item.findall("category") if cat.text]
+        items.append(
+            ParsedNewsItem(
+                title=title,
+                url=link,
+                published_at=published_at,
+                payload={
+                    "guid": guid,
+                    "description": description,
+                    "categories": categories,
+                    "source_type": "rss_feed",
+                },
+            )
+        )
+    return items
+
+
+def collect_rss_news(
+    db: Session,
+    *,
+    source: str,
+    urls: list[str],
+    settings: Settings | None = None,
+    client: httpx.Client | None = None,
+) -> tuple[CollectorRun, int]:
+    """
+    Fetches and ingests news from an RSS feed with failover URL support.
+    Tries each URL in order until one succeeds.
+    """
+    settings = settings or get_settings()
+    fetched_at = datetime.now(UTC)
+    collector_name = source.replace("-", "_")
+
+    last_error: Exception | None = None
+    for url in urls:
+        try:
+            raw_payload = _fetch_text(url, settings=settings, client=client)
+            parsed_items = parse_generic_rss(raw_payload)
+            if not parsed_items:
+                logger.warning(f"RSS feed {url} returned no items, trying next URL...")
+                last_error = CollectorError(f"RSS feed {url} returned no items")
+                continue
+
+            run, inserted = ingest_news_items(
+                db,
+                collector_name=collector_name,
+                source=source,
+                items=[
+                    {
+                        "title": item.title,
+                        "url": item.url,
+                        "published_at": item.published_at,
+                        **item.payload,
+                    }
+                    for item in parsed_items
+                ],
+                fetched_at=fetched_at,
+                raw_payload=raw_payload,
+                parser_version=GENERIC_RSS_PARSER_VERSION,
+            )
+            return run, inserted
+        except Exception as exc:
+            logger.warning(f"RSS feed fetch failed for {url}: {exc}. Trying next URL...")
+            last_error = exc
+            continue
+
+    # All URLs failed
+    db.rollback()
+    run = record_failed_run(
+        db,
+        collector_name=collector_name,
+        source=source,
+        error_message=f"All RSS feed URLs failed. Last error: {last_error}",
+        details_json={"parser_version": GENERIC_RSS_PARSER_VERSION, "urls_tried": urls},
+    )
+    return run, 0

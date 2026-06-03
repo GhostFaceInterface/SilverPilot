@@ -156,7 +156,8 @@ async def test_news_agent_fallback_to_latest_10(mock_post, db_session):
 @pytest.mark.anyio
 async def test_news_agent_empty_database(db_session):
     # Run news analysis with empty database (should not make HTTP calls and immediately return fallback neutral event)
-    event = await run_news_sentiment_analysis(db_session)
+    with patch("app.collectors.public_sources.collect_rss_news", return_value=(None, 0)):
+        event = await run_news_sentiment_analysis(db_session)
 
     assert event is not None
     assert event.value_json["sentiment"] == "NEUTRAL"

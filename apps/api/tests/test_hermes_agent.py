@@ -178,7 +178,8 @@ async def test_run_hermes_sentiment_analysis_empty_db(db_session):
     db_session.query(RawNews).delete()
     db_session.commit()
 
-    event = await run_hermes_sentiment_analysis(db_session)
+    with patch("app.collectors.public_sources.collect_rss_news", return_value=(MagicMock(), 0)):
+        event = await run_hermes_sentiment_analysis(db_session)
     assert event is not None
     assert event.agent_name == "hermes-agent"
     assert event.value_json["score"] == 0.0
@@ -223,7 +224,7 @@ async def test_hermes_weekend_telegram_dispatch_success(db_session):
 
     with (
         patch("httpx.AsyncClient.post") as mock_post,
-        patch("app.risk.service.is_comex_market_closed", return_value=True),
+        patch("app.risk.service.is_comex_weekend", return_value=True),
         patch("app.agents.hermes.send_telegram_message", new_callable=AsyncMock) as mock_send,
     ):
         mock_response = AsyncMock()
@@ -298,7 +299,7 @@ async def test_hermes_weekend_telegram_dispatch_failure_resilience(db_session):
 
     with (
         patch("httpx.AsyncClient.post") as mock_post,
-        patch("app.risk.service.is_comex_market_closed", return_value=True),
+        patch("app.risk.service.is_comex_weekend", return_value=True),
         patch("app.agents.hermes.send_telegram_message", new_callable=AsyncMock) as mock_send,
     ):
         mock_response = AsyncMock()
