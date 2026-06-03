@@ -38,6 +38,7 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         select(RawNews)
         .where(RawNews.fetched_at >= twenty_four_hours_ago, RawNews.source.in_(list(TARGET_SOURCES)))
         .order_by(desc(RawNews.fetched_at))
+        .limit(15)
     )
     news_items = db.execute(stmt).scalars().all()
 
