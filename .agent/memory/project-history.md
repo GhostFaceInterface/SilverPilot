@@ -1,7 +1,7 @@
 ---
 type: reference
 created: 2026-05-18
-updated: 2026-05-30
+updated: 2026-06-03
 ---
 
 
@@ -44,6 +44,7 @@ updated: 2026-05-30
   - Successfully validated 100% green status across all 179 project tests with zero regressions or warnings.
 - **Phase 20 (Phase A: Data Pipeline Fix - June 2026):** Consolidated news agents by removing reference dependencies to the obsolete `news-agent` and establishing `hermes-agent` as the singular sentiment engine. Resolved datetime parsing limits in `public_sources.py` by adding RFC 2822, ISO 8601, and custom string strptime format handling. Re-scheduled background collector runs so that RSS feeds (`kitco-rss`, `bloomberght-rss`, `fxstreet-rss`, `investing-rss`) execute sequentially before `hermes-agent`. Fixed the weekend sentinel report's timing checks by implementing separate COMEX `is_comex_weekend()` and `is_comex_maintenance()` helper routines. Mitigated LLM call timeouts and daily budget drains by adding a `.limit(15)` constraint to the 24h recent news DB query. Successfully verified all 219 tests green, and deployed update to VPS with updated `.env.production` jobs.
 - **Phase 21 (Phase B, C, D: Supreme Arbiter Integration & Consolidation - June 2026):** Consolidated `news-agent` into `hermes-agent` and decommissioned the legacy simple news agent across ML inference (`inference.py`), backtests (`backtest_engine.py`), datasets builder (`build_dataset.py`), operations auditor (`auditor.py`), and Streamlit dashboard (`streamlit_app.py`). Integrated `hermes-agent` weighted sentiment payload directly into the Supreme Consensus Arbiter LLM prompt (with 20-30% weight in sideways regimes and 10-20% in trending regimes). Implemented a bidirectional news sentiment filter (vetoing BUY on bearish news, and boosting HOLD to BUY on strongly bullish news $\ge 0.40$). Optimized the on-demand scraper triggers in `hermes.py` to prevent redundant fetches by verifying database freshness. Added complete E2E unit tests (asserting HOLD->BUY conversions, risk rejections, and timezone-aware on-demand scrapers), successfully passing all 222 test suites, and deployed all updates to the production VPS via the automated deployment orchestrator.
+- **Phase 22 (Codex Isolated Workspace Setup - June 2026):** Designed, created, and verified a completely isolated Codex workspace under `.codex/` directory. Added a customized `config.toml`, a comprehensive operational `README.md`, 9 specialized Codex subagents configs mapped to appropriate model reasoning profiles (`gpt-5.4-mini`, `gpt-5.5`, and `gpt-5.5-pro`), 3 playbook workflows, 6 re-usable skills manuals (FastAPI, Alembic, Streamlit, Docker, Risk rules), 2 prompt templates, 4 memory-state markdown documents, and a safe psycopg2/SQLAlchemy database introspection CLI script (`readonly-db-check.py`) that strictly checks and confirms mutations. Verified correct compile syntax and CLI parameters. Passed git pre-commit format/lint and pushed to production.
 
 
 
