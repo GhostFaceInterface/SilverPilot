@@ -201,12 +201,12 @@ def test_agent_trigger_endpoints():
 
     with patch("app.collectors.public_sources.collect_rss_news", return_value=(None, 0)):
         response = client.post("/agent/news/trigger", headers={"X-Agent-Token": "test_token"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["agent_name"] == "news-agent"
-    assert data["event_type"] == "news_sentiment"
-    assert data["key"] == "latest_analysis"
-    assert data["value_json"]["sentiment"] == "NEUTRAL"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["agent_name"] == "hermes-agent"
+        assert data["event_type"] == "hermes_sentiment"
+        assert data["key"] == "latest_analysis"
+        assert data["value_json"]["sentiment"] == "NEUTRAL"
 
     # 2. Test POST /agent/report/trigger
     assert client.post("/agent/report/trigger").status_code == 401

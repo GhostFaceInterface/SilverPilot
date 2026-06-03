@@ -38,20 +38,19 @@ def fetch_json(path: str, *, timeout_seconds: int = 8) -> tuple[dict[str, Any] |
     return None, f"{path} returned a non-object payload"
 
 
-def post_json(path: str, payload: dict[str, Any] | None = None, *, timeout_seconds: int = 20) -> tuple[dict[str, Any] | list[Any] | None, str | None]:
+def post_json(
+    path: str, payload: dict[str, Any] | None = None, *, timeout_seconds: int = 20
+) -> tuple[dict[str, Any] | list[Any] | None, str | None]:
     url = f"{API_BASE_URL}{path}"
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
     token = os.getenv("AGENT_API_TOKEN", "")
     if token:
         headers["X-Agent-Token"] = token
-    
+
     data_bytes = None
     if payload is not None:
         data_bytes = json.dumps(payload).encode("utf-8")
-    
+
     request = Request(url, data=data_bytes, headers=headers, method="POST")
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
@@ -157,17 +156,26 @@ def load_dashboard_data(api_base_url: str) -> dict[str, Any]:
     if token:
         endpoints["llm_stats"] = "/agent/traces/stats"
         endpoints["llm_traces"] = "/agent/traces?limit=50"
-        endpoints["news_memory"] = "/agent/memory?agent_name=news-agent&event_type=news_sentiment&limit=5"
+        endpoints["news_memory"] = "/agent/memory?agent_name=hermes-agent&event_type=hermes_sentiment&limit=5"
         endpoints["risk_memory"] = "/agent/memory?agent_name=risk-agent&event_type=signal_critique&limit=5"
-        endpoints["orchestrator_disagreements"] = "/agent/memory?agent_name=orchestrator&event_type=agent_disagreement&limit=5"
-        endpoints["orchestrator_resolutions"] = "/agent/memory?agent_name=orchestrator&event_type=disagreement_resolution&limit=5"
-        endpoints["market_research_memory"] = "/agent/memory?agent_name=market-research-agent&event_type=market_trend&limit=5"
+        endpoints["orchestrator_disagreements"] = (
+            "/agent/memory?agent_name=orchestrator&event_type=agent_disagreement&limit=5"
+        )
+        endpoints["orchestrator_resolutions"] = (
+            "/agent/memory?agent_name=orchestrator&event_type=disagreement_resolution&limit=5"
+        )
+        endpoints["market_research_memory"] = (
+            "/agent/memory?agent_name=market-research-agent&event_type=market_trend&limit=5"
+        )
         endpoints["ml_analyst_memory"] = "/agent/memory?agent_name=ml-analyst-agent&event_type=ml_analysis&limit=5"
-        endpoints["source_reliability_memory"] = "/agent/memory?agent_name=source-reliability-agent&event_type=source_reliability&limit=5"
-        endpoints["postmortem_memory"] = "/agent/memory?agent_name=postmortem-agent&event_type=postmortem_analysis&limit=5"
+        endpoints["source_reliability_memory"] = (
+            "/agent/memory?agent_name=source-reliability-agent&event_type=source_reliability&limit=5"
+        )
+        endpoints["postmortem_memory"] = (
+            "/agent/memory?agent_name=postmortem-agent&event_type=postmortem_analysis&limit=5"
+        )
         endpoints["auditor_memory"] = "/agent/memory?agent_name=auditor-agent&event_type=system_audit&limit=5"
 
-        
     data: dict[str, Any] = {}
     errors: list[str] = []
     for key, path in endpoints.items():
@@ -266,10 +274,7 @@ def render_risk(data: dict[str, Any]) -> None:
         )
     with cols[2]:
         metric_card("FOMO rise", percent(metrics.get("fomo_rise_percent")))
-        st.caption(
-            f"{metrics.get('fomo_rise_source') or '-'} / "
-            f"{metrics.get('fomo_rise_sample_count') or 0} samples"
-        )
+        st.caption(f"{metrics.get('fomo_rise_source') or '-'} / {metrics.get('fomo_rise_sample_count') or 0} samples")
     with cols[3]:
         metric_card("Daily loss", money(metrics.get("daily_realized_loss_usd")))
     with cols[4]:
@@ -391,38 +396,38 @@ def render_global_xag_samples(data: dict[str, Any]) -> None:
 
 def render_llm_observability(data: dict[str, Any]) -> None:
     st.subheader("LLM Analytics & Observability")
-    
+
     llm_stats = data.get("llm_stats") or {}
     llm_traces = data.get("llm_traces") or []
-    
+
     # 1. High level metrics
     cols = st.columns(4)
     with cols[0]:
         metric_card(
-            "Total LLM Spend", 
+            "Total LLM Spend",
             f"${llm_stats.get('total_cost_usd', 0.0):,.6f}",
-            help_text="Accumulated cost of all LLM calls made by agents."
+            help_text="Accumulated cost of all LLM calls made by agents.",
         )
     with cols[1]:
         metric_card(
-            "Total LLM Calls", 
+            "Total LLM Calls",
             f"{llm_stats.get('total_calls', 0):,}",
-            help_text="Total number of API executions to DeepSeek."
+            help_text="Total number of API executions to DeepSeek.",
         )
     with cols[2]:
-        avg_lat = llm_stats.get('avg_latency_ms', 0.0)
+        avg_lat = llm_stats.get("avg_latency_ms", 0.0)
         metric_card(
-            "Avg Response Latency", 
+            "Avg Response Latency",
             f"{avg_lat:,.0f} ms" if avg_lat else "-",
-            help_text="Average response latency in milliseconds."
+            help_text="Average response latency in milliseconds.",
         )
     with cols[3]:
         st.metric("Status", "Active", help="Budget guard active and monitoring")
-        
+
     # 2. Breakdowns using neat columns
     st.markdown("---")
     col_agent, col_model = st.columns(2)
-    
+
     with col_agent:
         st.markdown("#### Cost by Agent")
         by_agent = llm_stats.get("by_agent") or []
@@ -432,14 +437,14 @@ def render_llm_observability(data: dict[str, Any]) -> None:
                     "Agent Name": item.get("agent_name"),
                     "Calls Count": f"{item.get('calls'):,}",
                     "Total Cost": f"${item.get('total_cost_usd', 0.0):,.6f}",
-                    "Avg Latency": f"{item.get('avg_latency_ms', 0.0):,.0f} ms"
+                    "Avg Latency": f"{item.get('avg_latency_ms', 0.0):,.0f} ms",
                 }
                 for item in by_agent
             ]
             st.table(agent_rows)
         else:
             st.info("No agent telemetry recorded yet.")
-            
+
     with col_model:
         st.markdown("#### Cost by Model")
         by_model = llm_stats.get("by_model") or []
@@ -449,14 +454,14 @@ def render_llm_observability(data: dict[str, Any]) -> None:
                     "Model Name": item.get("model_name"),
                     "Calls Count": f"{item.get('calls'):,}",
                     "Total Cost": f"${item.get('total_cost_usd', 0.0):,.6f}",
-                    "Avg Latency": f"{item.get('avg_latency_ms', 0.0):,.0f} ms"
+                    "Avg Latency": f"{item.get('avg_latency_ms', 0.0):,.0f} ms",
                 }
                 for item in by_model
             ]
             st.table(model_rows)
         else:
             st.info("No model telemetry recorded yet.")
-            
+
     # 3. Recent Call Logs
     st.markdown("---")
     st.markdown("#### Recent 50 LLM Call Logs")
@@ -472,20 +477,22 @@ def render_llm_observability(data: dict[str, Any]) -> None:
                     time_str = created_dt
             else:
                 time_str = "-"
-                
-            log_rows.append({
-                "Index": i + 1,
-                "Time": time_str,
-                "Agent": item.get("agent_name"),
-                "Model": item.get("model_name"),
-                "Status": item.get("status"),
-                "Cost": f"${float(item.get('total_cost_usd', 0)):,.6f}",
-                "Latency": f"{item.get('latency_ms', 0):,} ms",
-                "Tokens (In/Out)": f"{item.get('prompt_tokens', 0)} / {item.get('completion_tokens', 0)}"
-            })
-            
+
+            log_rows.append(
+                {
+                    "Index": i + 1,
+                    "Time": time_str,
+                    "Agent": item.get("agent_name"),
+                    "Model": item.get("model_name"),
+                    "Status": item.get("status"),
+                    "Cost": f"${float(item.get('total_cost_usd', 0)):,.6f}",
+                    "Latency": f"{item.get('latency_ms', 0):,} ms",
+                    "Tokens (In/Out)": f"{item.get('prompt_tokens', 0)} / {item.get('completion_tokens', 0)}",
+                }
+            )
+
         st.dataframe(log_rows, use_container_width=True)
-        
+
         # Interactive raw inspector
         st.markdown("##### Inspect Raw Trace Content")
         trace_indices = [f"{r['Index']}. [{r['Agent']}] {r['Model']} ({r['Time']})" for r in log_rows]
@@ -493,7 +500,7 @@ def render_llm_observability(data: dict[str, Any]) -> None:
         if selected_option:
             sel_idx = int(selected_option.split(".")[0]) - 1
             sel_trace = llm_traces[sel_idx]
-            
+
             p_col, r_col = st.columns(2)
             with p_col:
                 st.markdown("**Prompt Raw:**")
@@ -511,18 +518,20 @@ def render_llm_observability(data: dict[str, Any]) -> None:
 
 def render_active_agents(data: dict[str, Any]) -> None:
     st.subheader("Active Financial Agents Panel")
-    st.caption("Trigger active reasoning loops and view persisted news sentiments, risk critiques, and daily performance reports.")
+    st.caption(
+        "Trigger active reasoning loops and view persisted news sentiments, risk critiques, and daily performance reports."
+    )
 
     token = os.getenv("AGENT_API_TOKEN", "")
     if not token:
-        st.warning("⚠️ AGENT_API_TOKEN is not configured. Triggering agents and viewing memory events are disabled for security.")
+        st.warning(
+            "⚠️ AGENT_API_TOKEN is not configured. Triggering agents and viewing memory events are disabled for security."
+        )
         return
 
-    sub_tab_news, sub_tab_risk, sub_tab_report = st.tabs([
-        "📰 News Sentiment Agent",
-        "🛡️ Risk Auditor Agent",
-        "📊 Daily Performance Report Agent"
-    ])
+    sub_tab_news, sub_tab_risk, sub_tab_report = st.tabs(
+        ["📰 News Sentiment Agent", "🛡️ Risk Auditor Agent", "📊 Daily Performance Report Agent"]
+    )
 
     # 1. NEWS SENTIMENT AGENT SUB-TAB
     with sub_tab_news:
@@ -531,11 +540,11 @@ def render_active_agents(data: dict[str, Any]) -> None:
             "Synthesizes raw financial news from the last 24 hours, determines overall market sentiment for Silver (XAG), "
             "and generates structured summaries using **DeepSeek V4 Flash**."
         )
-        
+
         # Display latest sentiment
         news_memory = data.get("news_memory")
         latest_news = news_memory[0] if news_memory else None
-        
+
         col_act, col_info = st.columns([1, 3])
         with col_act:
             if st.button("Trigger News Sentiment Analysis", key="trigger_news_btn"):
@@ -560,18 +569,24 @@ def render_active_agents(data: dict[str, Any]) -> None:
         if latest_news:
             val = latest_news.get("value_json") or {}
             sentiment = val.get("sentiment", "NEUTRAL")
-            confidence = val.get("confidence", 0.0)
+            score = val.get("score")
+            confidence = val.get("confidence")
             summary = val.get("summary_markdown", "")
-            
+
             # Sentiment metrics card with premium aesthetics
             c1, c2 = st.columns([1, 2])
             with c1:
+                score_str = (
+                    f"Score: {score:.4f}"
+                    if score is not None
+                    else (f"Confidence: {confidence:.1%}" if confidence is not None else "")
+                )
                 if sentiment == "BULLISH":
-                    st.success(f"📈 **BULLISH**\n\nConfidence: {confidence:.1%}")
+                    st.success(f"📈 **BULLISH**\n\n{score_str}")
                 elif sentiment == "BEARISH":
-                    st.error(f"📉 **BEARISH**\n\nConfidence: {confidence:.1%}")
+                    st.error(f"📉 **BEARISH**\n\n{score_str}")
                 else:
-                    st.warning(f"➡️ **NEUTRAL**\n\nConfidence: {confidence:.1%}")
+                    st.warning(f"➡️ **NEUTRAL**\n\n{score_str}")
             with c2:
                 st.info("💡 **Agent Insight Summary**")
                 st.markdown(summary or "No summary content available.")
@@ -581,9 +596,15 @@ def render_active_agents(data: dict[str, Any]) -> None:
                     for hist in news_memory[1:]:
                         h_val = hist.get("value_json") or {}
                         h_sent = h_val.get("sentiment", "NEUTRAL")
-                        h_conf = h_val.get("confidence", 0.0)
+                        h_score = h_val.get("score")
+                        h_conf = h_val.get("confidence")
+                        h_score_str = (
+                            f"Score: {h_score:.4f}"
+                            if h_score is not None
+                            else (f"Conf: {h_conf:.1%}" if h_conf is not None else "")
+                        )
                         h_dt = h_val.get("analyzed_at", hist.get("created_at", ""))
-                        st.markdown(f"**{h_dt[:16]}** - `{h_sent}` (Conf: {h_conf:.1%})")
+                        st.markdown(f"**{h_dt[:16]}** - `{h_sent}` ({h_score_str})")
                         st.markdown(h_val.get("summary_markdown", ""))
                         st.markdown("---")
         else:
@@ -710,18 +731,24 @@ def render_active_agents(data: dict[str, Any]) -> None:
 
 def render_advanced_analysis(data: dict[str, Any]) -> None:
     st.subheader("🤖 Advanced Multi-Agent Analysis & Orchestration Panel")
-    st.caption("Coordinate the sequence of specialized advisory agents (Market Research, ML Analyst, Source Reliability, Postmortem, and Auditor) and view conflict resolution by the Supreme Arbiter.")
+    st.caption(
+        "Coordinate the sequence of specialized advisory agents (Market Research, ML Analyst, Source Reliability, Postmortem, and Auditor) and view conflict resolution by the Supreme Arbiter."
+    )
 
     token = os.getenv("AGENT_API_TOKEN", "")
     if not token:
-        st.warning("⚠️ AGENT_API_TOKEN is not configured. Triggering agents and viewing memory events are disabled for security.")
+        st.warning(
+            "⚠️ AGENT_API_TOKEN is not configured. Triggering agents and viewing memory events are disabled for security."
+        )
         return
 
     # Trigger panel
     st.markdown("### 🧠 Orchestration Execution")
     col_in, col_btn = st.columns([2, 1])
     with col_in:
-        signal_id_str = st.text_input("Signal ID (Optional - Leave empty to run overall system analysis)", key="orch_sig_input")
+        signal_id_str = st.text_input(
+            "Signal ID (Optional - Leave empty to run overall system analysis)", key="orch_sig_input"
+        )
     with col_btn:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         if st.button("Run Multi-Agent Analysis Pipeline", key="trigger_orch_btn"):
@@ -733,16 +760,17 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
                 if err:
                     st.error(f"Failed to trigger orchestrator: {err}")
                 else:
-                    st.success("Multi-agent analysis triggered in the background! Please wait a few seconds and refresh to view results.")
+                    st.success(
+                        "Multi-agent analysis triggered in the background! Please wait a few seconds and refresh to view results."
+                    )
                     st.cache_data.clear()
 
     st.markdown("---")
 
     # Supreme Arbiter Section
     st.markdown("### ⚖️ Supreme Arbiter Conflict Resolutions")
-    
+
     resolutions = data.get("orchestrator_resolutions") or []
-    disagreements = data.get("orchestrator_disagreements") or []
 
     if resolutions:
         latest_res = resolutions[0]
@@ -772,30 +800,36 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
                     st.markdown(f"- **Type:** `{d.get('type')}`  \n  **Description:** {d.get('description')}")
             else:
                 st.info("No explicit conflicts were recorded in the resolution payload.")
-                
+
         # Historic resolutions
         if len(resolutions) > 1:
             with st.expander("Show Resolution History"):
                 for r in resolutions[1:]:
                     r_val = r.get("value_json") or {}
-                    st.markdown(f"**{r_val.get('resolved_at', r.get('created_at', ''))[:16]}** - `{r_val.get('resolved_stance')}` (Conf: {r_val.get('confidence', 0.0):.1%})")
+                    st.markdown(
+                        f"**{r_val.get('resolved_at', r.get('created_at', ''))[:16]}** - `{r_val.get('resolved_stance')}` (Conf: {r_val.get('confidence', 0.0):.1%})"
+                    )
                     st.markdown(r_val.get("resolution_markdown", ""))
                     st.markdown("---")
     else:
-        st.info("No Supreme Arbiter resolutions found in memory. Run the pipeline when there are conflicting agent decisions to see the Arbiter in action.")
+        st.info(
+            "No Supreme Arbiter resolutions found in memory. Run the pipeline when there are conflicting agent decisions to see the Arbiter in action."
+        )
 
     st.markdown("---")
 
     # Advisory Agent outputs
     st.markdown("### 🤖 Persisted Advisor Agent Insights")
-    
-    agent_tabs = st.tabs([
-        "📈 Market Research",
-        "🔬 ML Analyst",
-        "🔌 Source Reliability",
-        "🏥 Postmortem Diagnostics",
-        "📝 System Auditor"
-    ])
+
+    agent_tabs = st.tabs(
+        [
+            "📈 Market Research",
+            "🔬 ML Analyst",
+            "🔌 Source Reliability",
+            "🏥 Postmortem Diagnostics",
+            "📝 System Auditor",
+        ]
+    )
 
     # Market Research
     with agent_tabs[0]:
@@ -806,7 +840,7 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
             sent = val.get("sentiment", "NEUTRAL")
             conf = val.get("confidence", 0.0)
             summary = val.get("summary_markdown", "")
-            
+
             c1, c2 = st.columns([1, 2])
             with c1:
                 st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
@@ -831,7 +865,7 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
             rec = val.get("recommendation", "NEUTRAL")
             conf = val.get("confidence", 0.0)
             analysis = val.get("analysis_markdown", "")
-            
+
             c1, c2 = st.columns([1, 2])
             with c1:
                 st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
@@ -855,16 +889,16 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
             val = latest.get("value_json") or {}
             status = val.get("status", "healthy")
             summary = val.get("summary_markdown", "")
-            
+
             c1, c2 = st.columns([1, 2])
             with c1:
                 st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
                 if status == "healthy":
-                    st.success(f"💚 **HEALTHY**")
+                    st.success("💚 **HEALTHY**")
                 elif status == "degraded":
-                    st.warning(f"⚠️ **DEGRADED**")
+                    st.warning("⚠️ **DEGRADED**")
                 else:
-                    st.error(f"🚨 **CRITICAL**")
+                    st.error("🚨 **CRITICAL**")
             with c2:
                 st.markdown("**Source Integrity & Health Audit:**")
                 st.markdown(summary)
@@ -879,7 +913,7 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
             val = latest.get("value_json") or {}
             blocked_count = val.get("blocked_trades_count", 0)
             details = val.get("details_markdown", "")
-            
+
             c1, c2 = st.columns([1, 2])
             with c1:
                 st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
@@ -897,7 +931,7 @@ def render_advanced_analysis(data: dict[str, Any]) -> None:
             latest = aud_mem[0]
             val = latest.get("value_json") or {}
             audit = val.get("audit_markdown", "")
-            
+
             st.markdown(f"**Last Executed:** {val.get('analyzed_at', latest.get('created_at', ''))[:19]}")
             st.markdown("**Budget Guard & Telemetry Audit Report:**")
             st.markdown(audit)
@@ -915,15 +949,19 @@ if st.button("Refresh"):
 dashboard_data = load_dashboard_data(API_BASE_URL)
 
 # Premium Tabs Interface
-tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability, tab_active_agents, tab_advanced_analysis = st.tabs([
-    "💼 Portfolio & Overview",
-    "🛡️ Risk Diagnostics",
-    "🔌 Collectors Health",
-    "📊 Global XAG Samples",
-    "👁️ LLM Observability",
-    "🤖 Active Financial Agents",
-    "🧠 Advanced Multi-Agent Analysis"
-])
+tab_portfolio, tab_risk, tab_collectors, tab_samples, tab_observability, tab_active_agents, tab_advanced_analysis = (
+    st.tabs(
+        [
+            "💼 Portfolio & Overview",
+            "🛡️ Risk Diagnostics",
+            "🔌 Collectors Health",
+            "📊 Global XAG Samples",
+            "👁️ LLM Observability",
+            "🤖 Active Financial Agents",
+            "🧠 Advanced Multi-Agent Analysis",
+        ]
+    )
+)
 
 with tab_portfolio:
     render_status_overview(dashboard_data)
@@ -946,4 +984,3 @@ with tab_active_agents:
 
 with tab_advanced_analysis:
     render_advanced_analysis(dashboard_data)
-

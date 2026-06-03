@@ -61,7 +61,6 @@ async def run_system_audit(db: Session) -> AgentMemoryEvent:
     # 3. Fetch latest memory events for context from other core agents
     core_events_data = {}
     for agent in [
-        "news-agent",
         "risk-agent",
         "market-research-agent",
         "ml-analyst-agent",

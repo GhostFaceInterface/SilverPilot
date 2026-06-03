@@ -31,7 +31,7 @@ from app.models import (
 )
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
-from app.agents.news import run_news_sentiment_analysis
+from app.agents.hermes import run_hermes_sentiment_analysis
 from app.agents.risk import run_signal_critique
 from app.agents.report import run_daily_performance_report
 from app.agents.telegram_bot import process_telegram_update
@@ -525,7 +525,7 @@ def get_agent_memory(
 async def trigger_news_agent(
     db: Session = Depends(get_db), _: None = Depends(verify_agent_token)
 ) -> AgentMemoryResponse:
-    return await run_news_sentiment_analysis(db)
+    return await run_hermes_sentiment_analysis(db)
 
 
 @router.post("/agent/report/trigger", response_model=ReportResponse)

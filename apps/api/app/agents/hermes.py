@@ -42,7 +42,60 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     )
     news_items = db.execute(stmt).scalars().all()
 
-    # 2. Fallback to latest 15 news matching sources if none found in last 24 hours
+    # On-demand live RSS fetch check (Phase C1 optimization):
+    # Only fetch live RSS on-demand if there are no matching source news in the last 24h
+    # AND the latest fallback matching news in the DB is older than 48h (or if there are no articles at all)
+    if not news_items:
+        stmt_latest_fallback = (
+            select(RawNews).where(RawNews.source.in_(list(TARGET_SOURCES))).order_by(desc(RawNews.fetched_at)).limit(1)
+        )
+        latest_fallback = db.execute(stmt_latest_fallback).scalars().first()
+
+        should_fetch_on_demand = False
+        if not latest_fallback:
+            should_fetch_on_demand = True
+            logger.info("No matching source news in the database. Triggering on-demand live RSS fetch...")
+        else:
+            latest_fetched = latest_fallback.fetched_at
+            if latest_fetched.tzinfo is None:
+                latest_fetched = latest_fetched.replace(tzinfo=timezone.utc)
+
+            if latest_fetched < now - timedelta(hours=48):
+                should_fetch_on_demand = True
+                logger.info(
+                    f"Latest matching source news in the DB is older than 48 hours ({latest_fallback.fetched_at}). "
+                    "Triggering on-demand live RSS fetch..."
+                )
+            else:
+                logger.info(
+                    f"Latest matching source news in DB is recent enough ({latest_fallback.fetched_at}). "
+                    "Skipping on-demand live RSS fetch to prevent redundant scraping."
+                )
+
+        if should_fetch_on_demand:
+            try:
+                from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
+
+                for feed_source, feed_urls in RSS_FEEDS.items():
+                    try:
+                        _run, _inserted = collect_rss_news(db, source=feed_source, urls=feed_urls)
+                        if _inserted > 0:
+                            logger.info(f"On-demand RSS fetch: {feed_source} inserted {_inserted} articles.")
+                    except Exception as feed_err:
+                        logger.warning(f"On-demand RSS fetch failed for {feed_source}: {feed_err}")
+
+                # Re-query matching sources in the last 24 hours after on-demand fetch
+                stmt_retry = (
+                    select(RawNews)
+                    .where(RawNews.fetched_at >= twenty_four_hours_ago, RawNews.source.in_(list(TARGET_SOURCES)))
+                    .order_by(desc(RawNews.fetched_at))
+                    .limit(15)
+                )
+                news_items = db.execute(stmt_retry).scalars().all()
+            except Exception as fetch_all_err:
+                logger.error(f"On-demand RSS fetch mechanism failed entirely: {fetch_all_err}")
+
+    # 2. Fallback to latest 15 news matching sources if still none found in last 24 hours
     if not news_items:
         logger.info(
             "No matching source news in the last 24 hours. Falling back to the latest 15 matching source news articles."
@@ -57,39 +110,6 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         logger.info("No source-matched news found in the database. Falling back to any latest 15 news articles.")
         stmt_any = select(RawNews).order_by(desc(RawNews.fetched_at)).limit(15)
         news_items = db.execute(stmt_any).scalars().all()
-
-    # 4. On-demand live RSS fetch if database has no fresh articles
-    if not news_items:
-        logger.info("No news in database. Attempting on-demand live RSS fetch...")
-        try:
-            from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
-
-            for feed_source, feed_urls in RSS_FEEDS.items():
-                try:
-                    _run, _inserted = collect_rss_news(db, source=feed_source, urls=feed_urls)
-                    if _inserted > 0:
-                        logger.info(f"On-demand RSS fetch: {feed_source} inserted {_inserted} articles.")
-                except Exception as feed_err:
-                    logger.warning(f"On-demand RSS fetch failed for {feed_source}: {feed_err}")
-
-            # Re-query after on-demand fetch
-            stmt_retry = (
-                select(RawNews)
-                .where(RawNews.fetched_at >= twenty_four_hours_ago, RawNews.source.in_(list(TARGET_SOURCES)))
-                .order_by(desc(RawNews.fetched_at))
-            )
-            news_items = db.execute(stmt_retry).scalars().all()
-
-            if not news_items:
-                stmt_retry_any = (
-                    select(RawNews)
-                    .where(RawNews.source.in_(list(TARGET_SOURCES)))
-                    .order_by(desc(RawNews.fetched_at))
-                    .limit(15)
-                )
-                news_items = db.execute(stmt_retry_any).scalars().all()
-        except Exception as fetch_all_err:
-            logger.error(f"On-demand RSS fetch mechanism failed entirely: {fetch_all_err}")
 
     if not news_items:
         logger.warning("No news articles found in the database at all.")

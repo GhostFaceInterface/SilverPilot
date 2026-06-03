@@ -267,8 +267,8 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
         # Check AgentMemoryEvent first (highest priority)
         stmt_memory_sentiment = (
             select(AgentMemoryEvent)
-            .where(AgentMemoryEvent.agent_name == "news-agent")
-            .where(AgentMemoryEvent.event_type == "news_sentiment")
+            .where(AgentMemoryEvent.agent_name.in_(["hermes-agent", "news-agent"]))
+            .where(AgentMemoryEvent.event_type.in_(["hermes_sentiment", "news_sentiment"]))
             .where(AgentMemoryEvent.created_at <= anchor_time)
             .order_by(desc(AgentMemoryEvent.created_at))
             .limit(1)
@@ -284,8 +284,8 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
             # Fallback to HistoricalAgentCache
             stmt_cache_sentiment = (
                 select(HistoricalAgentCache)
-                .where(HistoricalAgentCache.agent_name == "news-agent")
-                .where(HistoricalAgentCache.event_type == "news_sentiment")
+                .where(HistoricalAgentCache.agent_name.in_(["hermes-agent", "news-agent"]))
+                .where(HistoricalAgentCache.event_type.in_(["hermes_sentiment", "news_sentiment"]))
                 .where(HistoricalAgentCache.timestamp <= anchor_time)
                 .order_by(desc(HistoricalAgentCache.timestamp))
                 .limit(1)

@@ -1,9 +1,7 @@
 import os
 import sys
-import math
 import argparse
-from decimal import Decimal
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 # Path setup to import app modules from apps/api
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,9 +14,9 @@ elif os.path.exists(os.path.join(root_path, "app")):
     if root_path not in sys.path:
         sys.path.insert(0, root_path)
 
-from app.core.db import SessionLocal
-from app.models import Asset, PriceSnapshot, TechnicalIndicator, HistoricalAgentCache
-from app.services.strategy import StrategyRunner, StrategyType
+from app.core.db import SessionLocal  # noqa: E402
+from app.models import Asset, PriceSnapshot, TechnicalIndicator, HistoricalAgentCache  # noqa: E402
+from app.services.strategy import StrategyRunner, StrategyType  # noqa: E402
 
 
 def print_premium_header(title: str, width: int = 65):
@@ -48,7 +46,7 @@ def simulate_strategy(
     position = 0.0  # Ounces of silver
     has_position = False
     buy_entry_price = 0.0
-    buy_entry_time = None
+    _buy_entry_time = None
 
     # Stats counters
     trades_count = 0
@@ -93,12 +91,12 @@ def simulate_strategy(
         risk_decision = None
         if use_agents and db_session is not None:
             lookback_limit = observed_at - timedelta(hours=24)
-            
+
             # Fetch closest news sentiment prior to or equal to observed_at within 24h
             news_cache = (
                 db_session.query(HistoricalAgentCache)
-                .filter(HistoricalAgentCache.agent_name == "news-agent")
-                .filter(HistoricalAgentCache.event_type == "news_sentiment")
+                .filter(HistoricalAgentCache.agent_name.in_(["hermes-agent", "news-agent"]))
+                .filter(HistoricalAgentCache.event_type.in_(["hermes_sentiment", "news_sentiment"]))
                 .filter(HistoricalAgentCache.timestamp <= observed_at)
                 .filter(HistoricalAgentCache.timestamp >= lookback_limit)
                 .order_by(HistoricalAgentCache.timestamp.desc())
@@ -106,7 +104,7 @@ def simulate_strategy(
             )
             if news_cache and news_cache.value_json:
                 news_sentiment = news_cache.value_json.get("sentiment") or news_cache.value_json.get("news_sentiment")
-                
+
             # Fetch closest risk critique prior to or equal to observed_at within 24h
             risk_cache = (
                 db_session.query(HistoricalAgentCache)
@@ -121,12 +119,12 @@ def simulate_strategy(
                 risk_decision = risk_cache.value_json.get("decision") or risk_cache.value_json.get("risk_decision")
 
             if action == "BUY":
-                action, veto_reason = StrategyRunner.apply_agent_filters(
-                    action, news_sentiment, risk_decision
-                )
+                action, veto_reason = StrategyRunner.apply_agent_filters(action, news_sentiment, risk_decision)
                 if action == "HOLD":
                     if verbose:
-                        print(f"\033[1;35m[VETO]\033[0m {observed_at.strftime('%Y-%m-%d %H:%M')}: BUY signal vetoed. Reason: {veto_reason} | News: {news_sentiment}, Risk: {risk_decision}")
+                        print(
+                            f"\033[1;35m[VETO]\033[0m {observed_at.strftime('%Y-%m-%d %H:%M')}: BUY signal vetoed. Reason: {veto_reason} | News: {news_sentiment}, Risk: {risk_decision}"
+                        )
                     reason = veto_reason
 
         # Process actions
@@ -140,33 +138,37 @@ def simulate_strategy(
                 cash = 0.0
                 has_position = True
                 buy_entry_price = execution_buy_price
-                buy_entry_time = observed_at
+                _buy_entry_time = observed_at
 
                 # Calculate and add cost drag
                 cost_drag = (execution_buy_price - current_mid_price) * position + fee
                 total_cost_drag += cost_drag
 
-                trade_log.append({
-                    "index": len(trade_log) + 1,
-                    "type": "BUY",
-                    "time": observed_at,
-                    "price": execution_buy_price,
-                    "mid_price": current_mid_price,
-                    "ounces": position,
-                    "reason": reason,
-                })
+                trade_log.append(
+                    {
+                        "index": len(trade_log) + 1,
+                        "type": "BUY",
+                        "time": observed_at,
+                        "price": execution_buy_price,
+                        "mid_price": current_mid_price,
+                        "ounces": position,
+                        "reason": reason,
+                    }
+                )
                 if verbose:
-                    print(f"\033[1;33m[BUY]\033[0m {observed_at.strftime('%Y-%m-%d %H:%M')}: Bought {position:.4f} oz at ${execution_buy_price:.4f} (Mid: ${current_mid_price:.4f}) | Reason: {reason}")
+                    print(
+                        f"\033[1;33m[BUY]\033[0m {observed_at.strftime('%Y-%m-%d %H:%M')}: Bought {position:.4f} oz at ${execution_buy_price:.4f} (Mid: ${current_mid_price:.4f}) | Reason: {reason}"
+                    )
 
         elif action == "SELL" and has_position:
             # Calculate execution retail sell price (mid_price - spread/2 - slippage)
             execution_sell_price = current_mid_price * (1.0 - (spread / 2.0)) * (1.0 - slippage)
             gross_proceeds = position * execution_sell_price
-            
+
             # Apply Turkish metals tax (0.2% on sell transaction)
             tax_paid = gross_proceeds * tax
             net_proceeds = gross_proceeds - tax_paid - fee
-            
+
             trade_pnl = net_proceeds - (position * buy_entry_price)
             cash = cash + net_proceeds
             trades_count += 1
@@ -181,26 +183,30 @@ def simulate_strategy(
             cost_drag = (current_mid_price - execution_sell_price) * position + tax_paid + fee
             total_cost_drag += cost_drag
 
-            trade_log.append({
-                "index": len(trade_log) + 1,
-                "type": "SELL",
-                "time": observed_at,
-                "price": execution_sell_price,
-                "mid_price": current_mid_price,
-                "ounces": position,
-                "reason": reason,
-                "pnl": trade_pnl,
-                "tax": tax_paid,
-            })
+            trade_log.append(
+                {
+                    "index": len(trade_log) + 1,
+                    "type": "SELL",
+                    "time": observed_at,
+                    "price": execution_sell_price,
+                    "mid_price": current_mid_price,
+                    "ounces": position,
+                    "reason": reason,
+                    "pnl": trade_pnl,
+                    "tax": tax_paid,
+                }
+            )
 
             if verbose:
                 pnl_color = "\033[1;32m" if trade_pnl >= 0 else "\033[1;31m"
-                print(f"\033[1;31m[SELL]\033[0m {observed_at.strftime('%Y-%m-%d %H:%M')}: Sold {position:.4f} oz at ${execution_sell_price:.4f} (Mid: ${current_mid_price:.4f}) | Net Proceeds: ${net_proceeds:.2f} | PnL: {pnl_color}${trade_pnl:+.2f}\033[0m | Reason: {reason}")
-            
+                print(
+                    f"\033[1;31m[SELL]\033[0m {observed_at.strftime('%Y-%m-%d %H:%M')}: Sold {position:.4f} oz at ${execution_sell_price:.4f} (Mid: ${current_mid_price:.4f}) | Net Proceeds: ${net_proceeds:.2f} | PnL: {pnl_color}${trade_pnl:+.2f}\033[0m | Reason: {reason}"
+                )
+
             position = 0.0
             has_position = False
             buy_entry_price = 0.0
-            buy_entry_time = None
+            _buy_entry_time = None
 
         # Calculate and store current equity status
         current_equity = cash + (position * current_mid_price)
@@ -217,11 +223,11 @@ def simulate_strategy(
         gross_proceeds = position * execution_sell_price
         tax_paid = gross_proceeds * tax
         net_proceeds = gross_proceeds - tax_paid - fee
-        
+
         ending_balance = cash + net_proceeds
         trade_pnl = net_proceeds - (position * buy_entry_price)
         trades_count += 1
-        
+
         if trade_pnl > 0:
             winning_trades += 1
             gross_profit += trade_pnl
@@ -231,20 +237,24 @@ def simulate_strategy(
         cost_drag = (final_mid_price - execution_sell_price) * position + tax_paid + fee
         total_cost_drag += cost_drag
 
-        trade_log.append({
-            "index": len(trade_log) + 1,
-            "type": "LIQ_EXIT",
-            "time": final_time,
-            "price": execution_sell_price,
-            "mid_price": final_mid_price,
-            "ounces": position,
-            "reason": "FINAL_STEP_LIQUIDATION",
-            "pnl": trade_pnl,
-            "tax": tax_paid,
-        })
+        trade_log.append(
+            {
+                "index": len(trade_log) + 1,
+                "type": "LIQ_EXIT",
+                "time": final_time,
+                "price": execution_sell_price,
+                "mid_price": final_mid_price,
+                "ounces": position,
+                "reason": "FINAL_STEP_LIQUIDATION",
+                "pnl": trade_pnl,
+                "tax": tax_paid,
+            }
+        )
         if verbose:
             pnl_color = "\033[1;32m" if trade_pnl >= 0 else "\033[1;31m"
-            print(f"\033[1;35m[LIQ]\033[0m {final_time.strftime('%Y-%m-%d %H:%M')}: Auto-Liquidated remaining {position:.4f} oz at ${execution_sell_price:.4f} | PnL: {pnl_color}${trade_pnl:+.2f}\033[0m")
+            print(
+                f"\033[1;35m[LIQ]\033[0m {final_time.strftime('%Y-%m-%d %H:%M')}: Auto-Liquidated remaining {position:.4f} oz at ${execution_sell_price:.4f} | PnL: {pnl_color}${trade_pnl:+.2f}\033[0m"
+            )
     else:
         ending_balance = cash
 
@@ -325,7 +335,9 @@ def run_backtest(
         total_records = len(records)
         if total_records == 0:
             if timeframe == "1d":
-                print("\033[1;33m[INFO] No 1d price snapshots found. Trying fallback to 5m timeframe and 'yahoo-si-f' source...\033[0m")
+                print(
+                    "\033[1;33m[INFO] No 1d price snapshots found. Trying fallback to 5m timeframe and 'yahoo-si-f' source...\033[0m"
+                )
                 timeframe = "5m"
                 source_name = "yahoo-si-f"
                 records = (
@@ -354,7 +366,9 @@ def run_backtest(
                 total_records = len(records)
 
         if total_records == 0:
-            print(f"\033[1;31m[ERROR] No price snapshot records found for source '{source_name}' and timeframe '{timeframe}'!\033[0m")
+            print(
+                f"\033[1;31m[ERROR] No price snapshot records found for source '{source_name}' and timeframe '{timeframe}'!\033[0m"
+            )
             return
 
         print(f"\033[1;32m[SUCCESS] Loaded {total_records} historical bars.\033[0m\n")
@@ -382,7 +396,7 @@ def run_backtest(
             slippage=slippage,
             initial_cash=initial_cash,
             db_session=None,
-            verbose=(not run_agent_assisted), # Only print logs for baseline if not running comparison
+            verbose=(not run_agent_assisted),  # Only print logs for baseline if not running comparison
         )
 
         # Run agent-assisted (if requested)
@@ -406,18 +420,18 @@ def run_backtest(
         # 3. Buy & Hold Benchmark Simulator
         first_mid_price = float(records[0][0].mid_price)
         last_mid_price = float(records[-1][0].mid_price)
-        
+
         # B&H Buy
         bh_capital = initial_cash - fee
         bh_buy_price = first_mid_price * (1.0 + (spread / 2.0)) * (1.0 + slippage)
         bh_ounces = bh_capital / bh_buy_price
-        
+
         # B&H Sell
         bh_sell_price = last_mid_price * (1.0 - (spread / 2.0)) * (1.0 - slippage)
         bh_gross_proceeds = bh_ounces * bh_sell_price
         bh_tax = bh_gross_proceeds * tax
         bh_net_proceeds = bh_gross_proceeds - bh_tax - fee
-        
+
         bh_ending_balance = bh_net_proceeds
         bh_net_pnl = bh_ending_balance - initial_cash
         bh_pnl_percent = (bh_net_pnl / initial_cash) * 100.0
@@ -425,7 +439,7 @@ def run_backtest(
         # Drawdown of Buy & Hold over timeframe
         bh_drawdown = 0.0
         bh_peak = initial_cash
-        for (snapshot, _) in records:
+        for snapshot, _ in records:
             mid = float(snapshot.mid_price)
             # Estimate B&H value at this bar
             val = bh_ounces * mid
@@ -437,29 +451,35 @@ def run_backtest(
 
         # 4. Print Side-by-Side Comparison Table
         print_premium_header("BACKTEST PERFORMANCE COMPARISON REPORT", width=89)
-        
+
         base_net_pnl = baseline_results["net_pnl_usd"]
         agent_net_pnl = agent_results["net_pnl_usd"] if run_agent_assisted else 0.0
-        
+
         base_color = "\033[1;32m" if base_net_pnl >= 0 else "\033[1;31m"
         agent_color = "\033[1;32m" if agent_net_pnl >= 0 else "\033[1;31m"
         bh_color = "\033[1;32m" if bh_net_pnl >= 0 else "\033[1;31m"
-        
+
         base_alpha = baseline_results["net_pnl_percent"] - bh_pnl_percent
         agent_alpha = (agent_results["net_pnl_percent"] - bh_pnl_percent) if run_agent_assisted else 0.0
-        
+
         base_alpha_color = "\033[1;32m" if base_alpha >= 0 else "\033[1;31m"
         agent_alpha_color = "\033[1;32m" if agent_alpha >= 0 else "\033[1;31m"
 
         agent_ending = f"${agent_results['ending_balance']:16.2f}" if run_agent_assisted else f"{'N/A':>17}"
         agent_net_pnl_val = f"{agent_color}${agent_net_pnl:+15.2f}\033[0m" if run_agent_assisted else f"{'N/A':>17}"
-        agent_net_pnl_pct = f"{agent_color}{agent_results['net_pnl_percent']:+16.2f}%\033[0m" if run_agent_assisted else f"{'N/A':>17}"
-        agent_mdd = f"\033[1;31m{agent_results['max_drawdown'] * 100:16.2f}%\033[0m" if run_agent_assisted else f"{'N/A':>17}"
+        agent_net_pnl_pct = (
+            f"{agent_color}{agent_results['net_pnl_percent']:+16.2f}%\033[0m" if run_agent_assisted else f"{'N/A':>17}"
+        )
+        agent_mdd = (
+            f"\033[1;31m{agent_results['max_drawdown'] * 100:16.2f}%\033[0m" if run_agent_assisted else f"{'N/A':>17}"
+        )
         agent_trades = f"{agent_results['trades_count']:17}" if run_agent_assisted else f"{'N/A':>17}"
-        
+
         if run_agent_assisted:
             agent_win = f"{agent_results['winning_trades']:6} / {agent_results['win_rate']:6.2f}%"
-            pf_agent = f"{agent_results['profit_factor']:.2f}" if agent_results['profit_factor'] != float("inf") else "N/A"
+            pf_agent = (
+                f"{agent_results['profit_factor']:.2f}" if agent_results["profit_factor"] != float("inf") else "N/A"
+            )
             agent_drag_val = f"${agent_results['total_cost_drag']:16.2f}"
             agent_drag_pct = f"{agent_results['cost_drag_percent']:16.2f}%"
             agent_alpha_val = f"{agent_alpha_color}{agent_alpha:+16.2f}%\033[0m"
@@ -470,29 +490,54 @@ def run_backtest(
             agent_drag_pct = f"{'N/A':>17}"
             agent_alpha_val = f"{'N/A':>17}"
 
-        pf_base = f"{baseline_results['profit_factor']:.2f}" if baseline_results['profit_factor'] != float("inf") else "N/A"
+        pf_base = (
+            f"{baseline_results['profit_factor']:.2f}" if baseline_results["profit_factor"] != float("inf") else "N/A"
+        )
 
-        print(f"  Metric                      | BASELINE ({strategy_base.upper():9}) | AGENT-ASSISTED     | BUY & HOLD          ")
+        print(
+            f"  Metric                      | BASELINE ({strategy_base.upper():9}) | AGENT-ASSISTED     | BUY & HOLD          "
+        )
         print("  " + "-" * 85)
-        print(f"  Ending Balance              | ${baseline_results['ending_balance']:16.2f} | {agent_ending} | ${bh_ending_balance:16.2f}")
-        print(f"  Net Profit/Loss (USD)       | {base_color}${base_net_pnl:+15.2f}\033[0m | {agent_net_pnl_val} | {bh_color}${bh_net_pnl:+15.2f}\033[0m")
-        print(f"  Net Profit/Loss (%)         | {base_color}{baseline_results['net_pnl_percent']:+16.2f}%\033[0m | {agent_net_pnl_pct} | {bh_color}{bh_pnl_percent:+16.2f}%\033[0m")
-        print(f"  Max Drawdown (MDD)          | \033[1;31m{baseline_results['max_drawdown'] * 100:16.2f}%\033[0m | {agent_mdd} | \033[1;31m{bh_drawdown * 100:16.2f}%\033[0m")
+        print(
+            f"  Ending Balance              | ${baseline_results['ending_balance']:16.2f} | {agent_ending} | ${bh_ending_balance:16.2f}"
+        )
+        print(
+            f"  Net Profit/Loss (USD)       | {base_color}${base_net_pnl:+15.2f}\033[0m | {agent_net_pnl_val} | {bh_color}${bh_net_pnl:+15.2f}\033[0m"
+        )
+        print(
+            f"  Net Profit/Loss (%)         | {base_color}{baseline_results['net_pnl_percent']:+16.2f}%\033[0m | {agent_net_pnl_pct} | {bh_color}{bh_pnl_percent:+16.2f}%\033[0m"
+        )
+        print(
+            f"  Max Drawdown (MDD)          | \033[1;31m{baseline_results['max_drawdown'] * 100:16.2f}%\033[0m | {agent_mdd} | \033[1;31m{bh_drawdown * 100:16.2f}%\033[0m"
+        )
         print(f"  Total Trades Executed       | {baseline_results['trades_count']:17} | {agent_trades} | {1:17}")
-        print(f"  Winning Trades Count / %    | {baseline_results['winning_trades']:6} / {baseline_results['win_rate']:6.2f}% | {agent_win} | {'1 / 100.00%':>17}")
+        print(
+            f"  Winning Trades Count / %    | {baseline_results['winning_trades']:6} / {baseline_results['win_rate']:6.2f}% | {agent_win} | {'1 / 100.00%':>17}"
+        )
         print(f"  Profit Factor               | {pf_base:>17} | {pf_agent:>17} | {'N/A':>17}")
-        
-        total_costs_bh = (bh_buy_price - first_mid_price) * bh_ounces + (last_mid_price - bh_sell_price) * bh_ounces + bh_tax + (fee * 2)
+
+        total_costs_bh = (
+            (bh_buy_price - first_mid_price) * bh_ounces
+            + (last_mid_price - bh_sell_price) * bh_ounces
+            + bh_tax
+            + (fee * 2)
+        )
         bh_cost_drag_percent = (total_costs_bh / initial_cash) * 100.0
-        print(f"  Friction Cost Drag (USD)    | ${baseline_results['total_cost_drag']:16.2f} | {agent_drag_val} | ${total_costs_bh:16.2f}")
-        print(f"  Friction Cost Drag (%)      | {baseline_results['cost_drag_percent']:16.2f}% | {agent_drag_pct} | {bh_cost_drag_percent:16.2f}%")
+        print(
+            f"  Friction Cost Drag (USD)    | ${baseline_results['total_cost_drag']:16.2f} | {agent_drag_val} | ${total_costs_bh:16.2f}"
+        )
+        print(
+            f"  Friction Cost Drag (%)      | {baseline_results['cost_drag_percent']:16.2f}% | {agent_drag_pct} | {bh_cost_drag_percent:16.2f}%"
+        )
         print("  " + "-" * 85)
-        print(f"  \033[1;33mAlpha Created vs Benchmark  | {base_alpha_color}{base_alpha:+16.2f}%\033[0m | {agent_alpha_val} | -")
+        print(
+            f"  \033[1;33mAlpha Created vs Benchmark  | {base_alpha_color}{base_alpha:+16.2f}%\033[0m | {agent_alpha_val} | -"
+        )
         print("\033[1;36m" + "=" * 89 + "\033[0m\n")
 
         # Return results corresponding to the specified strategy_name for backward compatibility
         target_results = agent_results if run_agent_assisted else baseline_results
-        
+
         return {
             "strategy_name": strategy_name,
             "timeframe": timeframe,

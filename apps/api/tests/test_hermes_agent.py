@@ -432,3 +432,94 @@ async def test_hermes_boost_respects_risk_rejection(db_session):
     action, reason = StrategyRunner.apply_agent_filters("HOLD", "BULLISH", "REJECTED", db=db_session)
     assert action == "HOLD"
     assert reason == ""
+
+
+@pytest.mark.anyio
+async def test_hermes_on_demand_trigger_logic(db_session):
+    """
+    Verifies the Phase C1 on-demand RSS fetch optimization:
+    - If there is recent matching news in the last 24h, collect_rss_news is NOT triggered.
+    - If the latest matching news is within 48h, collect_rss_news is NOT triggered.
+    - If the latest matching news is older than 48h (or none exists), collect_rss_news IS triggered.
+    """
+    from app.models import RawNews, CollectorRun
+
+    # Clear everything
+    db_session.query(RawNews).delete()
+    db_session.query(AgentMemoryEvent).filter_by(agent_name="hermes-agent").delete()
+    db_session.commit()
+
+    run = CollectorRun(
+        collector_name="hermes-test",
+        source="test",
+        status="SUCCESS",
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    # Scenario A: Matching news in the last 24 hours (e.g. 2 hours ago)
+    recent_news = RawNews(
+        collector_run_id=run.id,
+        source="kitco-rss",
+        title="Recent Silver Spot",
+        url="http://example.com/recent",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        raw_payload_hash="recent_hash",
+        parser_version="1.0",
+    )
+    db_session.add(recent_news)
+    db_session.commit()
+
+    with patch("app.collectors.public_sources.collect_rss_news") as mock_collect:
+        with patch("app.llm.gateway.DeepSeekGateway.generate_completion") as mock_llm:
+            mock_llm.return_value = {"content": "[]"}
+            await run_hermes_sentiment_analysis(db_session)
+            # Should NOT fetch on-demand because we have matching news in the last 24h
+            mock_collect.assert_not_called()
+
+    # Scenario B: No matching news in 24 hours, but latest matching news is within 48 hours (e.g., 36 hours ago)
+    db_session.query(RawNews).delete()
+    db_session.commit()
+
+    fallback_recent = RawNews(
+        collector_run_id=run.id,
+        source="kitco-rss",
+        title="Fallback Silver Spot Recent",
+        url="http://example.com/fb_recent",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=36),
+        raw_payload_hash="fb_recent_hash",
+        parser_version="1.0",
+    )
+    db_session.add(fallback_recent)
+    db_session.commit()
+
+    with patch("app.collectors.public_sources.collect_rss_news") as mock_collect:
+        with patch("app.llm.gateway.DeepSeekGateway.generate_completion") as mock_llm:
+            mock_llm.return_value = {"content": "[]"}
+            await run_hermes_sentiment_analysis(db_session)
+            # Should NOT fetch on-demand because the fallback in the DB is less than 48h old
+            mock_collect.assert_not_called()
+
+    # Scenario C: No matching news in 24 hours, and latest matching news is older than 48 hours (e.g., 50 hours ago)
+    db_session.query(RawNews).delete()
+    db_session.commit()
+
+    fallback_old = RawNews(
+        collector_run_id=run.id,
+        source="kitco-rss",
+        title="Fallback Silver Spot Old",
+        url="http://example.com/fb_old",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=50),
+        raw_payload_hash="fb_old_hash",
+        parser_version="1.0",
+    )
+    db_session.add(fallback_old)
+    db_session.commit()
+
+    with patch("app.collectors.public_sources.collect_rss_news", return_value=(MagicMock(), 0)) as mock_collect:
+        with patch("app.llm.gateway.DeepSeekGateway.generate_completion") as mock_llm:
+            mock_llm.return_value = {"content": "[]"}
+            await run_hermes_sentiment_analysis(db_session)
+            # Should trigger on-demand fetch because latest fallback news is older than 48h
+            mock_collect.assert_called()
