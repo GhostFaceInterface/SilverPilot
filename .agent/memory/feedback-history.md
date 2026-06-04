@@ -1,7 +1,7 @@
 ---
 type: feedback
 created: 2026-05-18
-updated: 2026-05-30
+updated: 2026-06-04
 ---
 
 
@@ -32,7 +32,9 @@ updated: 2026-05-30
 - **SQLite Timezone Naive Datetimes & Timezone-Aware Comparison**: When comparing timezone-aware python datetime objects (`datetime.now(timezone.utc)`) with datetimes retrieved from SQLite (which are often serialized as naive), make sure to normalize naive datetimes via `.replace(tzinfo=timezone.utc)` to prevent runtime comparison exceptions.
 - **Tuned On-Demand Scraper Guards**: Establish a dual-guard for on-demand live scraper fallbacks: (1) check if recent target news exists in the last 24h, and (2) verify if the latest fallback news in the DB is older than 48h. This protects against duplicate scraping loads during frequent trader check cycles.
 - **Ruff Validation & Pre-Commit Linting**: Be diligent with pre-commit hooks running Ruff validation: resolve unused local variables (by removing them or prefixing with `_`) and mark imports executed after `sys.path.insert` manipulations with `# noqa: E402`.
-
+- **Route Serializers Must Track Refactored ORM Schemas:** After model refactors, smoke real endpoints that serialize the model. `/signals/latest` broke by reading obsolete `Signal.source/signal/confidence` fields while the live model used `action/reason_code/price_usd_oz`.
+- **Use Canonical Runtime Source Names in ML Features:** ML live inference must query the same source strings written by collectors. TCMB USD/TRY rows are persisted as `tcmb-today-xml`; tests must seed that canonical value instead of legacy aliases like `tcmb`.
+- **Never Log Secret-Bearing Provider Exception Strings:** Telegram/python-telegram-bot and httpx exceptions can include full token-bearing URLs. Log generic messages plus `type(e).__name__`, suppress `httpx` INFO request logs, and use `caplog` tests to prove tokens/URLs are absent.
 
 
 
