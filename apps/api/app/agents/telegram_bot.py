@@ -511,12 +511,12 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     try:
         collect_kuveyt_public_silver(db, settings=settings)
     except Exception as e:
-        logger.warning(f"On-demand collect_kuveyt_public_silver failed: {e}")
+        logger.warning("On-demand collect_kuveyt_public_silver failed; error_type=%s.", type(e).__name__)
 
     try:
         collect_global_xag_usd(db, settings=settings)
     except Exception as e:
-        logger.warning(f"On-demand collect_global_xag_usd failed: {e}")
+        logger.warning("On-demand collect_global_xag_usd failed; error_type=%s.", type(e).__name__)
 
     portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
@@ -679,7 +679,7 @@ async def process_telegram_update(update: dict, settings=None):
                     )
             return
         except Exception as e:
-            logger.exception("Error during on-demand telegram command execution")
+            logger.error("Error during on-demand telegram command execution; error_type=%s.", type(e).__name__)
             try:
                 bot = Bot(token=settings.telegram_bot_token)
                 await bot.send_message(
@@ -688,21 +688,24 @@ async def process_telegram_update(update: dict, settings=None):
                     parse_mode="HTML",
                 )
             except Exception as send_err:
-                logger.error(f"Failed to send error notification to Telegram: {send_err}", exc_info=True)
+                logger.error(
+                    "Failed to send error notification to Telegram; error_type=%s.",
+                    type(send_err).__name__,
+                )
             return
 
     try:
         with SessionLocal() as db:
             reply_text = handle_telegram_command(text, db)
     except Exception as e:
-        logger.exception("Database error while processing Telegram command")
+        logger.error("Database error while processing Telegram command; error_type=%s.", type(e).__name__)
         reply_text = f"⚠️ Komut işlenirken bir veritabanı hatası oluştu: {html.escape(str(e))}"
 
     try:
         bot = Bot(token=settings.telegram_bot_token)
         await bot.send_message(chat_id=settings.telegram_chat_id, text=reply_text, parse_mode="HTML")
     except Exception as e:
-        logger.error(f"Failed to send Telegram message: {e}", exc_info=True)
+        logger.error("Failed to send Telegram message; error_type=%s.", type(e).__name__)
 
 
 async def register_bot_commands(bot: Bot) -> None:
@@ -721,7 +724,7 @@ async def register_bot_commands(bot: Bot) -> None:
         await bot.set_my_commands(commands)
         logger.info("Telegram bot commands successfully registered.")
     except Exception as e:
-        logger.error(f"Failed to register Telegram bot commands: {e}", exc_info=True)
+        logger.error("Failed to register Telegram bot commands; error_type=%s.", type(e).__name__)
 
 
 async def set_telegram_webhook():
@@ -737,13 +740,13 @@ async def set_telegram_webhook():
     bot = Bot(token=settings.telegram_bot_token)
     await register_bot_commands(bot)
     webhook_url = f"{settings.telegram_webhook_url.rstrip('/')}/agent/telegram/webhook"
-    logger.info(f"Setting Telegram webhook to: {webhook_url}")
+    logger.info("Setting Telegram webhook for configured public endpoint.")
 
     try:
         await bot.set_webhook(url=webhook_url)
         logger.info("Telegram webhook successfully registered.")
     except Exception as e:
-        logger.error(f"Failed to set Telegram webhook: {e}", exc_info=True)
+        logger.error("Failed to set Telegram webhook; error_type=%s.", type(e).__name__)
 
 
 async def start_polling():
@@ -767,8 +770,8 @@ async def start_polling():
             logger.info("Telegram polling task cancelled.")
             break
         except TelegramError as e:
-            logger.error(f"Telegram error in polling loop: {e}")
+            logger.error("Telegram error in polling loop; error_type=%s.", type(e).__name__)
             await asyncio.sleep(5)
         except Exception as e:
-            logger.error(f"Unexpected error in polling: {e}", exc_info=True)
+            logger.error("Unexpected error in polling; error_type=%s.", type(e).__name__)
             await asyncio.sleep(5)

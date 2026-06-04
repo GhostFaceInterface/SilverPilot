@@ -10,6 +10,7 @@ from app.core.config import get_settings
 logging.basicConfig(level=logging.INFO)
 silverpilot_logger = logging.getLogger("silverpilot")
 silverpilot_logger.setLevel(logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 if not silverpilot_logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))

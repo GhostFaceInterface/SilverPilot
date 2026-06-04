@@ -3,6 +3,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -125,7 +126,7 @@ def seed_mock_history(TestingSession, start_time: datetime, count: int = 100):
                 db.add(
                     RawFxRate(
                         collector_run_id=run.id,
-                        source="tcmb",
+                        source="tcmb-today-xml",
                         base_currency="USD",
                         quote_currency="TRY",
                         rate=Decimal(str(32.0 + i * 0.01)),
@@ -223,6 +224,8 @@ def test_live_feature_extraction_accuracy():
 
         # Verify specific feature definitions and math boundaries
         assert float(df_feat.loc[0, "bank_spread_percent"]) == 0.4
+        expected_usd_try_return_24h = (32.96 - 32.24) / 32.24
+        assert float(df_feat.loc[0, "usd_try_return_24h"]) == pytest.approx(expected_usd_try_return_24h)
         assert float(df_feat.loc[0, "news_sentiment_score"]) == 1.0  # BULLISH sentiment
         assert float(df_feat.loc[0, "xau_xag_ratio"]) > 0
         assert float(df_feat.loc[0, "hour_of_day"]) >= 0 and float(df_feat.loc[0, "hour_of_day"]) < 24

@@ -42,9 +42,7 @@ async def send_telegram_message(
             seconds = e.retry_after.total_seconds() if isinstance(e.retry_after, timedelta) else float(e.retry_after)
             wait_time = seconds + 1.0
             if attempt == attempts:
-                logger.error(
-                    f"Failed to send Telegram message due to rate limits after {attempts} attempts.", exc_info=True
-                )
+                logger.error(f"Failed to send Telegram message due to rate limits after {attempts} attempts.")
                 break
             logger.warning(
                 f"Telegram rate limit hit (RetryAfter). Waiting {wait_time}s before retry (attempt {attempt}/{attempts})..."
@@ -52,21 +50,36 @@ async def send_telegram_message(
             await asyncio.sleep(wait_time)
         except TelegramError as e:
             if attempt == attempts:
-                logger.error(f"Failed to send Telegram message after {attempts} attempts: {e}", exc_info=True)
-                break
-            wait_time = backoff * (2 ** (attempt - 1))  # exponential backoff
-            logger.warning(f"Telegram API error: {e}. Retrying in {wait_time}s (attempt {attempt}/{attempts})...")
-            await asyncio.sleep(wait_time)
-        except Exception as e:
-            if attempt == attempts:
                 logger.error(
-                    f"Unexpected connection error sending Telegram message after {attempts} attempts: {e}",
-                    exc_info=True,
+                    "Failed to send Telegram message after %s attempts; error_type=%s.",
+                    attempts,
+                    type(e).__name__,
                 )
                 break
             wait_time = backoff * (2 ** (attempt - 1))  # exponential backoff
             logger.warning(
-                f"Connection error sending Telegram message: {e}. Retrying in {wait_time}s (attempt {attempt}/{attempts})..."
+                "Telegram API error; error_type=%s. Retrying in %ss (attempt %s/%s)...",
+                type(e).__name__,
+                wait_time,
+                attempt,
+                attempts,
+            )
+            await asyncio.sleep(wait_time)
+        except Exception as e:
+            if attempt == attempts:
+                logger.error(
+                    "Unexpected connection error sending Telegram message after %s attempts; error_type=%s.",
+                    attempts,
+                    type(e).__name__,
+                )
+                break
+            wait_time = backoff * (2 ** (attempt - 1))  # exponential backoff
+            logger.warning(
+                "Connection error sending Telegram message; error_type=%s. Retrying in %ss (attempt %s/%s)...",
+                type(e).__name__,
+                wait_time,
+                attempt,
+                attempts,
             )
             await asyncio.sleep(wait_time)
 

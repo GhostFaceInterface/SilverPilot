@@ -625,3 +625,59 @@ async def test_send_telegram_message_all_failures():
         assert mock_sleep.call_count == 2
         mock_sleep.assert_any_call(0.1)
         mock_sleep.assert_any_call(0.2)
+
+
+@pytest.mark.anyio
+async def test_send_telegram_message_does_not_log_token_bearing_exception(caplog):
+    from app.services.telegram import send_telegram_message
+    from telegram.error import TelegramError
+
+    secret_url = "https://api.telegram.org/botSECRET_TOKEN/sendMessage"
+    with (
+        patch("app.services.telegram.Bot") as MockBot,
+        patch("app.services.telegram.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.send_message = AsyncMock(side_effect=TelegramError(secret_url))
+        MockBot.return_value = mock_bot_instance
+
+        with caplog.at_level("WARNING"):
+            res = await send_telegram_message(
+                bot_token="SECRET_TOKEN",
+                chat_id="123",
+                text="Hello World",
+                attempts=1,
+            )
+
+    assert res is False
+    assert "SECRET_TOKEN" not in caplog.text
+    assert "api.telegram.org" not in caplog.text
+    assert "TelegramError" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_set_telegram_webhook_does_not_log_full_webhook_url(caplog):
+    from app.agents.telegram_bot import set_telegram_webhook
+
+    settings = Settings(
+        telegram_bot_token="SECRET_TOKEN",
+        telegram_chat_id=123,
+        telegram_webhook_url="https://example.com/private-hook-path",
+    )
+
+    with (
+        patch("app.agents.telegram_bot.get_settings", return_value=settings),
+        patch("app.agents.telegram_bot.Bot") as MockBot,
+    ):
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.set_my_commands = AsyncMock()
+        mock_bot_instance.set_webhook = AsyncMock()
+        MockBot.return_value = mock_bot_instance
+
+        with caplog.at_level("INFO"):
+            await set_telegram_webhook()
+
+    assert "https://example.com/private-hook-path" not in caplog.text
+    assert "agent/telegram/webhook" not in caplog.text
+    assert "SECRET_TOKEN" not in caplog.text
+    assert "configured public endpoint" in caplog.text

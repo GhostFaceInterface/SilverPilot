@@ -341,10 +341,14 @@ def get_latest_signal(db: Session = Depends(get_db)):
         return {"signal": None}
     return {
         "signal": {
-            "source": signal.source,
-            "asset_id": signal.asset_id,
-            "signal": signal.signal,
-            "confidence": str(signal.confidence),
+            "id": signal.id,
+            "observed_at": signal.observed_at,
+            "price_snapshot_id": signal.price_snapshot_id,
+            "indicator_id": signal.indicator_id,
+            "action": signal.action,
+            "reason_code": signal.reason_code,
+            "price_usd_oz": str(signal.price_usd_oz),
+            "details": signal.details_json,
             "created_at": signal.created_at,
         }
     }

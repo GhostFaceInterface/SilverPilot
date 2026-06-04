@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.models.entities import PriceSnapshot, RawFxRate, TechnicalIndicator, HistoricalAgentCache, AgentMemoryEvent
 
 logger = logging.getLogger("silverpilot.ml.inference")
+TCMB_FX_SOURCES = ("tcmb-today-xml", "tcmb")
 
 # Defensive import logic to prevent crashes if ML libraries are not available on VPS
 try:
@@ -211,7 +212,7 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
         # Fetch FX rate at T and T-24h
         stmt_latest_fx = (
             select(RawFxRate)
-            .where(RawFxRate.source == "tcmb")
+            .where(RawFxRate.source.in_(TCMB_FX_SOURCES))
             .where(RawFxRate.observed_at <= anchor_time)
             .order_by(desc(RawFxRate.observed_at))
             .limit(1)
@@ -220,7 +221,7 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
 
         stmt_past_fx = (
             select(RawFxRate)
-            .where(RawFxRate.source == "tcmb")
+            .where(RawFxRate.source.in_(TCMB_FX_SOURCES))
             .where(RawFxRate.observed_at >= anchor_time - timedelta(hours=30))
             .where(RawFxRate.observed_at <= anchor_time - timedelta(hours=18))
             .order_by(desc(RawFxRate.observed_at))

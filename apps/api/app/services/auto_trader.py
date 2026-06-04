@@ -174,7 +174,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
             disable_notification=disable_notification,
         )
     except Exception as e:
-        logger.error(f"Failed to dispatch trade Telegram notification: {e}", exc_info=True)
+        logger.error("Failed to dispatch trade Telegram notification; error_type=%s.", type(e).__name__)
 
 
 async def run_auto_trading(db: Session = None):

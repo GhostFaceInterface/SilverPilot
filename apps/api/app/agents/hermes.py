@@ -347,7 +347,7 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
 
             logger.info("Telegram weekend sentiment report sent successfully.")
     except Exception as telegram_err:
-        logger.error(f"Failed to send Telegram weekend sentiment report: {telegram_err}", exc_info=True)
+        logger.error("Failed to send Telegram weekend sentiment report; error_type=%s.", type(telegram_err).__name__)
 
     logger.info(
         f"Hermes weighted sentiment analysis completed and saved successfully. Event ID: {event.id}, Score: {final_score:.4f}"

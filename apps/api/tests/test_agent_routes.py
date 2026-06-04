@@ -2,11 +2,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.core.db import Base, get_db
 from app.main import create_app
 from app.core.config import get_settings, Settings
+from app.models import Asset, PriceSnapshot, Signal, TechnicalIndicator
 
 
 def test_agent_traces_endpoints():
@@ -166,6 +168,80 @@ def test_agent_memory_endpoints():
     assert response.status_code == 200
     memories = response.json()
     assert len(memories) == 0
+
+
+def test_latest_signal_endpoint_uses_refactored_signal_schema():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        observed_at = datetime.now(UTC)
+        asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
+        db.add(asset)
+        db.flush()
+        price_snapshot = PriceSnapshot(
+            asset_id=asset.id,
+            source="yahoo-si-f",
+            buy_price=Decimal("24.50"),
+            sell_price=Decimal("24.50"),
+            mid_price=Decimal("24.50"),
+            currency="USD",
+            spread_absolute=Decimal("0"),
+            spread_percent=Decimal("0"),
+            observed_at=observed_at,
+        )
+        db.add(price_snapshot)
+        db.flush()
+        indicator = TechnicalIndicator(
+            price_snapshot_id=price_snapshot.id,
+            bar_timestamp=observed_at,
+            timeframe="5m",
+            close_usd_oz=Decimal("24.50"),
+            rsi_14=Decimal("51.0"),
+        )
+        db.add(indicator)
+        db.flush()
+        signal = Signal(
+            observed_at=observed_at,
+            price_snapshot_id=price_snapshot.id,
+            indicator_id=indicator.id,
+            action="HOLD",
+            reason_code="RSI_NEUTRAL",
+            price_usd_oz=Decimal("24.50"),
+            details_json={"strategy_name": "rsi"},
+        )
+        db.add(signal)
+        db.commit()
+    finally:
+        db.close()
+
+    def override_get_db():
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    response = client.get("/signals/latest")
+
+    assert response.status_code == 200
+    data = response.json()["signal"]
+    assert data["action"] == "HOLD"
+    assert data["reason_code"] == "RSI_NEUTRAL"
+    assert Decimal(data["price_usd_oz"]) == Decimal("24.500000")
+    assert data["price_snapshot_id"] is not None
+    assert data["indicator_id"] is not None
+    assert data["details"] == {"strategy_name": "rsi"}
 
 
 def test_agent_trigger_endpoints():
