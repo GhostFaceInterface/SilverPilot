@@ -27,7 +27,7 @@ from app.collectors.public_sources import (
     parse_kuveyt_public_silver_html,
 )
 from app.collectors.service import ingest_fx_rate
-from app.collectors.runner import parse_collector_jobs, run_jobs
+from app.collectors.runner import parse_collector_jobs, resolve_jobs_argument, run_jobs
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
@@ -610,6 +610,26 @@ def test_runner_parse_collector_jobs_rejects_unknown_job():
         assert "unknown" in str(exc)
     else:
         raise AssertionError("unknown collector job should be rejected")
+
+
+def test_runner_one_shot_job_ignores_env_jobs(monkeypatch):
+    monkeypatch.setenv("COLLECTOR_JOBS", "kuveyt-silver,kitco-rss")
+    args = SimpleNamespace(loop=False, jobs=None, job="tcmb-usd-try")
+
+    resolve_jobs_argument(args)
+
+    assert args.jobs == ""
+    assert parse_collector_jobs(args.jobs, fallback_job=args.job) == ["tcmb-usd-try"]
+
+
+def test_runner_loop_uses_env_jobs(monkeypatch):
+    monkeypatch.setenv("COLLECTOR_JOBS", "kuveyt-silver,kitco-rss")
+    args = SimpleNamespace(loop=True, jobs=None, job="tcmb-usd-try")
+
+    resolve_jobs_argument(args)
+
+    assert args.jobs == "kuveyt-silver,kitco-rss"
+    assert parse_collector_jobs(args.jobs, fallback_job=args.job) == ["kuveyt-silver", "kitco-rss"]
 
 
 def test_runner_reports_failed_collector_job(monkeypatch):

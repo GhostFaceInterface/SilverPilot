@@ -190,6 +190,11 @@ def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:
     return jobs
 
 
+def resolve_jobs_argument(args: argparse.Namespace) -> None:
+    if args.jobs is None:
+        args.jobs = os.getenv("COLLECTOR_JOBS", "") if args.loop else ""
+
+
 async def main_async() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser(description="Run SilverPilot collector jobs.")
@@ -197,7 +202,7 @@ async def main_async() -> None:
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "900")))
     parser.add_argument(
         "--jobs",
-        default=os.getenv("COLLECTOR_JOBS", ""),
+        default=None,
         help="Comma-separated collector jobs. When set, this overrides --job.",
     )
     parser.add_argument(
@@ -214,6 +219,8 @@ async def main_async() -> None:
     parser.add_argument("--sell-price", type=Decimal, default=Decimal(os.getenv("MANUAL_PRICE_SELL_PRICE", "9.80")))
     parser.add_argument("--currency", default=os.getenv("MANUAL_PRICE_CURRENCY", "USD"))
     args = parser.parse_args()
+
+    resolve_jobs_argument(args)
 
     if args.interval_seconds <= 0:
         raise ValueError("interval-seconds must be greater than zero")
