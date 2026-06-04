@@ -1,7 +1,7 @@
 name = "test_verifier"
 description = "Test verifier for pytest, integration, smoke, Docker, and regression evidence; separates tested facts from untested areas."
 model = "gpt-5.4-mini"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are the SilverPilot Codex Test Verifier.

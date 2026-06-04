@@ -3,13 +3,24 @@ from decimal import Decimal
 import pytest
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base, get_db
 from app.main import create_app
-from app.models import Asset, CollectorRun, PaperTrade, Portfolio, RawBankPrice, RawFxRate, RawGlobalPrice, RiskDecision
+from app.models import (
+    Asset,
+    CollectorRun,
+    PaperTrade,
+    Portfolio,
+    PortfolioSnapshot,
+    PriceSnapshot,
+    RawBankPrice,
+    RawFxRate,
+    RawGlobalPrice,
+    RiskDecision,
+)
 
 
 def make_client():
@@ -294,6 +305,54 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     assert snapshot["cash_balance"] == "2495.800000"
     assert Decimal(snapshot["portfolio_value"]) < Decimal("2500.000000")
     assert Decimal(snapshot["realized_pnl"]) < Decimal("0")
+
+
+def test_paper_snapshot_records_price_snapshot_provenance():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+    db = testing_session()
+    try:
+        asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one()
+        price_snapshot = PriceSnapshot(
+            asset_id=asset.id,
+            source="kuveyt-public-silver-page",
+            buy_price=Decimal("10.000000"),
+            sell_price=Decimal("9.800000"),
+            mid_price=Decimal("9.900000"),
+            currency="USD",
+            spread_absolute=Decimal("0.200000"),
+            spread_percent=Decimal("2.020202"),
+            observed_at=datetime.now(UTC),
+        )
+        db.add(price_snapshot)
+        db.commit()
+        db.refresh(price_snapshot)
+        expected_snapshot_id = price_snapshot.id
+    finally:
+        db.close()
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_buy",
+            "quantity": "10",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "1.00",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["snapshot"]["price_snapshot_id"] == expected_snapshot_id
+
+    db = testing_session()
+    try:
+        stored = db.get(PortfolioSnapshot, body["snapshot"]["id"])
+        assert stored.price_snapshot_id == expected_snapshot_id
+    finally:
+        db.close()
 
 
 def test_buy_cannot_make_cash_balance_negative():

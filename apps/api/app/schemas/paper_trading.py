@@ -62,6 +62,7 @@ class RiskDecisionPayload(BaseModel):
 class PortfolioSnapshotPayload(BaseModel):
     id: int
     portfolio_id: int
+    price_snapshot_id: int | None = None
     cash_balance: Decimal
     asset_quantity: Decimal
     portfolio_value: Decimal

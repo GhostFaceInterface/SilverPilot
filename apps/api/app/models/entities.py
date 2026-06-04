@@ -17,6 +17,7 @@ class Asset(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     price_snapshots: Mapped[list["PriceSnapshot"]] = relationship(back_populates="asset")
+    market_bars: Mapped[list["MarketBar"]] = relationship(back_populates="asset")
 
     @property
     def currency(self) -> str:
@@ -29,6 +30,7 @@ class PriceSnapshot(Base):
     __tablename__ = "price_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    collector_run_id: Mapped[int | None] = mapped_column(ForeignKey("collector_runs.id"), nullable=True, index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
     source: Mapped[str] = mapped_column(String(128), index=True)
     buy_price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
@@ -43,6 +45,41 @@ class PriceSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     asset: Mapped[Asset] = relationship(back_populates="price_snapshots")
+    collector_run: Mapped["CollectorRun | None"] = relationship()
+
+
+class MarketBar(Base):
+    __tablename__ = "market_bars"
+    __table_args__ = (
+        UniqueConstraint(
+            "asset_id", "source", "timeframe", "bar_start_at", name="uq_market_bars_asset_source_tf_start"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True)
+    bar_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    bar_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    open: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    high: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    low: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    close: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    currency: Mapped[str] = mapped_column(String(8))
+    sample_count: Mapped[int] = mapped_column(default=0)
+    first_price_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("price_snapshots.id"), nullable=True)
+    last_price_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("price_snapshots.id"), nullable=True)
+    quality_status: Mapped[str] = mapped_column(String(32), default="ok", index=True)
+    bar_builder_version: Mapped[str] = mapped_column(String(64), default="market-bars-v1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    asset: Mapped[Asset] = relationship(back_populates="market_bars")
+    first_price_snapshot: Mapped[PriceSnapshot | None] = relationship(foreign_keys=[first_price_snapshot_id])
+    last_price_snapshot: Mapped[PriceSnapshot | None] = relationship(foreign_keys=[last_price_snapshot_id])
 
 
 class CollectorRun(Base):
@@ -235,6 +272,7 @@ class PortfolioSnapshot(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), index=True)
+    price_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("price_snapshots.id"), nullable=True, index=True)
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     asset_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     portfolio_value: Mapped[Decimal] = mapped_column(Numeric(18, 6))
@@ -243,6 +281,7 @@ class PortfolioSnapshot(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
     portfolio: Mapped[Portfolio] = relationship(back_populates="snapshots")
+    price_snapshot: Mapped[PriceSnapshot | None] = relationship()
 
 
 class Signal(Base):
@@ -292,12 +331,17 @@ class TechnicalIndicator(Base):
     __tablename__ = "technical_indicators"
     __table_args__ = (
         UniqueConstraint("price_snapshot_id", "timeframe", name="uq_technical_indicators_snapshot_timeframe"),
+        UniqueConstraint("market_bar_id", "calculation_version", name="uq_technical_indicators_bar_calc_version"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     price_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("price_snapshots.id"), nullable=True, index=True)
+    market_bar_id: Mapped[int | None] = mapped_column(ForeignKey("market_bars.id"), nullable=True, index=True)
     bar_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     timeframe: Mapped[str] = mapped_column(String(8), index=True)
+    calculation_version: Mapped[str] = mapped_column(String(64), default="technical-indicators-v1", index=True)
+    input_bar_count: Mapped[int] = mapped_column(default=0)
+    quality_status: Mapped[str] = mapped_column(String(32), default="ok", index=True)
     close_usd_oz: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     rsi_14: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     macd_line: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
@@ -314,6 +358,7 @@ class TechnicalIndicator(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     price_snapshot: Mapped[PriceSnapshot | None] = relationship()
+    market_bar: Mapped[MarketBar | None] = relationship()
 
 
 class LLMCallTrace(Base):
@@ -357,6 +402,14 @@ class HistoricalAgentCache(Base):
 
 Index(
     "ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at
+)
+
+Index(
+    "ix_market_bars_asset_source_tf_start",
+    MarketBar.asset_id,
+    MarketBar.source,
+    MarketBar.timeframe,
+    MarketBar.bar_start_at,
 )
 
 Index(

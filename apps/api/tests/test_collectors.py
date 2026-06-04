@@ -996,6 +996,95 @@ def test_context_failure_does_not_block_phase4_when_critical_sources_are_ready()
     assert "CONTEXT_COLLECTOR_FAILURES_PRESENT" in body["degraded_reasons"]
 
 
+def test_default_health_excludes_kitco_rss_failures(monkeypatch):
+    monkeypatch.delenv("COLLECTOR_JOBS", raising=False)
+    client, testing_session = make_client()
+    db = testing_session()
+    try:
+        now = datetime.now(UTC)
+        db.add(
+            CollectorRun(
+                collector_name="kitco_rss",
+                source="kitco-rss",
+                status="failed",
+                records_seen=0,
+                records_inserted=0,
+                duplicates=0,
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=5),
+                error_message="placeholder feed failed",
+                details_json={},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert all(item["collector_name"] != "kitco_rss" for item in body["collectors"])
+
+
+def test_validation_gate_reports_generic_provider_failure_counts(monkeypatch):
+    monkeypatch.setenv("COLLECTOR_JOBS", "fed-rss,kitco-rss")
+    client, testing_session = make_client()
+    db = testing_session()
+    try:
+        now = datetime.now(UTC)
+        db.add_all(
+            [
+                CollectorRun(
+                    collector_name="fed_rss",
+                    source="federal-reserve-rss",
+                    status="failed",
+                    records_seen=0,
+                    records_inserted=0,
+                    duplicates=0,
+                    started_at=now - timedelta(minutes=5),
+                    finished_at=now - timedelta(minutes=5),
+                    error_message="fed failed",
+                    details_json={},
+                ),
+                CollectorRun(
+                    collector_name="kitco_rss",
+                    source="kitco-rss",
+                    status="failed",
+                    records_seen=0,
+                    records_inserted=0,
+                    duplicates=0,
+                    started_at=now - timedelta(minutes=5),
+                    finished_at=now - timedelta(minutes=5),
+                    error_message="kitco failed",
+                    details_json={},
+                ),
+                CollectorRun(
+                    collector_name="stooq_xag_usd",
+                    source="stooq-xagusd-csv",
+                    status="failed",
+                    records_seen=0,
+                    records_inserted=0,
+                    duplicates=0,
+                    started_at=now - timedelta(minutes=5),
+                    finished_at=now - timedelta(minutes=5),
+                    error_message="stooq timeout",
+                    details_json={"failure_reason_code": "TIMEOUT"},
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/validation-gate?window_hours=1&expected_interval_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider_failure_counts"] == {"fed_rss": 1, "kitco_rss": 1}
+    assert body["stooq_xag_usd_timeout_count"] == 1
+
+
 def test_tcmb_usd_try_collector_writes_fx_rate():
     _, testing_session = make_client()
     xml = """<?xml version="1.0" encoding="UTF-8"?>

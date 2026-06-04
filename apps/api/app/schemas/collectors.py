@@ -40,6 +40,7 @@ class CollectorRunPayload(BaseModel):
 
 class PriceSnapshotPayload(BaseModel):
     id: int
+    collector_run_id: int | None = None
     asset_id: int
     source: str
     buy_price: Decimal
@@ -145,6 +146,7 @@ class CollectorValidationGateResponse(BaseModel):
     context_status: Literal["empty", "healthy", "degraded"]
     source_reliability: list[dict]
     stooq_xag_usd_timeout_count: int
+    provider_failure_counts: dict[str, int]
     selected_global_xag_source: str | None
     window_hours: int
     elapsed_minutes: int

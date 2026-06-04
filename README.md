@@ -63,7 +63,7 @@ Optional collector runner:
 ```bash
 docker compose --profile collector up -d collector
 docker compose run --rm api python -m app.collectors.runner --job kuveyt-silver
-docker compose run --rm api python -m app.collectors.runner --job stooq-xag-usd
+docker compose run --rm api python -m app.collectors.runner --job global-xag-usd
 docker compose run --rm api python -m app.collectors.runner --job tcmb-usd-try
 docker compose run --rm api python -m app.collectors.runner --job fed-rss
 docker compose run --rm api python -m app.collectors.runner --job fred-macro

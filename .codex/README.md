@@ -62,6 +62,11 @@ Recommended routing:
 - `final_reviewer`: `gpt-5.5-pro`
 - `implementation_worker`: `gpt-5.5`
 
+Extra-high reasoning gate:
+- Use extra-high reasoning only for critical architecture decisions, financial risk formulas, database migration/data-loss decisions, security/release gates, production incidents, and rollback decisions.
+- Do not use extra-high reasoning for routine discovery, test execution summaries, post-deploy smoke checks, or low-risk implementation details.
+- Final task reports must state whether extra-high reasoning was used and why.
+
 If a requested model is unavailable in the current Codex installation, use the closest available model with the same role: mini for read-heavy verification, standard for implementation/deploy planning, strongest available for security/final review. Document the fallback in the final task report.
 
 ## Codex orchestration

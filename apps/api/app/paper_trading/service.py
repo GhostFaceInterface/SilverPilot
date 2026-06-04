@@ -107,6 +107,7 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
         portfolio=portfolio,
         asset_id=asset.id,
         mark_price=request.sell_price,
+        price_snapshot_id=_latest_price_snapshot_id(db, asset.id),
     )
     db.commit()
     db.refresh(trade)
@@ -119,6 +120,7 @@ def create_portfolio_snapshot(
     portfolio: Portfolio,
     asset_id: int,
     mark_price: Decimal,
+    price_snapshot_id: int | None = None,
 ) -> PortfolioSnapshot:
     position = calculate_position(db, portfolio.id, asset_id)
     liquidation_value = _money(position.quantity * mark_price)
@@ -128,6 +130,7 @@ def create_portfolio_snapshot(
 
     snapshot = PortfolioSnapshot(
         portfolio_id=portfolio.id,
+        price_snapshot_id=price_snapshot_id,
         cash_balance=portfolio.cash_balance,
         asset_quantity=position.quantity,
         portfolio_value=portfolio_value,
@@ -138,6 +141,15 @@ def create_portfolio_snapshot(
     db.add(snapshot)
     db.flush()
     return snapshot
+
+
+def _latest_price_snapshot_id(db: Session, asset_id: int) -> int | None:
+    return db.execute(
+        select(PriceSnapshot.id)
+        .where(PriceSnapshot.asset_id == asset_id)
+        .order_by(PriceSnapshot.observed_at.desc(), PriceSnapshot.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def calculate_position(db: Session, portfolio_id: int, asset_id: int) -> Position:

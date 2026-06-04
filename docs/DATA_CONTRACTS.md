@@ -225,7 +225,7 @@ Recommended env documentation for future `.env.example` updates:
 - `BLS_API_KEY` optional/backlog disabled.
 - `TCMB_EVDS_API_KEY` optional/backlog disabled.
 - `FED_RSS_ENABLED` default true.
-- `GLOBAL_XAG_SOURCE_PRIORITY` default `stooq,gold-api,metals-dev`.
+- `GLOBAL_XAG_SOURCE_PRIORITY` default `yahoo-si-f,gold-api-xag-usd,metals-dev`.
 - `GOLD_API_XAG_USD_ENABLED` default true.
 - `METALS_DEV_API_KEY` optional disabled placeholder.
 - `TCMB_DAILY_XML_ENABLED` default true.
@@ -282,7 +282,8 @@ Initial series:
 ### Phase 3.1 Collector Outputs
 
 - `kuveyt_public_silver` writes bank silver prices from Kuveyt Türk official public page data when a public GMS finance-portal row can be parsed; discovery/parser failure records a failed collector run.
-- `stooq_xag_usd` writes global XAG/USD using Stooq current CSV `Close` as a zero-spread diagnostic/mid price because bid/ask is not provided.
+- `global_xag_usd` writes global XAG/USD using the configured provider priority. Current runtime defaults are Yahoo SI=F, Gold-API, then Metals.Dev.
+- `stooq_xag_usd` is legacy/diagnostic only unless explicitly enabled; Stooq timeout diagnostics remain in API responses for backward compatibility.
 - `tcmb_usd_try` writes daily USD/TRY using the midpoint of TCMB `ForexBuying` and `ForexSelling`.
 - All three collectors store raw payload hashes and parser versions.
 
@@ -297,18 +298,39 @@ Provider interface:
 
 Providers:
 
-- `stooq_xag_usd`: source `stooq-xagusd-csv`, parser `stooq-xagusd-csv-v1`, primary public CSV source, configurable timeout/retry/backoff.
 - `global_xag_usd`: resolver collector that records the selected provider in `collector_runs.details_json.selected_global_xag_source`.
+- `yahoo-si-f`: source `yahoo-si-f`, resolver-approved public market reference.
 - `gold_api_xag_usd`: source `gold-api-xag-usd`, parser `gold-api-xag-usd-v1`, approved free no-auth JSON fallback.
 - `metals_dev_silver_spot`: source `metals-dev-silver-spot`, parser `metals-dev-silver-spot-v1`, optional free API-key fallback disabled without `METALS_DEV_API_KEY`.
+- `stooq_xag_usd`: source `stooq-xagusd-csv`, parser `stooq-xagusd-csv-v1`, legacy/diagnostic public CSV source. It is not an execution-critical default provider unless explicitly configured.
 
 Failure behavior:
 
 - Provider failures use reason codes: `TIMEOUT`, `HTTP_ERROR`, `PARSE_ERROR`, `STALE_DATA`, `DISABLED`, or `NO_PROVIDER_AVAILABLE`.
-- Stooq timeout records a failed `stooq_xag_usd` run, then the resolver may continue to an approved fallback.
+- Stooq timeout records a failed `stooq_xag_usd` run when that collector is explicitly active; compatibility field `stooq_xag_usd_timeout_count` remains available.
 - A provider failure must not insert `raw_global_prices` or `price_snapshots`.
 - The last successful global XAG row is fresh only while both `observed_at` and `fetched_at` remain within the freshness threshold.
 - Manual global XAG can be inserted through `POST /collectors/manual-price` with `source_type=global`, but it is visible as manual fallback and must be fresh to help unblock simulation.
+
+### Market Bars and Indicator Contract
+
+Runtime technical indicators are computed from SilverPilot-owned canonical `market_bars`, not provider-supplied indicator values.
+
+`market_bars` fields:
+
+- `asset_id`, `source`, `timeframe`, `bar_start_at`, `bar_end_at`.
+- `open`, `high`, `low`, `close`, `currency`.
+- `sample_count`, `first_price_snapshot_id`, `last_price_snapshot_id`.
+- `quality_status`, `bar_builder_version`.
+
+Rules:
+
+- Bars are unique by `(asset_id, source, timeframe, bar_start_at)`.
+- XAG and XAG_GRAM are grouped separately by `asset_id`; gram replication must not share bars with ounce prices.
+- Current runtime bar timeframe is 5-minute UTC windows.
+- Indicator rows keep legacy `price_snapshot_id` for transition, and add `market_bar_id`, `calculation_version`, `input_bar_count`, and `quality_status`.
+- Indicator calculation failure must not roll back raw price or `price_snapshots` writes.
+- Provider indicator values are not accepted into strategy/risk/auto-trader decision paths.
 
 ### Phase 3.4 Bank Price Contract
 
@@ -384,6 +406,7 @@ Output:
 - `context_status`: aggregate state for Fed RSS and FRED macro.
 - `source_reliability`: recent per-source success/failure/missing summary.
 - `stooq_xag_usd_timeout_count`: recent Stooq timeout count in the selected window.
+- `provider_failure_counts`: generic recent failed-run counts for active collector providers.
 - `selected_global_xag_source`: latest fresh global XAG source when available.
 - window and expected-run fields matching `/collectors/quality`.
 
@@ -392,6 +415,7 @@ Policy:
 - Missing/stale bank silver, global XAG/USD, or USD/TRY blocks Phase 4.
 - Fed RSS and FRED macro failures degrade readiness but do not block Phase 4 by themselves.
 - Stooq failure does not block Phase 4 when an approved fallback global XAG source is fresh.
+- `kitco-rss` is excluded from implicit active health defaults until a real Kitco feed is verified or the job is explicitly listed in `COLLECTOR_JOBS`.
 
 ### Paper Trade Risk Contract
 

@@ -44,6 +44,13 @@ conflicts with `.codex/`, follow `.codex/` for Codex work.
 - Strongest available model: security review, final review, architecture
   review for risk-sensitive changes, and decisions involving financial risk,
   auth, production deployment, or irreversible data effects.
+- Extra-high reasoning is a gate, not a default. Use it only for critical
+  architecture decisions, financial risk formulas, DB migration/data-loss
+  decisions, security/release gates, production incidents, and rollback
+  decisions. Routine discovery, test execution, post-deploy smoke checks, and
+  ordinary implementation stay on lower reasoning tiers.
+- Completion reports must state whether extra-high reasoning was used and the
+  reason it was or was not needed.
 
 If a named model in `.codex/agents/*.toml` is unavailable, use the closest
 available model with the same role and report the fallback.

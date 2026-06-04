@@ -139,6 +139,7 @@ def create_paper_trade(request: PaperTradeRequest, db: Session = Depends(get_db)
         snapshot={
             "id": snapshot.id,
             "portfolio_id": snapshot.portfolio_id,
+            "price_snapshot_id": snapshot.price_snapshot_id,
             "cash_balance": snapshot.cash_balance,
             "asset_quantity": snapshot.asset_quantity,
             "portfolio_value": snapshot.portfolio_value,
@@ -322,6 +323,7 @@ def _collector_run_payload(run: CollectorRun) -> dict:
 def _price_snapshot_payload(snapshot: PriceSnapshot) -> dict:
     return {
         "id": snapshot.id,
+        "collector_run_id": snapshot.collector_run_id,
         "asset_id": snapshot.asset_id,
         "source": snapshot.source,
         "buy_price": snapshot.buy_price,

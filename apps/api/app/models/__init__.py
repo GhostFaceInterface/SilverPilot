@@ -17,6 +17,7 @@ from app.models.entities import (
     Signal,
     TechnicalIndicator,
     LLMCallTrace,
+    MarketBar,
     AgentMemoryEvent,
     HistoricalAgentCache,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "Signal",
     "TechnicalIndicator",
     "LLMCallTrace",
+    "MarketBar",
     "AgentMemoryEvent",
     "HistoricalAgentCache",
 ]

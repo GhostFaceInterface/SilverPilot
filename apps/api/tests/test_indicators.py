@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pandas as pd
 from sqlalchemy import select
 
-from app.models import Asset, PriceSnapshot, TechnicalIndicator
+from app.models import Asset, MarketBar, PriceSnapshot, TechnicalIndicator
 from app.services.indicators import calculate_indicators
 
 
@@ -197,6 +197,19 @@ class TestIngestGlobalPriceIndicatorWiring:
         assert indicator is not None, "TechnicalIndicator should be created for yahoo-si-f source"
         assert indicator.timeframe == "5m"
         assert indicator.close_usd_oz == snapshot.mid_price
+        assert indicator.market_bar_id is not None
+        assert indicator.calculation_version == "technical-indicators-v1"
+        assert indicator.input_bar_count == 51
+        assert indicator.quality_status == "ok"
+
+        market_bar = db_session.get(MarketBar, indicator.market_bar_id)
+        assert market_bar is not None
+        assert market_bar.asset_id == asset.id
+        assert market_bar.source == "yahoo-si-f"
+        assert market_bar.timeframe == "5m"
+        assert market_bar.close == snapshot.mid_price
+        assert market_bar.last_price_snapshot_id == snapshot.id
+        assert market_bar.bar_builder_version == "market-bars-v1"
 
     def test_indicator_failure_does_not_block_snapshot(self, db_session):
         """If indicator calculation fails, the price snapshot must still be saved."""
@@ -229,12 +242,101 @@ class TestIngestGlobalPriceIndicatorWiring:
         assert inserted is True
         assert snapshot is not None
         assert snapshot.id is not None
+        assert snapshot.collector_run_id == run.id
 
         # Assert: no indicator was created (it failed)
         indicator = db_session.execute(
             select(TechnicalIndicator).where(TechnicalIndicator.price_snapshot_id == snapshot.id)
         ).scalar_one_or_none()
         assert indicator is None, "No TechnicalIndicator should exist when calculation fails"
+
+    def test_market_bars_keep_xag_and_xag_gram_separate(self, db_session):
+        """Replicated gram snapshots must not share market bars with XAG ounce snapshots."""
+        from app.collectors.service import ingest_global_price
+
+        xag = Asset(symbol="XAG", name="Silver Spot", asset_type="metal", is_active=True)
+        xag_gram = Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True)
+        db_session.add_all([xag, xag_gram])
+        db_session.commit()
+
+        base_time = datetime(2025, 1, 1, tzinfo=UTC)
+        for i in range(20):
+            ingest_global_price(
+                db_session,
+                source="yahoo-si-f",
+                asset_symbol="XAG",
+                buy_price=Decimal("31.100000") + Decimal(i) / Decimal("100"),
+                sell_price=Decimal("31.000000") + Decimal(i) / Decimal("100"),
+                currency="USD",
+                observed_at=base_time + timedelta(minutes=5 * i),
+                fetched_at=base_time + timedelta(minutes=5 * i),
+                payload={"i": i},
+                raw_payload=f"payload-{i}",
+                parser_version="test-v1",
+                collector_name="test_global_xag_usd",
+            )
+
+        xag_bars = db_session.execute(select(MarketBar).where(MarketBar.asset_id == xag.id)).scalars().all()
+        gram_bars = db_session.execute(select(MarketBar).where(MarketBar.asset_id == xag_gram.id)).scalars().all()
+
+        assert xag_bars
+        assert gram_bars
+        assert {bar.asset_id for bar in xag_bars} == {xag.id}
+        assert {bar.asset_id for bar in gram_bars} == {xag_gram.id}
+        assert xag_bars[-1].close != gram_bars[-1].close
+
+    def test_indicator_updates_existing_row_for_same_market_bar(self, db_session):
+        from app.collectors.service import ingest_global_price
+
+        asset = Asset(symbol="XAG", name="Silver Spot", asset_type="metal", is_active=True)
+        db_session.add(asset)
+        db_session.commit()
+
+        base_time = datetime(2025, 1, 1, 12, 0, tzinfo=UTC)
+        for i in range(15):
+            ingest_global_price(
+                db_session,
+                source="yahoo-si-f",
+                asset_symbol="XAG",
+                buy_price=Decimal("30.100000") + Decimal(i) / Decimal("100"),
+                sell_price=Decimal("30.000000") + Decimal(i) / Decimal("100"),
+                currency="USD",
+                observed_at=base_time + timedelta(minutes=5 * i),
+                fetched_at=base_time + timedelta(minutes=5 * i),
+                payload={"i": i},
+                raw_payload=f"payload-{i}",
+                parser_version="test-v1",
+                collector_name="test_global_xag_usd",
+            )
+
+        same_bar_time = base_time + timedelta(minutes=70, seconds=30)
+        _, _, latest_snapshot = ingest_global_price(
+            db_session,
+            source="yahoo-si-f",
+            asset_symbol="XAG",
+            buy_price=Decimal("31.000000"),
+            sell_price=Decimal("30.900000"),
+            currency="USD",
+            observed_at=same_bar_time,
+            fetched_at=same_bar_time,
+            payload={"same_bar": True},
+            raw_payload="same-bar-payload",
+            parser_version="test-v1",
+            collector_name="test_global_xag_usd",
+        )
+
+        latest_bar = db_session.execute(
+            select(MarketBar).where(MarketBar.last_price_snapshot_id == latest_snapshot.id)
+        ).scalar_one()
+        indicators = (
+            db_session.execute(select(TechnicalIndicator).where(TechnicalIndicator.market_bar_id == latest_bar.id))
+            .scalars()
+            .all()
+        )
+
+        assert len(indicators) == 1
+        assert indicators[0].price_snapshot_id == latest_snapshot.id
+        assert latest_bar.sample_count == 2
 
     def test_no_indicator_for_bank_source(self, db_session):
         """Bank sources (kuveyt-public-silver-page) should NOT trigger indicator calculation."""

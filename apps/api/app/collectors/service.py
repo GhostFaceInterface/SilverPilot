@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.models import (
     Asset,
     CollectorRun,
+    MarketBar,
     PriceSnapshot,
     RawBankPrice,
     RawEvent,
@@ -30,7 +31,7 @@ PRICE_QUANT = Decimal("0.000001")
 CONTEXT_COLLECTORS = {"fed_rss", "fred_macro"}
 DEFAULT_COLLECTOR_JOBS = (
     "kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss,fred-macro,"
-    "hermes-agent,kitco-rss,bloomberght-rss,fxstreet-rss,investing-rss"
+    "hermes-agent,bloomberght-rss,fxstreet-rss,investing-rss"
 )
 GLOBAL_XAG_SOURCE_ALIASES = {
     "yahoo-si-f": "yahoo-si-f",
@@ -122,6 +123,7 @@ def ingest_manual_price(
     mid_price = _price((request.buy_price + request.sell_price) / Decimal("2"))
     spread_percent = _price((spread_absolute / mid_price) * Decimal("100")) if mid_price > 0 else Decimal("0.000000")
     snapshot = PriceSnapshot(
+        collector_run_id=run.id,
         asset_id=asset.id,
         source=request.source,
         buy_price=_price(request.buy_price),
@@ -204,6 +206,7 @@ def ingest_global_price(
     mid_price = _price((buy_price + sell_price) / Decimal("2"))
     spread_percent = _price((spread_absolute / mid_price) * Decimal("100")) if mid_price > 0 else Decimal("0.000000")
     snapshot = PriceSnapshot(
+        collector_run_id=run.id,
         asset_id=asset.id,
         source=source,
         buy_price=_price(buy_price),
@@ -248,6 +251,7 @@ def ingest_global_price(
             db.add(raw_gram)
 
             snapshot_gram = PriceSnapshot(
+                collector_run_id=run.id,
                 asset_id=gram_asset.id,
                 source=source,
                 buy_price=gram_buy,
@@ -279,6 +283,10 @@ def ingest_global_price(
 # ---------------------------------------------------------------------------
 _INDICATOR_HISTORY_BARS = 200
 _INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"}
+_MARKET_BAR_TIMEFRAME = "5m"
+_MARKET_BAR_MINUTES = 5
+_MARKET_BAR_BUILDER_VERSION = "market-bars-v1"
+_INDICATOR_CALCULATION_VERSION = "technical-indicators-v1"
 
 
 def _try_compute_and_store_indicator(
@@ -299,39 +307,18 @@ def _try_compute_and_store_indicator(
         return
 
     try:
-        # Subquery: get latest N snapshot IDs, then fetch in chronological order
-        latest_ids_sq = (
-            select(PriceSnapshot.id)
-            .where(
-                PriceSnapshot.asset_id == asset.id,
-                PriceSnapshot.source == source,
-            )
-            .order_by(desc(PriceSnapshot.observed_at))
-            .limit(_INDICATOR_HISTORY_BARS)
-        ).subquery()
-        history_rows = (
-            db.execute(
-                select(PriceSnapshot)
-                .where(PriceSnapshot.id.in_(select(latest_ids_sq)))
-                .order_by(PriceSnapshot.id)  # id is monotonically increasing → chronological
-            )
-            .scalars()
-            .all()
-        )
-
-        # history_rows is now oldest-first
-        rows = history_rows
-        if not rows:
-            logger.warning("indicator_skip: no historical bars for asset_id=%s source=%s", asset.id, source)
+        bars = _ensure_recent_market_bars_from_snapshots(db, asset=asset, source=source)
+        if not bars:
+            logger.warning("indicator_skip: no market bars for asset_id=%s source=%s", asset.id, source)
             return
 
         records = []
-        for s in rows:
+        for bar in bars:
             records.append(
                 {
-                    "high": float(s.buy_price or s.mid_price or 0),
-                    "low": float(s.sell_price or s.mid_price or 0),
-                    "close": float(s.mid_price or 0),
+                    "high": float(bar.high or bar.close or 0),
+                    "low": float(bar.low or bar.close or 0),
+                    "close": float(bar.close or 0),
                 }
             )
         df = pd.DataFrame(records)
@@ -345,28 +332,43 @@ def _try_compute_and_store_indicator(
                 return None
             return Decimal(str(val)).quantize(PRICE_QUANT)
 
-        indicator = TechnicalIndicator(
-            price_snapshot_id=snapshot.id,
-            bar_timestamp=observed_at,
-            timeframe="5m",
-            close_usd_oz=snapshot.mid_price,
-            rsi_14=_to_dec(last.get("rsi_14")),
-            macd_line=_to_dec(last.get("macd_line")),
-            macd_signal=_to_dec(last.get("macd_signal")),
-            macd_histogram=_to_dec(last.get("macd_histogram")),
-            bb_upper_20_2=_to_dec(last.get("bb_upper_20_2")),
-            bb_middle_20_2=_to_dec(last.get("bb_middle_20_2")),
-            bb_lower_20_2=_to_dec(last.get("bb_lower_20_2")),
-            sma_20=_to_dec(last.get("sma_20")),
-            sma_50=_to_dec(last.get("sma_50")),
-            sma_200=_to_dec(last.get("sma_200")),
-            atr_14=_to_dec(last.get("atr_14")),
-            xau_xag_ratio=None,
-        )
-        db.add(indicator)
+        indicator_values = {
+            "price_snapshot_id": snapshot.id,
+            "market_bar_id": bars[-1].id,
+            "bar_timestamp": bars[-1].bar_start_at,
+            "timeframe": _MARKET_BAR_TIMEFRAME,
+            "calculation_version": _INDICATOR_CALCULATION_VERSION,
+            "input_bar_count": len(bars),
+            "quality_status": bars[-1].quality_status,
+            "close_usd_oz": bars[-1].close,
+            "rsi_14": _to_dec(last.get("rsi_14")),
+            "macd_line": _to_dec(last.get("macd_line")),
+            "macd_signal": _to_dec(last.get("macd_signal")),
+            "macd_histogram": _to_dec(last.get("macd_histogram")),
+            "bb_upper_20_2": _to_dec(last.get("bb_upper_20_2")),
+            "bb_middle_20_2": _to_dec(last.get("bb_middle_20_2")),
+            "bb_lower_20_2": _to_dec(last.get("bb_lower_20_2")),
+            "sma_20": _to_dec(last.get("sma_20")),
+            "sma_50": _to_dec(last.get("sma_50")),
+            "sma_200": _to_dec(last.get("sma_200")),
+            "atr_14": _to_dec(last.get("atr_14")),
+            "xau_xag_ratio": None,
+        }
+        indicator = db.execute(
+            select(TechnicalIndicator).where(
+                TechnicalIndicator.market_bar_id == bars[-1].id,
+                TechnicalIndicator.calculation_version == _INDICATOR_CALCULATION_VERSION,
+            )
+        ).scalar_one_or_none()
+        if indicator is None:
+            db.add(TechnicalIndicator(**indicator_values))
+        else:
+            for key, value in indicator_values.items():
+                setattr(indicator, key, value)
         logger.info(
-            "indicator_computed: snapshot_id=%s rsi=%.2f sma20=%s",
+            "indicator_computed: snapshot_id=%s market_bar_id=%s rsi=%.2f sma20=%s",
             snapshot.id,
+            bars[-1].id,
             float(last.get("rsi_14", 0) or 0),
             last.get("sma_20"),
         )
@@ -374,6 +376,86 @@ def _try_compute_and_store_indicator(
         logger.exception(
             "indicator_error: failed to compute indicators for snapshot_id=%s — price snapshot preserved", snapshot.id
         )
+
+
+def _ensure_recent_market_bars_from_snapshots(db: Session, *, asset: Asset, source: str) -> list[MarketBar]:
+    latest_ids_sq = (
+        select(PriceSnapshot.id)
+        .where(
+            PriceSnapshot.asset_id == asset.id,
+            PriceSnapshot.source == source,
+        )
+        .order_by(desc(PriceSnapshot.observed_at), desc(PriceSnapshot.id))
+        .limit(_INDICATOR_HISTORY_BARS * 3)
+    ).subquery()
+    snapshots = (
+        db.execute(
+            select(PriceSnapshot)
+            .where(PriceSnapshot.id.in_(select(latest_ids_sq)))
+            .order_by(PriceSnapshot.observed_at.asc(), PriceSnapshot.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    if not snapshots:
+        return []
+
+    grouped: dict[datetime, list[PriceSnapshot]] = {}
+    for snapshot in snapshots:
+        grouped.setdefault(_bar_start(snapshot.observed_at), []).append(snapshot)
+
+    bars: list[MarketBar] = []
+    for bar_start_at in sorted(grouped):
+        group = sorted(grouped[bar_start_at], key=lambda item: (_aware(item.observed_at), item.id))
+        first = group[0]
+        last = group[-1]
+        prices = [item.mid_price for item in group if item.mid_price is not None]
+        if not prices:
+            continue
+        quality_status = "degraded" if any(item.is_degraded for item in group) else "ok"
+        existing = db.execute(
+            select(MarketBar).where(
+                MarketBar.asset_id == asset.id,
+                MarketBar.source == source,
+                MarketBar.timeframe == _MARKET_BAR_TIMEFRAME,
+                MarketBar.bar_start_at == bar_start_at,
+            )
+        ).scalar_one_or_none()
+        values = {
+            "bar_end_at": bar_start_at + timedelta(minutes=_MARKET_BAR_MINUTES),
+            "open": _price(first.mid_price),
+            "high": _price(max(prices)),
+            "low": _price(min(prices)),
+            "close": _price(last.mid_price),
+            "currency": last.currency,
+            "sample_count": len(group),
+            "first_price_snapshot_id": first.id,
+            "last_price_snapshot_id": last.id,
+            "quality_status": quality_status,
+            "bar_builder_version": _MARKET_BAR_BUILDER_VERSION,
+        }
+        if existing is None:
+            existing = MarketBar(
+                asset_id=asset.id,
+                source=source,
+                timeframe=_MARKET_BAR_TIMEFRAME,
+                bar_start_at=bar_start_at,
+                **values,
+            )
+            db.add(existing)
+        else:
+            for key, value in values.items():
+                setattr(existing, key, value)
+        bars.append(existing)
+
+    db.flush()
+    return bars[-_INDICATOR_HISTORY_BARS:]
+
+
+def _bar_start(value: datetime) -> datetime:
+    aware_value = _aware(value)
+    minute = aware_value.minute - (aware_value.minute % _MARKET_BAR_MINUTES)
+    return aware_value.replace(minute=minute, second=0, microsecond=0)
 
 
 def ingest_bank_price(
@@ -447,6 +529,7 @@ def ingest_bank_price(
     mid_price = _price((snap_buy + snap_sell) / Decimal("2"))
     spread_percent = _price((spread_absolute / mid_price) * Decimal("100")) if mid_price > 0 else Decimal("0.000000")
     snapshot = PriceSnapshot(
+        collector_run_id=run.id,
         asset_id=asset.id,
         source=source,
         buy_price=_price(snap_buy),
@@ -490,6 +573,7 @@ def ingest_bank_price(
             db.add(raw_gram)
 
             snapshot_gram = PriceSnapshot(
+                collector_run_id=run.id,
                 asset_id=gram_asset.id,
                 source=source,
                 buy_price=gram_snap_buy,
@@ -1001,6 +1085,7 @@ def collector_validation_gate(
 
     source_reliability = _source_reliability_summary(quality["collectors"])
     stooq_timeout_count = _stooq_timeout_count(db, window_hours=window_hours)
+    provider_failure_counts = _provider_failure_counts(db, window_hours=window_hours)
 
     if not health["collectors"] and not quality["collectors"]:
         status = "empty"
@@ -1024,6 +1109,7 @@ def collector_validation_gate(
         "context_status": health["context_status"],
         "source_reliability": source_reliability,
         "stooq_xag_usd_timeout_count": stooq_timeout_count,
+        "provider_failure_counts": provider_failure_counts,
         "selected_global_xag_source": health["execution_critical"]["selected_global_xag_source"],
         "window_hours": quality["window_hours"],
         "elapsed_minutes": quality["elapsed_minutes"],
@@ -1248,6 +1334,23 @@ def _stooq_timeout_count(db: Session, *, window_hours: int) -> int:
         if details.get("failure_reason_code") == "TIMEOUT":
             count += 1
     return count
+
+
+def _provider_failure_counts(db: Session, *, window_hours: int) -> dict[str, int]:
+    since = datetime.now(UTC) - timedelta(hours=window_hours)
+    active_run_sources = _active_collector_run_sources()
+    runs = db.execute(
+        select(CollectorRun).where(
+            CollectorRun.status == "failed",
+            CollectorRun.started_at >= since,
+        )
+    ).scalars()
+    counts: dict[str, int] = {}
+    for run in runs:
+        if not _is_active_collector_run(run.collector_name, run.source, active_run_sources):
+            continue
+        counts[run.collector_name] = counts.get(run.collector_name, 0) + 1
+    return counts
 
 
 def _latest_successful_run_time(db: Session, *, collector_names: set[str], source: str) -> datetime | None:

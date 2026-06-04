@@ -106,3 +106,41 @@ This audit records sources considered for the Codex-only verification and releas
 - Rejected: adding new automated taint-analysis tooling in this hardening pass.
 - Security concerns: untrusted workflow inputs and vulnerable executable skill packages.
 - Final decision: used as threat-model support only.
+
+## mcp-postgres-secure
+- Source URL: https://mcpservers.org/servers/pugltd/mcp-postgres-secure
+- Classification: community MCP server for PostgreSQL access.
+- Adoption signal: documented permission modes, with `readonly` as the default, SQL statement filtering, PostgreSQL read-only transactions in read-only mode, and env-locked connection behavior.
+- Adopted: candidate for Codex-only database inspection in `readonly` mode with a separate `silverpilot_ai_ro` PostgreSQL role and SELECT-only grants.
+- Rejected: `dml` and `full` modes, runtime trading pipeline use, production mutation, migration execution, and credentials in repo files.
+- Security concerns: SQL classification is not a complete parser; least-privilege DB grants must be the final authority.
+- Final decision: approved as a read-only Codex development/inspection candidate only.
+
+## ThinAir Data
+- Source URL: https://mcpservers.org/servers/thinairtelematics/thinair-data
+- Classification: hosted/read-only multi-database MCP server.
+- Adoption signal: documented read-only design, schema introspection, EXPLAIN/optimization, anomaly detection, PII scanning, and N+1 detection.
+- Adopted: evaluation candidate for schema review, EXPLAIN, anomaly, PII, and N+1 audits against local or sanitized non-production databases.
+- Rejected: direct production database connection, runtime trading pipeline use, and any workflow requiring DSN/API keys to be stored in this repository.
+- Security concerns: hosted data-residency and DSN handling risk; connection registration happens at runtime.
+- Final decision: evaluate only with sanitized/local data unless a separate production data-residency review approves otherwise.
+
+## Finance MCP candidates
+- Source URLs:
+  - https://frankfurter.dev/mcp/
+  - https://mcpservers.org/servers/fxmacrodata/fxmacrodata
+  - https://mcpservers.org/servers/tickdb/tickdb-unified-realtime-marketdata-api
+- Classification: finance/FX/market-data MCP candidates.
+- Adoption signal: Frankfurter documents an official remote MCP server for current/historical FX rates; FXMacroData documents macro, FX, calendar, COT, and commodity data; TickDB documents broad market-data coverage across FX, precious metals, indices, stocks, and crypto.
+- Adopted: reference-only Codex research candidates. Frankfurter may be used for FX reference checks; FXMacroData for macro/regime research; TickDB for broad market-data evaluation.
+- Rejected: runtime price source, provider indicator source, trading execution source, broker/write access, and automatic strategy/risk inputs.
+- Security concerns: external market-data quality, licensing, API-key handling, and accidental promotion from research to runtime decision source.
+- Final decision: research-only; SilverPilot runtime indicators remain computed from canonical internal OHLC bars.
+
+## Broker/trading-write MCPs
+- Source URL: category-level rejection; no specific broker MCP adopted.
+- Classification: broker, trading-write, SQL-write, DML, and full-access MCP tools.
+- Adopted: none.
+- Rejected: broker/trading-write MCPs, SQL DML/full-access MCPs, and any connector that can place orders or mutate production data.
+- Security concerns: real-money execution, irreversible data mutation, and ambiguous paper/live account boundaries.
+- Final decision: rejected until paper-only boundaries and explicit approval gates are independently designed and tested.
