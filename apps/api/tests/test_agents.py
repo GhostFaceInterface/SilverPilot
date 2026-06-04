@@ -879,10 +879,11 @@ async def test_source_reliability_agent_success(mock_post, db_session):
 
     # Add dummy collector runs
     run = CollectorRun(
-        collector_name="news-test-collector",
-        source="test",
-        status="SUCCESS",
+        collector_name="fred_macro",
+        source="fred-api",
+        status="success",
         started_at=datetime.now(timezone.utc),
+        finished_at=datetime.now(timezone.utc),
     )
     db_session.add(run)
     db_session.commit()

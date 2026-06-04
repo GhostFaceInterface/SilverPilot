@@ -6,6 +6,7 @@ sandbox_mode = "workspace-write"
 approval_policy = "on-request"
 
 [agents]
-max_threads = 5
+# Keep enough room for parallel review agents while preventing uncontrolled fan-out.
+max_threads = 8
 max_depth = 1
 job_max_runtime_seconds = 1800

@@ -1,0 +1,108 @@
+# External Source Audit
+
+Date checked: 2026-06-03
+
+This audit records sources considered for the Codex-only verification and release framework. No external files were copied wholesale. Adoption signals are deliberately conservative; unverified star counts and "proven" claims are omitted.
+
+## OpenAI Codex subagents documentation
+- Source URL: https://developers.openai.com/codex/subagents
+- Classification: official Codex documentation.
+- Adoption signal: official OpenAI developer documentation.
+- Adopted: project-scoped `.codex/agents/*.toml`, one agent per file, required `name`, `description`, and `developer_instructions`, narrow read-only reviewer roles.
+- Rejected: broad write-capable reviewers and recursive uncontrolled delegation.
+- Security concerns: agent fan-out, excessive permissions, and accidental write access.
+- Final decision: adopted for custom agent compatibility.
+
+## OpenAI Codex skills documentation
+- Source URL: https://developers.openai.com/codex/skills
+- Classification: official Codex documentation.
+- Adoption signal: official OpenAI developer documentation.
+- Adopted: directory-based skill bundle pattern centered on `SKILL.md`.
+- Rejected: creating `.agents/skills` because the user boundary requires all Codex-specific framework files to stay under `.codex/`.
+- Security concerns: skill packages can include scripts and references that must be audited before use.
+- Final decision: adapted as `.codex/skills/<skill-name>/SKILL.md` local convention only. Official auto-discovery is not guaranteed within the `.codex/`-only boundary.
+
+## OpenAI Codex config reference
+- Source URL: https://developers.openai.com/codex/config-reference
+- Classification: official Codex documentation.
+- Adoption signal: official OpenAI developer documentation.
+- Adopted: project-scoped `config.toml` without credentials.
+- Rejected: provider auth, API keys, tokens, database passwords, or machine-specific auth settings in project config.
+- Security concerns: config files can accidentally become credential stores.
+- Final decision: adopted limited project-scoped settings only.
+
+## OpenAI Codex GitHub Action documentation
+- Source URL: https://developers.openai.com/codex/github-action
+- Classification: official Codex documentation.
+- Adoption signal: official OpenAI developer documentation.
+- Adopted: CI monitoring and least-privilege review concepts.
+- Rejected: adding or modifying a Codex GitHub Action workflow in this repository.
+- Security concerns: AI agents running in CI can expose secrets or act on untrusted content.
+- Final decision: used as risk-review input only.
+
+## openai/codex-action security guidance
+- Source URL: https://github.com/openai/codex-action/blob/main/docs/security.md
+- Classification: official/community-adjacent OpenAI GitHub security guidance.
+- Adoption signal: OpenAI-owned repository and security-focused documentation.
+- Adopted: untrusted input rules, no secret printing, and caution around privileged CI agents.
+- Rejected: privileged autonomous CI fixes and broad workflow permissions.
+- Security concerns: prompt injection, unsafe shell handling, secret exposure, and excessive permissions.
+- Final decision: adopted as a security constraint source.
+
+## openai/skills repository
+- Source URL: https://github.com/openai/skills
+- Classification: official OpenAI examples/catalog.
+- Adoption signal: OpenAI-owned repository.
+- Adopted: focused skill bundle style and `SKILL.md` convention.
+- Rejected: installing external skills or copying skill files into this repo.
+- Security concerns: external skills can carry scripts, references, and supply-chain risk.
+- Final decision: used as structural reference only.
+
+## VoltAgent/awesome-codex-subagents
+- Source URL: https://github.com/VoltAgent/awesome-codex-subagents
+- Classification: community catalog.
+- Adoption signal: community repository; adoption metrics were not directly re-verified in this hardening pass.
+- Adopted: role coverage ideas such as CI investigator, git guardian, deploy guardian, and rollback planner.
+- Rejected: copying agent definitions, installer flows, and broad autonomous execution roles.
+- Security concerns: community agent instructions may request excessive permissions or unsafe autonomy.
+- Final decision: cautiously adapted taxonomy ideas only.
+
+## Community Codex skills repositories
+- Source URLs:
+  - https://github.com/vadimcomanescu/codex-skills
+  - https://github.com/proflead/codex-skills-library
+- Classification: community examples.
+- Adoption signal: community repositories; adoption metrics were not directly re-verified in this hardening pass.
+- Adopted: small, focused local skill bundle style.
+- Rejected: remote installers, `npx` installation flows, wholesale skill adoption, and automatic overwrites.
+- Security concerns: remote installers and unreviewed skill scripts can create supply-chain risk.
+- Final decision: low-weight reference only.
+
+## Aikido PromptPwnd article
+- Source URL: https://www.aikido.dev/blog/promptpwnd-github-actions-ai-agents
+- Classification: security research/vendor article.
+- Adoption signal: security analysis source; not Codex official documentation.
+- Adopted: untrusted GitHub event content threat model for CI agents.
+- Rejected: any workflow pattern that feeds issue/PR/comment content into privileged agent prompts without review.
+- Security concerns: prompt injection through GitHub Actions context.
+- Final decision: adopted as security risk input.
+
+## Snyk ToxicSkills research
+- Source URL: https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/
+- Classification: security research/vendor article.
+- Adoption signal: security analysis source; not Codex official documentation.
+- Adopted: external skill audit checklist and rejection of unreviewed executable skill packages.
+- Rejected: remote skill installers and unreviewed scripts.
+- Security concerns: malicious skills, secret exfiltration, prompt injection, malware, and dependency risk.
+- Final decision: adopted as supply-chain risk input.
+
+## Academic agentic workflow and skill-risk papers
+- Source URLs:
+  - https://arxiv.org/abs/2605.07135
+  - https://arxiv.org/abs/2601.10338
+- Classification: academic/security research.
+- Adoption signal: research papers; not official Codex documentation.
+- Adopted: prompt-to-agent, prompt-to-script, and executable-skill threat models.
+- Rejected: adding new automated taint-analysis tooling in this hardening pass.
+- Security concerns: untrusted workflow inputs and vulnerable executable skill packages.
+- Final decision: used as threat-model support only.

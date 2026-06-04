@@ -565,7 +565,9 @@ def collect_fred_macro(
     try:
         observations = []
         raw_hash_inputs = []
-        for series_id in series_ids:
+        for index, series_id in enumerate(series_ids):
+            if index > 0:
+                time.sleep(0.5)
             raw_payload = _fetch_fred_observations(series_id, settings=settings, client=client)
             raw_hash_inputs.append(raw_payload)
             observations.append(parse_fred_observations(raw_payload, series_id=series_id))
@@ -1731,8 +1733,8 @@ def collect_kuveyt_usd_try(
 
 RSS_FEEDS: dict[str, list[str]] = {
     "kitco-rss": [
-        "https://www.kitco.com/feed/rss/news/gold-silver",
-        "https://www.kitco.com/feed/rss/news",
+        "https://www.fxstreet.com/rss/news",
+        "https://www.fxstreet.com/rss/analysis",
     ],
     "bloomberght-rss": [
         "https://www.bloomberght.com/rss",

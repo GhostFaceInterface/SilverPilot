@@ -8,6 +8,8 @@ from urllib.request import Request, urlopen
 
 import streamlit as st
 
+from portfolio_math import live_portfolio_pnl
+
 
 API_BASE_URL = os.getenv("SILVERPILOT_API_BASE_URL", "http://localhost:8000").rstrip("/")
 
@@ -224,6 +226,7 @@ def render_portfolio(data: dict[str, Any]) -> None:
     snapshot = portfolio.get("latest_snapshot") or {}
     position = data.get("position") or {}
     price = ((data.get("latest_price") or {}).get("price")) or {}
+    pnl = live_portfolio_pnl(portfolio=portfolio, snapshot=snapshot, position=position, price=price)
 
     st.subheader("Portfolio")
     cols = st.columns(5)
@@ -232,9 +235,9 @@ def render_portfolio(data: dict[str, Any]) -> None:
     with cols[1]:
         metric_card("Cash balance", money(portfolio.get("cash_balance"), portfolio.get("base_currency", "USD")))
     with cols[2]:
-        metric_card("Net PnL", money(snapshot.get("realized_pnl"), portfolio.get("base_currency", "USD")))
+        metric_card("Net PnL", money(pnl.get("net_pnl"), portfolio.get("base_currency", "USD")))
     with cols[3]:
-        metric_card("Unrealized PnL", money(snapshot.get("unrealized_pnl"), portfolio.get("base_currency", "USD")))
+        metric_card("Unrealized PnL", money(pnl.get("unrealized_pnl"), portfolio.get("base_currency", "USD")))
     with cols[4]:
         metric_card("XAG quantity", number(position.get("asset_quantity"), digits=6))
 

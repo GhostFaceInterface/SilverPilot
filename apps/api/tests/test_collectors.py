@@ -349,6 +349,39 @@ def test_collector_health_rejects_invalid_stale_threshold():
     assert response.status_code == 400
 
 
+def test_collector_health_ignores_obsolete_provider_runs():
+    client, testing_session = make_client()
+    seed_fresh_bank_price(testing_session)
+    seed_fresh_global_xag_and_usd_try(testing_session)
+    now = datetime.now(UTC)
+    db = testing_session()
+    try:
+        db.add(
+            CollectorRun(
+                collector_name="yahoo_xag_usd",
+                source="yahoo-si-f",
+                status="failed",
+                records_seen=0,
+                records_inserted=0,
+                duplicates=0,
+                error_message="obsolete standalone provider run",
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=5),
+                details_json={},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/collectors/health?stale_after_minutes=60")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "healthy"
+    assert "yahoo_xag_usd" not in {item["collector_name"] for item in body["collectors"]}
+
+
 def test_collector_quality_reports_missing_and_duplicate_ratios():
     client, _ = make_client()
     payload = {
@@ -1056,8 +1089,10 @@ def test_fred_observations_parser_skips_missing_latest_value():
     assert parsed.payload["missing_value_semantics"] == "dot_values_skipped"
 
 
-def test_fred_macro_collector_writes_raw_events_and_counts_duplicates():
+def test_fred_macro_collector_writes_raw_events_and_counts_duplicates(monkeypatch):
     _, testing_session = make_client()
+    sleep_calls = []
+    monkeypatch.setattr("app.collectors.public_sources.time.sleep", lambda seconds: sleep_calls.append(seconds))
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["user-agent"].startswith("SilverPilot/")
@@ -1094,6 +1129,7 @@ def test_fred_macro_collector_writes_raw_events_and_counts_duplicates():
         assert all(row.source == "fred-api" for row in rows)
         assert all(row.raw_payload_hash for row in rows)
         assert all(row.parser_version == "fred-observations-v1" for row in rows)
+        assert sleep_calls == [0.5, 0.5]
     finally:
         client.close()
         db.close()

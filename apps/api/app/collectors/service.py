@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -27,6 +28,28 @@ logger = logging.getLogger(__name__)
 
 PRICE_QUANT = Decimal("0.000001")
 CONTEXT_COLLECTORS = {"fed_rss", "fred_macro"}
+DEFAULT_COLLECTOR_JOBS = (
+    "kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss,fred-macro,"
+    "hermes-agent,kitco-rss,bloomberght-rss,fxstreet-rss,investing-rss"
+)
+GLOBAL_XAG_SOURCE_ALIASES = {
+    "yahoo-si-f": "yahoo-si-f",
+    "gold-api-xag-usd": "gold-api-xag-usd",
+    "metals-dev": "metals-dev-silver-spot",
+    "metals-dev-silver-spot": "metals-dev-silver-spot",
+}
+COLLECTOR_JOB_RUN_SOURCES = {
+    "kuveyt-silver": {"kuveyt_public_silver": {"kuveyt-public-silver-page"}},
+    "yahoo-usd-try": {"yahoo_usd_try": {"yahoo-usd-try"}},
+    "kuveyt-usd-try": {"kuveyt_usd_try": {"kuveyt-public-silver-page"}},
+    "tcmb-usd-try": {"tcmb_usd_try": {"tcmb-today-xml"}},
+    "fed-rss": {"fed_rss": {"federal-reserve-rss"}},
+    "fred-macro": {"fred_macro": {"fred-api"}},
+    "kitco-rss": {"kitco_rss": {"kitco-rss"}},
+    "bloomberght-rss": {"bloomberght_rss": {"bloomberght-rss"}},
+    "fxstreet-rss": {"fxstreet_rss": {"fxstreet-rss"}},
+    "investing-rss": {"investing_rss": {"investing-rss"}},
+}
 
 
 class CollectorError(ValueError):
@@ -758,17 +781,30 @@ def latest_collector_run(db: Session) -> CollectorRun | None:
 def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
     from sqlalchemy import func
 
-    subq = select(func.max(CollectorRun.id)).group_by(CollectorRun.collector_name, CollectorRun.source).subquery()
+    ranked_runs = select(
+        CollectorRun.id,
+        func.row_number()
+        .over(
+            partition_by=(CollectorRun.collector_name, CollectorRun.source),
+            order_by=(desc(CollectorRun.started_at), desc(CollectorRun.id)),
+        )
+        .label("rn"),
+    ).subquery()
     runs = (
         db.execute(
-            select(CollectorRun).where(CollectorRun.id.in_(select(subq))).order_by(CollectorRun.started_at.desc())
+            select(CollectorRun)
+            .where(CollectorRun.id.in_(select(ranked_runs.c.id).where(ranked_runs.c.rn == 1)))
+            .order_by(CollectorRun.started_at.desc())
         )
         .scalars()
         .all()
     )
 
+    active_run_sources = _active_collector_run_sources()
     latest_by_collector: dict[tuple[str, str], CollectorRun] = {}
     for run in runs:
+        if not _is_active_collector_run(run.collector_name, run.source, active_run_sources):
+            continue
         key = (run.collector_name, run.source)
         if key not in latest_by_collector:
             latest_by_collector[key] = run
@@ -857,7 +893,10 @@ def collector_quality(db: Session, *, window_hours: int = 24, expected_interval_
     )
 
     groups: dict[tuple[str, str], list[CollectorRun]] = {}
+    active_run_sources = _active_collector_run_sources()
     for run in runs:
+        if not _is_active_collector_run(run.collector_name, run.source, active_run_sources):
+            continue
         groups.setdefault((run.collector_name, run.source), []).append(run)
     has_non_manual_group = any(not _is_manual_fallback_group(*key) for key in groups)
     quality_group_keys = {key for key in groups if not (has_non_manual_group and _is_manual_fallback_group(*key))}
@@ -1159,6 +1198,40 @@ def _source_reliability_summary(collectors: list[dict]) -> list[dict]:
             }
         )
     return summary
+
+
+def _active_collector_run_sources() -> dict[str, set[str]]:
+    jobs = [job.strip() for job in os.getenv("COLLECTOR_JOBS", DEFAULT_COLLECTOR_JOBS).split(",") if job.strip()]
+    if not jobs:
+        fallback_job = os.getenv("COLLECTOR_JOB", "").strip()
+        jobs = [fallback_job] if fallback_job else []
+
+    active: dict[str, set[str]] = {}
+    for job in jobs:
+        if job == "global-xag-usd":
+            active.setdefault("global_xag_usd", set()).update(_active_global_xag_sources())
+            active["global_xag_usd"].add("global-xag-usd-resolver")
+            continue
+        for collector_name, sources in COLLECTOR_JOB_RUN_SOURCES.get(job, {}).items():
+            active.setdefault(collector_name, set()).update(sources)
+    return active
+
+
+def _active_global_xag_sources() -> set[str]:
+    settings = get_settings()
+    sources = set()
+    for raw_source in settings.global_xag_source_priority.split(","):
+        source = raw_source.strip().lower()
+        if not source:
+            continue
+        sources.add(GLOBAL_XAG_SOURCE_ALIASES.get(source, source))
+    return sources
+
+
+def _is_active_collector_run(collector_name: str, source: str, active_run_sources: dict[str, set[str]]) -> bool:
+    if _is_manual_fallback_group(collector_name, source):
+        return True
+    return source in active_run_sources.get(collector_name, set())
 
 
 def _stooq_timeout_count(db: Session, *, window_hours: int) -> int:
