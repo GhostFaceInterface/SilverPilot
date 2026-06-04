@@ -26,7 +26,7 @@ from app.collectors.service import (
     record_failed_run,
 )
 from app.core.config import Settings, get_settings
-from app.models import CollectorRun, PriceSnapshot, RawFxRate
+from app.models import Asset, CollectorRun, PriceSnapshot, RawFxRate
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +198,11 @@ def collect_kuveyt_public_silver(
         last_snapshots = (
             db.execute(
                 select(PriceSnapshot)
-                .where(PriceSnapshot.source == "kuveyt-public-silver-page", PriceSnapshot.currency == "USD")
+                .where(
+                    PriceSnapshot.asset_id == select(Asset.id).where(Asset.symbol == "XAG").scalar_subquery(),
+                    PriceSnapshot.source == "kuveyt-public-silver-page",
+                    PriceSnapshot.currency == "USD",
+                )
                 .order_by(PriceSnapshot.observed_at.desc())
                 .limit(5)
             )

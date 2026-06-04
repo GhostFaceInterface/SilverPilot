@@ -1882,6 +1882,140 @@ def test_kuveyt_hardening_successful_run():
         db.close()
 
 
+def test_kuveyt_deviation_check_uses_same_asset_history():
+    _, testing_session = make_client()
+    db = testing_session()
+
+    xag = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+    xag_gram = Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True)
+    db.add(xag_gram)
+    db.flush()
+
+    now = datetime.now(UTC)
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=now - timedelta(minutes=5),
+        finished_at=now - timedelta(minutes=5),
+    )
+    db.add(fx_run)
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("40.00"),
+            observed_at=now - timedelta(minutes=5),
+            fetched_at=now - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+
+    for index in range(5):
+        observed_at = now - timedelta(minutes=30 - index)
+        db.add(
+            PriceSnapshot(
+                asset_id=xag.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("74.000000"),
+                sell_price=Decimal("74.000000"),
+                mid_price=Decimal("74.000000"),
+                currency="USD",
+                spread_absolute=Decimal("0.000000"),
+                spread_percent=Decimal("0.000000"),
+                observed_at=observed_at,
+            )
+        )
+        db.add(
+            PriceSnapshot(
+                asset_id=xag_gram.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("2.380000"),
+                sell_price=Decimal("2.380000"),
+                mid_price=Decimal("2.380000"),
+                currency="USD",
+                spread_absolute=Decimal("0.000000"),
+                spread_percent=Decimal("0.000000"),
+                observed_at=observed_at,
+            )
+        )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {"Title": "USD", "CurrencyCode": "USD", "BuyRate": 40.0, "SellRate": 40.1},
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gumus",
+                        "BuyRate": 94.0,
+                        "SellRate": 97.0,
+                    },
+                ],
+            )
+        if "SI=F" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "meta": {"symbol": "SI=F", "currency": "USD"},
+                                "timestamp": [int(time.time())],
+                                "indicators": {
+                                    "quote": [
+                                        {
+                                            "close": [74.0],
+                                            "open": [74.0],
+                                            "high": [74.0],
+                                            "low": [74.0],
+                                            "volume": [0],
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert snapshot.resolved_source == "kuveyt_public_portal"
+        assert snapshot.is_degraded is False
+        raw = (
+            db.query(RawBankPrice)
+            .where(RawBankPrice.source == "kuveyt-public-silver-page", RawBankPrice.asset_id == xag.id)
+            .order_by(RawBankPrice.observed_at.desc())
+            .first()
+        )
+        assert raw is not None
+        assert raw.resolved_source == "kuveyt_public_portal"
+        assert raw.is_degraded is False
+    finally:
+        client.close()
+        db.close()
+
+
 def test_kuveyt_hardening_degraded_fallback():
     _, testing_session = make_client()
     db = testing_session()
