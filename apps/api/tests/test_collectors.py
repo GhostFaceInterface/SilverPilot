@@ -2649,6 +2649,96 @@ def test_kuveyt_hardening_cross_control_warning():
         db.close()
 
 
+def test_kuveyt_cross_control_uses_xag_ounce_snapshot_not_xag_gram_snapshot():
+    _, testing_session = make_client()
+    db = testing_session()
+    xag_gram = ensure_xag_gram(db)
+    xag = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+    now = datetime.now(UTC)
+
+    fx_run = CollectorRun(
+        collector_name="yahoo_usd_try",
+        source="yahoo-usd-try",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=now - timedelta(minutes=5),
+        finished_at=now - timedelta(minutes=5),
+    )
+    global_run = CollectorRun(
+        collector_name="global_xag_usd",
+        source="yahoo-si-f",
+        status="success",
+        records_seen=1,
+        records_inserted=2,
+        started_at=now - timedelta(minutes=5),
+        finished_at=now - timedelta(minutes=5),
+    )
+    db.add_all([fx_run, global_run])
+    db.flush()
+    db.add(
+        RawFxRate(
+            collector_run_id=fx_run.id,
+            source="yahoo-usd-try",
+            base_currency="USD",
+            quote_currency="TRY",
+            rate=Decimal("45.00"),
+            observed_at=now - timedelta(minutes=5),
+            fetched_at=now - timedelta(minutes=5),
+            raw_payload_hash="test-fx-rate",
+            parser_version="yahoo-finance-chart-v1",
+        )
+    )
+    for asset, mid_price in ((xag, Decimal("72.900000")), (xag_gram, Decimal("2.343788"))):
+        db.add(
+            PriceSnapshot(
+                collector_run_id=global_run.id,
+                asset_id=asset.id,
+                source="yahoo-si-f",
+                buy_price=mid_price,
+                sell_price=mid_price,
+                mid_price=mid_price,
+                currency="USD",
+                spread_absolute=Decimal("0.000000"),
+                spread_percent=Decimal("0.000000"),
+                observed_at=now - timedelta(minutes=5),
+            )
+        )
+    db.commit()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama"):
+            return httpx.Response(200, text='<script src="/magiclick.core.min.js?v=abc"></script>')
+        if request.url.path == "/magiclick.core.min.js":
+            return httpx.Response(200, text='const ApiEndpoints={financePortal:"/ck0d84?financePortal"};')
+        if request.url.path == "/ck0d84":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "Title": "GMS (gr)",
+                        "CurrencyCode": "GMS (gr)",
+                        "CurrencyDescription": "Gümüş",
+                        "BuyRate": 102.96,
+                        "SellRate": 108.00,
+                    },
+                ],
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        run, raw_inserted, snapshot = collect_kuveyt_public_silver(db, settings=Settings(), client=client)
+
+        assert run.status == "success"
+        assert raw_inserted is True
+        assert snapshot is not None
+        assert "warning" not in (run.details_json or {})
+    finally:
+        client.close()
+        db.close()
+
+
 def test_kuveyt_public_silver_parser_raises_on_missing_labels():
     from app.collectors.public_sources import CollectorError
 

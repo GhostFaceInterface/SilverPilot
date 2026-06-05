@@ -222,7 +222,11 @@ def collect_kuveyt_public_silver(
         one_hour_ago = fetched_at - timedelta(hours=1)
         latest_yahoo = db.execute(
             select(PriceSnapshot)
-            .where(PriceSnapshot.source == "yahoo-si-f", PriceSnapshot.observed_at >= one_hour_ago)
+            .where(
+                PriceSnapshot.asset_id == select(Asset.id).where(Asset.symbol == "XAG").scalar_subquery(),
+                PriceSnapshot.source == "yahoo-si-f",
+                PriceSnapshot.observed_at >= one_hour_ago,
+            )
             .order_by(PriceSnapshot.observed_at.desc())
             .limit(1)
         ).scalar_one_or_none()
