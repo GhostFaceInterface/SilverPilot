@@ -246,6 +246,27 @@ class RiskDecision(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MLInferenceAudit(Base):
+    __tablename__ = "ml_inference_audits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    risk_decision_id: Mapped[int | None] = mapped_column(ForeignKey("risk_decisions.id"), nullable=True, index=True)
+    model_run_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    model_status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+    model_target: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decision_mode: Mapped[str] = mapped_column(String(32), index=True)
+    recommendation: Mapped[str] = mapped_column(String(64), index=True)
+    predicted_probability: Mapped[Decimal | None] = mapped_column(Numeric(8, 6), nullable=True)
+    threshold: Mapped[Decimal | None] = mapped_column(Numeric(8, 6), nullable=True)
+    feature_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    asset: Mapped[Asset] = relationship()
+    risk_decision: Mapped[RiskDecision | None] = relationship()
+
+
 class PaperTrade(Base):
     __tablename__ = "paper_trades"
 

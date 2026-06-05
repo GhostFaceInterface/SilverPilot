@@ -2,14 +2,14 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.collectors.service import collector_health
 from app.core.config import get_settings
-from app.models import Asset, PaperTrade, Portfolio, RawGlobalPrice, RiskDecision
+from app.models import Asset, MLInferenceAudit, PaperTrade, Portfolio, RawGlobalPrice, RiskDecision
 from app.schemas.paper_trading import PaperTradeRequest
 
 CONFIDENCE = Decimal("1.0000")
@@ -183,7 +183,7 @@ def evaluate_paper_trade_risk(
     if expected_gain_decision is not None:
         return expected_gain_decision
 
-    ml_decision = _ml_model_block(db, request=request, asset_id=asset.id)
+    ml_decision, ml_advisory_details = _ml_model_review(db, request=request, asset_id=asset.id)
     if ml_decision is not None:
         return ml_decision
 
@@ -229,6 +229,7 @@ def evaluate_paper_trade_risk(
             "fomo_rise_percent": str(settings.risk_fomo_rise_percent),
             "max_daily_loss_usd": str(settings.risk_max_daily_loss_usd),
             "max_weekly_loss_usd": str(settings.risk_max_weekly_loss_usd),
+            "ml_advisory": ml_advisory_details,
         },
     )
 
@@ -593,37 +594,80 @@ def _expected_gain_block(
     )
 
 
-def _ml_model_block(db: Session, *, request: PaperTradeRequest, asset_id: int) -> RiskDecision | None:
+def _ml_model_review(
+    db: Session, *, request: PaperTradeRequest, asset_id: int
+) -> tuple[RiskDecision | None, dict | None]:
     settings = get_settings()
     if not settings.risk_ml_model_enabled:
-        return None
+        return None, None
     if request.action != "paper_buy":
-        return None
+        return None, None
 
     try:
-        from app.ml.inference import predict_profitability
+        from app.ml.inference import predict_profitability_details
 
-        proba = predict_profitability(db, asset_id=asset_id)
-        if proba is None:
-            return None  # Graceful fallback: allow trade if inference fails / model missing
+        result = predict_profitability_details(db, asset_id=asset_id)
+        audit = _record_ml_inference_audit(db, asset_id=asset_id, result=result)
+        advisory_details = _ml_advisory_details(result=result, audit_id=audit.id)
+        if result.probability is None:
+            return None, advisory_details  # Graceful fallback: allow trade if inference fails / model missing
 
-        if proba < settings.risk_ml_min_probability:
-            return _decision(
+        if result.probability < result.threshold and result.decision_mode == "hard_veto":
+            decision = _decision(
                 db,
                 decision="blocked",
                 reason_code="ML_UNPROFITABLE_PREDICTION",
                 risk_level="medium",
                 details={
-                    "predicted_probability": f"{proba:.4f}",
-                    "min_probability_threshold": f"{settings.risk_ml_min_probability:.4f}",
+                    "predicted_probability": f"{result.probability:.4f}",
+                    "min_probability_threshold": f"{result.threshold:.4f}",
+                    "decision_mode": result.decision_mode,
+                    "ml_inference_audit_id": audit.id,
                     "asset_id": asset_id,
                 },
             )
+            audit.risk_decision_id = decision.id
+            db.flush()
+            return decision, advisory_details
+        return None, advisory_details
     except Exception as e:
         logger = logging.getLogger("silverpilot.ml.veto")
         logger.error(f"Graceful bypass triggered in ML veto block due to exception: {e}")
 
-    return None
+    return None, None
+
+
+def _record_ml_inference_audit(db: Session, *, asset_id: int, result: Any) -> MLInferenceAudit:
+    metadata = result.model_metadata or {}
+    audit = MLInferenceAudit(
+        asset_id=asset_id,
+        model_run_id=metadata.get("run_id"),
+        model_status=metadata.get("model_status", "unknown"),
+        model_target=metadata.get("target"),
+        decision_mode=result.decision_mode,
+        recommendation=result.recommendation,
+        predicted_probability=Decimal(str(result.probability)) if result.probability is not None else None,
+        threshold=Decimal(str(result.threshold)) if result.threshold is not None else None,
+        feature_snapshot=result.feature_snapshot,
+        details_json=result.details,
+    )
+    db.add(audit)
+    db.flush()
+    return audit
+
+
+def _ml_advisory_details(*, result: Any, audit_id: int) -> dict:
+    details = {
+        "decision_mode": result.decision_mode,
+        "recommendation": result.recommendation,
+        "ml_inference_audit_id": audit_id,
+        "model_run_id": result.model_metadata.get("run_id") if result.model_metadata else None,
+    }
+    if result.probability is not None:
+        details["predicted_probability"] = f"{result.probability:.4f}"
+    if result.threshold is not None:
+        details["min_probability_threshold"] = f"{result.threshold:.4f}"
+    return details
 
 
 def _threshold_headroom_item(

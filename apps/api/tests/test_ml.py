@@ -25,6 +25,7 @@ from app.models import (
     RawGlobalPrice,
     TechnicalIndicator,
     HistoricalAgentCache,
+    MLInferenceAudit,
     Portfolio,
 )
 from app.core.config import get_settings, Settings
@@ -299,7 +300,7 @@ def test_graceful_fallback_when_model_missing(monkeypatch):
         db.close()
 
 
-def test_ml_risk_blocking_on_unprofitable_prediction(monkeypatch):
+def test_ml_risk_advisory_on_unprofitable_prediction(monkeypatch):
     client, TestingSession = make_test_client()
     db = TestingSession()
     start_time = datetime.now(UTC) - timedelta(days=2)
@@ -343,7 +344,7 @@ def test_ml_risk_blocking_on_unprofitable_prediction(monkeypatch):
         proba = predict_profitability(db, asset.id)
         assert proba == 0.15
 
-        # 2. Check risk block execution
+        # 2. Check risk execution records advisory evidence without hard-blocking
         portfolio = db.query(Portfolio).one()
         amounts = TradeAmounts(
             quantity=Decimal("10"), price=Decimal("20.0"), gross_amount=Decimal("200.0"), net_amount=Decimal("201.0")
@@ -364,11 +365,89 @@ def test_ml_risk_blocking_on_unprofitable_prediction(monkeypatch):
             db, request=request, portfolio=portfolio, asset=asset, position=MockPosition(), amounts=amounts
         )
 
-        # Must be blocked by ML prediction
         print(decision.details_json)
+        assert decision.decision == "allow"
+        assert decision.reason_code == "RISK_CHECK_PASSED"
+        assert decision.details_json["ml_advisory"]["predicted_probability"] == "0.1500"
+        assert decision.details_json["ml_advisory"]["decision_mode"] == "advisory"
+
+        audit = db.query(MLInferenceAudit).one()
+        assert audit.asset_id == asset.id
+        assert audit.decision_mode == "advisory"
+        assert audit.recommendation == "unprofitable_prediction"
+        assert audit.predicted_probability == Decimal("0.150000")
+        assert audit.threshold == Decimal("0.500000")
+        assert audit.risk_decision_id is None
+
+    finally:
+        db.close()
+
+
+def test_ml_risk_hard_veto_mode_blocks_unprofitable_prediction(monkeypatch):
+    client, TestingSession = make_test_client()
+    db = TestingSession()
+    start_time = datetime.now(UTC) - timedelta(days=2)
+
+    try:
+        seed_mock_history(TestingSession, start_time, count=20)
+        asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
+
+        class MockLGBMModel:
+            def predict_proba(self, X):
+                return np.array([[0.85, 0.15]])
+
+        import app.ml.inference
+
+        app.ml.inference._MODEL_LOADED = True
+        app.ml.inference._MODEL_CACHE = MockLGBMModel()
+
+        mock_settings = Settings(
+            risk_ml_model_enabled=True,
+            risk_ml_decision_mode="hard_veto",
+            risk_ml_min_probability=0.50,
+            risk_ml_model_path="dummy_path.pkl",
+            risk_max_spread_percent=Decimal("5.0"),
+            risk_data_stale_after_minutes=9999,
+            global_xag_freshness_minutes=9999,
+            risk_max_daily_loss_usd=Decimal("9999.0"),
+            risk_max_weekly_loss_usd=Decimal("9999.0"),
+            risk_max_24h_volatility_percent=Decimal("99.0"),
+            risk_max_7d_volatility_percent=Decimal("99.0"),
+            risk_fomo_lookback_minutes=9999,
+            risk_fomo_rise_percent=Decimal("99.0"),
+            risk_min_expected_net_gain_percent=Decimal("0.0"),
+        )
+        monkeypatch.setattr("app.ml.inference.get_settings", lambda: mock_settings)
+        monkeypatch.setattr("app.risk.service.get_settings", lambda: mock_settings)
+        monkeypatch.setattr("app.collectors.service.get_settings", lambda: mock_settings)
+
+        portfolio = db.query(Portfolio).one()
+        amounts = TradeAmounts(
+            quantity=Decimal("10"), price=Decimal("20.0"), gross_amount=Decimal("200.0"), net_amount=Decimal("201.0")
+        )
+        request = PaperTradeRequest(
+            asset_symbol="XAG",
+            action="paper_buy",
+            buy_price=Decimal("20.04"),
+            sell_price=Decimal("19.96"),
+            quantity=Decimal("10"),
+            expected_exit_price=Decimal("25.0"),
+        )
+
+        class MockPosition:
+            quantity = Decimal("0")
+
+        decision = evaluate_paper_trade_risk(
+            db, request=request, portfolio=portfolio, asset=asset, position=MockPosition(), amounts=amounts
+        )
+
         assert decision.decision == "blocked"
         assert decision.reason_code == "ML_UNPROFITABLE_PREDICTION"
         assert decision.details_json["predicted_probability"] == "0.1500"
+        assert decision.details_json["decision_mode"] == "hard_veto"
+
+        audit = db.query(MLInferenceAudit).one()
+        assert audit.risk_decision_id == decision.id
 
     finally:
         db.close()

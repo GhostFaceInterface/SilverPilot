@@ -75,6 +75,9 @@ def build_dataset(version: str, dry_run: bool = False, drop_unlabeled: bool = Tr
                     "sell_price": float(p.sell_price),
                     "mid_price": float(p.mid_price),
                     "spread_percent": float(p.spread_percent) if p.spread_percent is not None else 0.0,
+                    "source": p.source,
+                    "currency": p.currency,
+                    "is_degraded": bool(p.is_degraded),
                     "observed_at": p.observed_at,
                 }
                 for p in prices
@@ -478,10 +481,25 @@ def build_dataset(version: str, dry_run: bool = False, drop_unlabeled: bool = Tr
             ]
             labels = ["net_profit_1d", "net_profit_3d", "net_profit_7d", "profitable_after_costs_3d", "max_drawdown_3d"]
 
+            source_counts = {str(k): int(v) for k, v in df_price["source"].value_counts(dropna=False).to_dict().items()}
+            currency_counts = {
+                str(k): int(v) for k, v in df_price["currency"].value_counts(dropna=False).to_dict().items()
+            }
+
             metadata = {
                 "version": version,
                 "generated_at": datetime.now(UTC).isoformat(),
                 "row_count": len(df_price),
+                "observed_at_min": df_price["observed_at"].min().isoformat() if not df_price.empty else None,
+                "observed_at_max": df_price["observed_at"].max().isoformat() if not df_price.empty else None,
+                "source_counts": source_counts,
+                "currency_counts": currency_counts,
+                "degraded_count": int(df_price["is_degraded"].sum()) if "is_degraded" in df_price.columns else 0,
+                "degraded_ratio": float(df_price["is_degraded"].mean()) if "is_degraded" in df_price.columns else 0.0,
+                "label_positive_rate": float(df_price["profitable_after_costs_3d"].mean())
+                if "profitable_after_costs_3d" in df_price.columns and len(df_price) > 0
+                else None,
+                "missing_feature_counts": df_price[features].isna().sum().astype(int).to_dict(),
                 "feature_list": features,
                 "label_list": labels,
             }

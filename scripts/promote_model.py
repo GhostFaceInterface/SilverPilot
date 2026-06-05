@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 SilverPilot Model Promotion CLI
-Promotes a specific challenger model from MLflow to Champion status by copying its weights to champion_model.pkl,
-generating a standardized champion_metadata.json file, and staging them to Git.
+Promotes a specific challenger model from MLflow to Champion status by copying its weights to champion_model.pkl
+and generating a standardized champion_metadata.json file.
 """
 
 import os
@@ -11,7 +11,6 @@ import pickle
 import argparse
 import logging
 import json
-import subprocess
 from datetime import datetime, UTC
 import mlflow
 import mlflow.lightgbm
@@ -20,7 +19,7 @@ import mlflow.lightgbm
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("silverpilot.ml.promotion")
 
@@ -70,8 +69,7 @@ def promote_model(run_id: str):
     # 2. Extract metrics, parameters, and build metadata
     run_metrics = run.data.metrics
     run_params = run.data.params
-    run_tags = run.data.tags
-    
+
     # Calculate training date from run info (milliseconds to datetime)
     start_time_ms = run.info.start_time
     training_date_utc = datetime.fromtimestamp(start_time_ms / 1000.0, UTC).isoformat()
@@ -93,7 +91,7 @@ def promote_model(run_id: str):
             "eval_precision": run_metrics.get("eval_precision"),
             "eval_recall": run_metrics.get("eval_recall"),
             "eval_f1": run_metrics.get("eval_f1"),
-            "eval_bh_win_rate": run_metrics.get("eval_bh_win_rate")
+            "eval_bh_win_rate": run_metrics.get("eval_bh_win_rate"),
         },
         "hyperparameters": {
             "n_estimators": int(run_params.get("n_estimators", 60)),
@@ -102,8 +100,8 @@ def promote_model(run_id: str):
             "num_leaves": int(run_params.get("num_leaves", 7)),
             "min_child_samples": int(run_params.get("min_child_samples", 10)),
             "subsample": float(run_params.get("subsample", 0.8)),
-            "colsample_bytree": float(run_params.get("colsample_bytree", 0.8))
-        }
+            "colsample_bytree": float(run_params.get("colsample_bytree", 0.8)),
+        },
     }
 
     # 3. Write metadata JSON
@@ -115,27 +113,18 @@ def promote_model(run_id: str):
         logger.error(f"Failed to write metadata JSON file: {e}")
         sys.exit(1)
 
-    # 4. Stage to git automatically (as requested by plan)
-    logger.info("Staging promoted champion files to Git tracking...")
-    try:
-        subprocess.run(
-            ["git", "add", champion_model_path, champion_metadata_path],
-            cwd=root_path,
-            check=True
-        )
-        logger.info("Successfully staged model and metadata files to git repository.")
-    except Exception as e:
-        logger.warning(f"Failed to stage files to Git: {e}. Please stage manually.")
-
     print_premium_header("MODEL PROMOTED TO CHAMPION SUCCESSFULLY 🏆")
     print(f"  Run ID            : {run_id}")
     print(f"  Promoted At (UTC) : {promoted_at_utc}")
     print(f"  Training Date     : {training_date_utc}")
     print(f"  Offline Precision : {metadata['metrics']['mean_precision']:.4f}")
-    print(f"  Eval. Precision   : {metadata['metrics']['eval_precision']:.4f} (Buy&Hold Win Rate: {metadata['metrics']['eval_bh_win_rate']:.4f})")
+    print(
+        f"  Eval. Precision   : {metadata['metrics']['eval_precision']:.4f} (Buy&Hold Win Rate: {metadata['metrics']['eval_bh_win_rate']:.4f})"
+    )
     print("  " + "-" * 85)
     print(f"  Champion Files    : {os.path.relpath(champion_model_path, root_path)}")
     print(f"                      {os.path.relpath(champion_metadata_path, root_path)}")
+    print("  Git Staging       : manual approval required; no files were staged automatically")
     print("\033[1;36m" + "=" * 89 + "\033[0m\n")
 
 

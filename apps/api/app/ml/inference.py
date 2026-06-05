@@ -1,6 +1,7 @@
 import os
 import pickle
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 import pandas as pd
@@ -13,6 +14,31 @@ from app.models.entities import PriceSnapshot, RawFxRate, TechnicalIndicator, Hi
 
 logger = logging.getLogger("silverpilot.ml.inference")
 TCMB_FX_SOURCES = ("tcmb-today-xml", "tcmb")
+FEATURES = [
+    "bank_spread_percent",
+    "xag_return_15m",
+    "xag_return_1h",
+    "xag_return_24h",
+    "usd_try_return_24h",
+    "volatility_24h",
+    "volatility_7d",
+    "xau_xag_ratio",
+    "news_sentiment_score",
+    "hour_of_day",
+    "day_of_week",
+]
+
+
+@dataclass(frozen=True)
+class MLInferenceResult:
+    probability: float | None
+    threshold: float
+    decision_mode: str
+    recommendation: str
+    model_metadata: dict
+    feature_snapshot: dict
+    details: dict
+
 
 # Defensive import logic to prevent crashes if ML libraries are not available on VPS
 try:
@@ -329,49 +355,90 @@ def extract_live_features(db: Session, asset_id: int) -> Optional[pd.DataFrame]:
         return None
 
 
-def predict_profitability(db: Session, asset_id: int) -> Optional[float]:
+def predict_profitability_details(db: Session, asset_id: int) -> MLInferenceResult:
     """
-    Predicts the profitability probability after costs for the 3-day horizon.
-    Returns float probability [0.0, 1.0] if successful, or None on error / disabled state (bypass).
+    Predicts profitability and returns a full audit payload for risk decisions.
+    The decision_mode controls whether downstream risk may hard-block or only record advisory evidence.
     """
     settings = get_settings()
+    threshold = settings.risk_ml_min_probability
+    metadata = get_active_model_metadata()
+    decision_mode = "disabled" if not settings.risk_ml_model_enabled else settings.risk_ml_decision_mode
     if not settings.risk_ml_model_enabled:
-        return None
+        return MLInferenceResult(
+            probability=None,
+            threshold=threshold,
+            decision_mode=decision_mode,
+            recommendation="disabled",
+            model_metadata=metadata,
+            feature_snapshot={},
+            details={"reason": "risk_ml_model_enabled is false"},
+        )
 
     # Load and cache model
     model = load_model()
     if model is None:
-        return None
+        return MLInferenceResult(
+            probability=None,
+            threshold=threshold,
+            decision_mode=decision_mode,
+            recommendation="unavailable",
+            model_metadata=metadata,
+            feature_snapshot={},
+            details={"reason": "model_missing_or_unloadable"},
+        )
 
     # Extract live features
     df_feat = extract_live_features(db, asset_id)
     if df_feat is None:
         logger.warning("Live feature extraction failed. Bypassing ML prediction.")
-        return None
+        return MLInferenceResult(
+            probability=None,
+            threshold=threshold,
+            decision_mode=decision_mode,
+            recommendation="unavailable",
+            model_metadata=metadata,
+            feature_snapshot={},
+            details={"reason": "feature_extraction_failed"},
+        )
 
     try:
-        # Re-order features explicitly to match training FEATURES list
-        FEATURES = [
-            "bank_spread_percent",
-            "xag_return_15m",
-            "xag_return_1h",
-            "xag_return_24h",
-            "usd_try_return_24h",
-            "volatility_24h",
-            "volatility_7d",
-            "xau_xag_ratio",
-            "news_sentiment_score",
-            "hour_of_day",
-            "day_of_week",
-        ]
+        feature_snapshot = {col: float(df_feat[col].iloc[0]) for col in FEATURES if col in df_feat.columns}
         X = df_feat[FEATURES]
 
         # Predict probability of class 1 (profitable after costs)
         proba = model.predict_proba(X)[0, 1]
+        probability = float(proba)
+        recommendation = "unprofitable_prediction" if probability < threshold else "profitable_prediction"
         logger.info(
-            f"ML Predictor: Profitability Probability: {proba:.4f} (Threshold: {settings.risk_ml_min_probability})"
+            f"ML Predictor: Profitability Probability: {probability:.4f} "
+            f"(Threshold: {threshold}, Mode: {decision_mode})"
         )
-        return float(proba)
+        return MLInferenceResult(
+            probability=probability,
+            threshold=threshold,
+            decision_mode=decision_mode,
+            recommendation=recommendation,
+            model_metadata=metadata,
+            feature_snapshot=feature_snapshot,
+            details={},
+        )
     except Exception as e:
         logger.error(f"Error during model prediction step: {e}. Bypassing.")
-        return None
+        return MLInferenceResult(
+            probability=None,
+            threshold=threshold,
+            decision_mode=decision_mode,
+            recommendation="unavailable",
+            model_metadata=metadata,
+            feature_snapshot={},
+            details={"reason": "prediction_failed", "error": str(e)},
+        )
+
+
+def predict_profitability(db: Session, asset_id: int) -> Optional[float]:
+    """
+    Predicts the profitability probability after costs for the 3-day horizon.
+    Returns float probability [0.0, 1.0] if successful, or None on error / disabled state (bypass).
+    """
+    return predict_profitability_details(db, asset_id).probability

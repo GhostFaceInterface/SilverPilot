@@ -8,6 +8,7 @@ using Walk-Forward validation, compares to Buy & Hold, and saves the champion mo
 import os
 import sys
 import pickle
+import json
 import logging
 import numpy as np
 import pandas as pd
@@ -21,16 +22,66 @@ import mlflow.lightgbm
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("silverpilot.ml.training")
 
 FEATURES = [
-    "bank_spread_percent", "xag_return_15m", "xag_return_1h", "xag_return_24h",
-    "usd_try_return_24h", "volatility_24h", "volatility_7d", "xau_xag_ratio",
-    "news_sentiment_score", "hour_of_day", "day_of_week"
+    "bank_spread_percent",
+    "xag_return_15m",
+    "xag_return_1h",
+    "xag_return_24h",
+    "usd_try_return_24h",
+    "volatility_24h",
+    "volatility_7d",
+    "xau_xag_ratio",
+    "news_sentiment_score",
+    "hour_of_day",
+    "day_of_week",
 ]
 LABEL = "profitable_after_costs_3d"
+MIN_TRAINING_ROWS = 1000
+MIN_CLEAN_DATA_DAYS = 30
+MAX_DEGRADED_RATIO = 0.05
+
+
+def validate_dataset_quality(dataset_path: str, df: pd.DataFrame) -> dict:
+    metadata_path = os.path.join(os.path.dirname(dataset_path), "metadata.json")
+    if not os.path.exists(metadata_path):
+        raise ValueError(
+            "Dataset metadata is required for champion training. "
+            "Rebuild the dataset with scripts/build_dataset.py before training."
+        )
+
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    if len(df) < MIN_TRAINING_ROWS:
+        raise ValueError(
+            f"Dataset has {len(df)} rows; at least {MIN_TRAINING_ROWS} clean rows are required for training."
+        )
+
+    if "observed_at" not in df.columns:
+        raise ValueError("Dataset must include observed_at for out-of-time validation and data age checks.")
+
+    observed_at = pd.to_datetime(df["observed_at"], format="ISO8601", utc=True)
+    clean_days = (observed_at.max() - observed_at.min()).days
+    if clean_days < MIN_CLEAN_DATA_DAYS:
+        raise ValueError(
+            f"Dataset covers {clean_days} days; at least {MIN_CLEAN_DATA_DAYS} days of clean live data are required."
+        )
+
+    degraded_ratio = float(metadata.get("degraded_ratio", 0.0) or 0.0)
+    if degraded_ratio > MAX_DEGRADED_RATIO:
+        raise ValueError(
+            f"Dataset degraded ratio {degraded_ratio:.4f} exceeds maximum allowed {MAX_DEGRADED_RATIO:.4f}."
+        )
+
+    label_positive_rate = metadata.get("label_positive_rate")
+    if label_positive_rate is None or not 0.05 <= float(label_positive_rate) <= 0.95:
+        raise ValueError(f"Dataset label_positive_rate is not usable for training: {label_positive_rate!r}.")
+
+    return metadata
 
 
 def train_and_evaluate(dataset_path: str, model_output_path: str):
@@ -45,8 +96,7 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
     df = df.dropna(subset=FEATURES + [LABEL])
     logger.info(f"Dataset shape after dropping NaNs: {df.shape}")
 
-    if len(df) < 50:
-        raise ValueError("Insufficient rows for robust time-series walk-forward validation.")
+    dataset_metadata = validate_dataset_quality(dataset_path, df)
 
     # Split into features (X) and target (y)
     X = df[FEATURES]
@@ -76,13 +126,13 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
         "subsample": 0.8,
         "colsample_bytree": 0.8,
         "random_state": 42,
-        "verbosity": -1
+        "verbosity": -1,
     }
 
     # 1. Walk-Forward Time-Series Validation (5 Folds)
     logger.info("Starting Walk-Forward Time-Series Split Validation (5 Folds)...")
     tscv = TimeSeriesSplit(n_splits=5)
-    
+
     fold_precisions = []
     fold_recalls = []
     fold_accuracies = []
@@ -97,6 +147,9 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
         mlflow.log_param("features", ",".join(FEATURES))
         mlflow.log_param("target", LABEL)
         mlflow.log_param("dataset_size", len(df))
+        mlflow.log_param("dataset_version", dataset_metadata.get("version"))
+        mlflow.log_param("dataset_degraded_ratio", dataset_metadata.get("degraded_ratio"))
+        mlflow.log_param("dataset_label_positive_rate", dataset_metadata.get("label_positive_rate"))
 
         for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
@@ -112,7 +165,7 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
                 subsample=hyperparams["subsample"],
                 colsample_bytree=hyperparams["colsample_bytree"],
                 random_state=hyperparams["random_state"],
-                verbosity=hyperparams["verbosity"]
+                verbosity=hyperparams["verbosity"],
             )
             model.fit(X_train, y_train)
 
@@ -123,7 +176,7 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
             acc = accuracy_score(y_test, y_pred)
             prec = precision_score(y_test, y_pred, zero_division=0)
             rec = recall_score(y_test, y_pred, zero_division=0)
-            
+
             # Buy & Hold baseline win rate for this test fold
             bh_win_rate = y_test.mean()
 
@@ -139,7 +192,7 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
             mlflow.log_metric("fold_bh_win_rate", bh_win_rate, step=fold)
 
             logger.info(
-                f"Fold {fold+1} | Train Size: {len(X_train)} | Test Size: {len(X_test)} | "
+                f"Fold {fold + 1} | Train Size: {len(X_train)} | Test Size: {len(X_test)} | "
                 f"Accuracy: {acc:.3f} | Model Precision: {prec:.3f} (Karlı Sinyal Hassasiyeti) | "
                 f"Recall: {rec:.3f} | B&H Win Rate: {bh_win_rate:.3f}"
             )
@@ -166,7 +219,9 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
             logger.info(f"🚀 SUCCESS: Model precision ({mean_prec:.3f}) exceeds Buy & Hold win rate ({mean_bh:.3f})!")
             mlflow.set_tag("performance_status", "PASS")
         else:
-            logger.warning(f"⚠️ Model precision ({mean_prec:.3f}) is equal or below Buy & Hold ({mean_bh:.3f}). Keep regularizations high.")
+            logger.warning(
+                f"⚠️ Model precision ({mean_prec:.3f}) is equal or below Buy & Hold ({mean_bh:.3f}). Keep regularizations high."
+            )
             mlflow.set_tag("performance_status", "WARN")
 
         # 2. Train Champion Model on ALL data
@@ -180,7 +235,7 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
             subsample=hyperparams["subsample"],
             colsample_bytree=hyperparams["colsample_bytree"],
             random_state=hyperparams["random_state"],
-            verbosity=hyperparams["verbosity"]
+            verbosity=hyperparams["verbosity"],
         )
         champion_model.fit(X, y)
 
@@ -189,12 +244,10 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
         logger.info(f"Saving model to {model_output_path}...")
         with open(model_output_path, "wb") as f:
             pickle.dump(champion_model, f)
-        
+
         # Log to MLflow Registry
         mlflow.lightgbm.log_model(
-            lgb_model=champion_model,
-            artifact_path="model",
-            registered_model_name="SilverPilot_Champion"
+            lgb_model=champion_model, artifact_path="model", registered_model_name="SilverPilot_Champion"
         )
         logger.info("Champion model training, serialization, and MLflow logging completed successfully!")
 
@@ -202,7 +255,7 @@ def train_and_evaluate(dataset_path: str, model_output_path: str):
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     root_path = os.path.dirname(current_dir)
-    
+
     dataset_file = os.path.join(root_path, "data", "datasets", "v1.0.0", "dataset.csv")
     model_file = os.path.join(root_path, "data", "models", "champion_model.pkl")
 
