@@ -11,6 +11,10 @@ from app.core.config import get_settings
 from app.models import Asset, MarketBar, PriceSnapshot, TechnicalIndicator
 
 CURRENT_INDICATOR_CALCULATION_VERSION = "technical-indicators-v2"
+SUPPORTED_INDICATOR_CALCULATION_VERSIONS = (
+    "technical-indicators-v2",
+    "technical-indicators-v1",
+)
 DEFAULT_INDICATOR_TIMEFRAME = "5m"
 DEFAULT_REQUIRED_FIELDS = (
     "rsi_14",
@@ -126,6 +130,7 @@ def get_indicator_readiness(
         .where(MarketBar.asset_id == asset.id)
         .where(MarketBar.timeframe == timeframe)
         .where(MarketBar.source.in_(allowed_sources))
+        .where(TechnicalIndicator.calculation_version.in_(SUPPORTED_INDICATOR_CALCULATION_VERSIONS))
         .order_by(desc(TechnicalIndicator.bar_timestamp), desc(TechnicalIndicator.id))
         .limit(1)
     )
@@ -240,7 +245,7 @@ def get_latest_indicator_context(
             source=readiness.source,
             timeframe=timeframe,
             before_timestamp=readiness.bar_timestamp,
-            calculation_version=readiness.calculation_version,
+            calculation_versions=SUPPORTED_INDICATOR_CALCULATION_VERSIONS,
         )
     return IndicatorContext(readiness=readiness, previous_indicator=previous_indicator)
 
@@ -252,9 +257,9 @@ def get_previous_indicator(
     source: str | None,
     timeframe: str,
     before_timestamp: datetime | None,
-    calculation_version: str | None,
+    calculation_versions: tuple[str, ...],
 ) -> TechnicalIndicator | None:
-    if source is None or before_timestamp is None or calculation_version is None:
+    if source is None or before_timestamp is None or not calculation_versions:
         return None
 
     asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
@@ -269,7 +274,7 @@ def get_previous_indicator(
         .where(MarketBar.asset_id == asset.id)
         .where(MarketBar.source == source)
         .where(MarketBar.timeframe == timeframe)
-        .where(TechnicalIndicator.calculation_version == calculation_version)
+        .where(TechnicalIndicator.calculation_version.in_(calculation_versions))
         .where(TechnicalIndicator.bar_timestamp < before_timestamp)
         .order_by(desc(TechnicalIndicator.bar_timestamp), desc(TechnicalIndicator.id))
         .limit(1)
