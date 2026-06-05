@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import Asset, MarketBar, PriceSnapshot, TechnicalIndicator
 
-CURRENT_INDICATOR_CALCULATION_VERSION = "technical-indicators-v1"
+CURRENT_INDICATOR_CALCULATION_VERSION = "technical-indicators-v2"
 DEFAULT_INDICATOR_TIMEFRAME = "5m"
 DEFAULT_REQUIRED_FIELDS = (
     "rsi_14",

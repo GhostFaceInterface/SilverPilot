@@ -58,6 +58,17 @@ class TestCalculateIndicatorsBasic:
             "sma_20",
             "sma_50",
             "sma_200",
+            "ema_20",
+            "ema_50",
+            "ema_200",
+            "adx_14",
+            "plus_di_14",
+            "minus_di_14",
+            "bb_bandwidth_20_2",
+            "bb_percent_b_20_2",
+            "atr_percent_14",
+            "rsi_slope_1",
+            "macd_histogram_slope_1",
             "atr_14",
         ]
         for col in expected_cols:
@@ -198,9 +209,12 @@ class TestIngestGlobalPriceIndicatorWiring:
         assert indicator.timeframe == "5m"
         assert indicator.close_usd_oz == snapshot.mid_price
         assert indicator.market_bar_id is not None
-        assert indicator.calculation_version == "technical-indicators-v1"
+        assert indicator.calculation_version == "technical-indicators-v2"
         assert indicator.input_bar_count == 51
         assert indicator.quality_status == "ok"
+        assert indicator.ema_20 is not None
+        assert indicator.adx_14 is not None
+        assert indicator.bb_bandwidth_20_2 is not None
 
         market_bar = db_session.get(MarketBar, indicator.market_bar_id)
         assert market_bar is not None

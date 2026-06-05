@@ -285,7 +285,7 @@ _INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f", "gold-api-xag-usd", "metals-dev-silve
 _MARKET_BAR_TIMEFRAME = "5m"
 _MARKET_BAR_MINUTES = 5
 _MARKET_BAR_BUILDER_VERSION = "market-bars-v1"
-_INDICATOR_CALCULATION_VERSION = "technical-indicators-v1"
+_INDICATOR_CALCULATION_VERSION = "technical-indicators-v2"
 
 
 def _try_compute_and_store_indicator(
@@ -350,6 +350,17 @@ def _try_compute_and_store_indicator(
             "sma_20": _to_dec(last.get("sma_20")),
             "sma_50": _to_dec(last.get("sma_50")),
             "sma_200": _to_dec(last.get("sma_200")),
+            "ema_20": _to_dec(last.get("ema_20")),
+            "ema_50": _to_dec(last.get("ema_50")),
+            "ema_200": _to_dec(last.get("ema_200")),
+            "adx_14": _to_dec(last.get("adx_14")),
+            "plus_di_14": _to_dec(last.get("plus_di_14")),
+            "minus_di_14": _to_dec(last.get("minus_di_14")),
+            "bb_bandwidth_20_2": _to_dec(last.get("bb_bandwidth_20_2")),
+            "bb_percent_b_20_2": _to_dec(last.get("bb_percent_b_20_2")),
+            "atr_percent_14": _to_dec(last.get("atr_percent_14")),
+            "rsi_slope_1": _to_dec(last.get("rsi_slope_1")),
+            "macd_histogram_slope_1": _to_dec(last.get("macd_histogram_slope_1")),
             "atr_14": _to_dec(last.get("atr_14")),
             "xau_xag_ratio": None,
         }

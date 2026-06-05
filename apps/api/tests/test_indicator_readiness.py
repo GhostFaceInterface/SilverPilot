@@ -63,7 +63,7 @@ def _seed_indicator_series(
             market_bar_id=market_bar.id,
             bar_timestamp=bar_start,
             timeframe=timeframe,
-            calculation_version="technical-indicators-v1",
+            calculation_version="technical-indicators-v2",
             input_bar_count=idx + 1,
             quality_status="ok",
             close_usd_oz=price,
@@ -76,7 +76,18 @@ def _seed_indicator_series(
             bb_lower_20_2=price - Decimal("1.5"),
             sma_20=price - Decimal("0.2"),
             sma_50=price - Decimal("0.5"),
+            ema_20=price - Decimal("0.1"),
+            ema_50=price - Decimal("0.3"),
+            ema_200=price - Decimal("0.8"),
+            adx_14=Decimal("20.0"),
+            plus_di_14=Decimal("22.0"),
+            minus_di_14=Decimal("18.0"),
+            bb_bandwidth_20_2=Decimal("0.12"),
+            bb_percent_b_20_2=Decimal("0.55"),
             atr_14=Decimal("0.3"),
+            atr_percent_14=Decimal("0.012"),
+            rsi_slope_1=Decimal("0.5"),
+            macd_histogram_slope_1=Decimal("0.01"),
         )
         db_session.add(indicator)
         indicators.append(indicator)
