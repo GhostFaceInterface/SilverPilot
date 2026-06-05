@@ -258,7 +258,9 @@ class PaperTrade(Base):
     gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     fees: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=0)
     taxes: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=0)
+    spread_impact: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=0)
     net_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    cost_breakdown_json: Mapped[dict] = mapped_column(JSON, default=dict)
     risk_decision_id: Mapped[int | None] = mapped_column(ForeignKey("risk_decisions.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

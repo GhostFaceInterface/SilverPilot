@@ -46,7 +46,6 @@ COLLECTOR_JOB_RUN_SOURCES = {
     "tcmb-usd-try": {"tcmb_usd_try": {"tcmb-today-xml"}},
     "fed-rss": {"fed_rss": {"federal-reserve-rss"}},
     "fred-macro": {"fred_macro": {"fred-api"}},
-    "kitco-rss": {"kitco_rss": {"kitco-rss"}},
     "bloomberght-rss": {"bloomberght_rss": {"bloomberght-rss"}},
     "fxstreet-rss": {"fxstreet_rss": {"fxstreet-rss"}},
     "investing-rss": {"investing_rss": {"investing-rss"}},
@@ -862,7 +861,7 @@ def latest_collector_run(db: Session) -> CollectorRun | None:
     return db.execute(select(CollectorRun).order_by(CollectorRun.started_at.desc()).limit(1)).scalar_one_or_none()
 
 
-def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
+def collector_health(db: Session, stale_after_minutes: int = 60, *, now: datetime | None = None) -> dict:
     from sqlalchemy import func
 
     ranked_runs = select(
@@ -894,7 +893,7 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
             latest_by_collector[key] = run
 
     stale_after_seconds = stale_after_minutes * 60
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     collectors = []
     for run in latest_by_collector.values():
         reference_time = _aware(run.finished_at or run.started_at)
@@ -947,6 +946,7 @@ def collector_health(db: Session, stale_after_minutes: int = 60) -> dict:
             "global_xag_source": global_xag["source"],
             "selected_global_xag_source": global_xag["source"],
             "global_xag_age_seconds": global_xag["age_seconds"],
+            "observed_age_seconds": global_xag.get("observed_age_seconds"),
             "global_xag_stale": global_xag["stale"],
             "global_xag_manual_fallback": global_xag["manual_fallback"],
             "usd_try": usd_try["usd_try"],

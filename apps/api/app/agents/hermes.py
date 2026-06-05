@@ -12,7 +12,6 @@ from app.services.telegram import send_telegram_message
 logger = logging.getLogger("silverpilot.agents.hermes")
 
 TARGET_SOURCES = {
-    "kitco-rss",
     "bloomberght-rss",
     "fxstreet-rss",
     "gcm-yatirim",

@@ -287,6 +287,19 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     assert buy_response.json()["risk_decision"]["decision"] == "allow"
     assert buy_response.json()["risk_decision"]["reason_code"] == "RISK_CHECK_PASSED"
     assert buy_response.json()["trade"]["risk_decision_id"] == buy_response.json()["risk_decision"]["id"]
+    assert buy_response.json()["trade"]["gross_amount"] == "100.000000"
+    assert buy_response.json()["trade"]["fees"] == "1.000000"
+    assert buy_response.json()["trade"]["taxes"] == "0.200000"
+    assert buy_response.json()["trade"]["spread_impact"] == "1.000000"
+    assert buy_response.json()["trade"]["net_amount"] == "101.200000"
+    assert buy_response.json()["trade"]["cost_breakdown"] == {
+        "gross_amount": "100.000000",
+        "fees": "1.000000",
+        "taxes": "0.200000",
+        "spread_impact": "1.000000",
+        "net_amount": "101.200000",
+        "mid_price": "9.900000",
+    }
 
     sell_response = client.post(
         "/paper-trades",
@@ -302,6 +315,8 @@ def test_buy_then_sell_same_market_loses_after_spread_and_fees():
     assert sell_response.status_code == 200
 
     snapshot = sell_response.json()["snapshot"]
+    assert sell_response.json()["trade"]["spread_impact"] == "1.000000"
+    assert sell_response.json()["trade"]["cost_breakdown"]["net_amount"] == "97.000000"
     assert snapshot["cash_balance"] == "2495.800000"
     assert Decimal(snapshot["portfolio_value"]) < Decimal("2500.000000")
     assert Decimal(snapshot["realized_pnl"]) < Decimal("0")
@@ -461,6 +476,50 @@ def test_stale_execution_critical_data_blocks_trade():
     assert response.status_code == 200
     assert response.json()["trade"]["action"] == "blocked"
     assert response.json()["risk_decision"]["reason_code"] == "STALE_DATA"
+
+
+def test_risk_stale_data_uses_supplied_now_for_deterministic_freshness():
+    from app.paper_trading.service import _calculate_trade_amounts, calculate_position
+    from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
+    from app.schemas.paper_trading import PaperTradeRequest
+
+    _, testing_session = make_client()
+    fixed_now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    seed_execution_critical_data(testing_session, observed_at=fixed_now - timedelta(minutes=30))
+
+    db = testing_session()
+    try:
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        request = PaperTradeRequest(
+            action="paper_buy",
+            quantity=Decimal("1"),
+            buy_price=Decimal("10.00"),
+            sell_price=Decimal("9.80"),
+            fees=Decimal("0"),
+            taxes=Decimal("0"),
+        )
+        position = calculate_position(db, portfolio.id, asset.id)
+        quantity, price, gross_amount, net_amount = _calculate_trade_amounts(request, fx_rate=Decimal("1.0"))
+
+        decision = evaluate_paper_trade_risk(
+            db,
+            request=request,
+            portfolio=portfolio,
+            asset=asset,
+            position=position,
+            amounts=TradeAmounts(
+                quantity=quantity,
+                price=price,
+                gross_amount=gross_amount,
+                net_amount=net_amount,
+            ),
+            now=fixed_now,
+        )
+
+        assert decision.reason_code != "STALE_DATA"
+    finally:
+        db.close()
 
 
 def test_high_spread_blocks_trade_before_balance_changes():
@@ -1011,16 +1070,16 @@ def test_stale_execution_critical_data_blocked_when_market_closed():
     client, testing_session = make_client()
     db = testing_session()
     try:
-        # Seed stale data from 2 hours ago
-        seed_execution_critical_data(testing_session, observed_at=datetime.now(timezone.utc) - timedelta(hours=2))
+        # Saturday noon UTC (Market closed)
+        sat_now = datetime(2026, 5, 30, 16, 0, tzinfo=timezone.utc)
+
+        # Seed stale data from 2 hours before the risk evaluation timestamp.
+        seed_execution_critical_data(testing_session, observed_at=sat_now - timedelta(hours=2))
 
         # Temporarily mock to production so market closure checks are active
         settings = get_settings()
         original_env = settings.app_env
         settings.app_env = "production"
-
-        # Saturday noon UTC (Market closed)
-        sat_now = datetime(2026, 5, 30, 16, 0, tzinfo=timezone.utc)
 
         portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
         asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()

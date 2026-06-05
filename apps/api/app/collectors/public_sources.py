@@ -188,10 +188,10 @@ def collect_kuveyt_public_silver(
         if usd_try <= 0:
             raise ValueError(f"Invalid USDTRY exchange rate found: {usd_try}")
 
-        # Convert Kuveyt scraped TRY/gram price to USD/oz
-        # Formula: usd_price = try_price ÷ USDTRY × 31.1035
-        usd_buy = parsed.buy_price / usd_try * Decimal("31.1035")
-        usd_sell = parsed.sell_price / usd_try * Decimal("31.1035")
+        # Convert Kuveyt scraped TRY/gram price to USD/gram.
+        # XAG_GRAM is the canonical bank execution asset; XAG remains the global ounce reference.
+        usd_buy = parsed.buy_price / usd_try
+        usd_sell = parsed.sell_price / usd_try
         usd_mid = (usd_buy + usd_sell) / Decimal("2")
 
         # Anomaly Check 3: Mid price deviation of ±10% against last 5 PriceSnapshots (Soft anomaly -> degraded mode fallback)
@@ -199,7 +199,7 @@ def collect_kuveyt_public_silver(
             db.execute(
                 select(PriceSnapshot)
                 .where(
-                    PriceSnapshot.asset_id == select(Asset.id).where(Asset.symbol == "XAG").scalar_subquery(),
+                    PriceSnapshot.asset_id == select(Asset.id).where(Asset.symbol == "XAG_GRAM").scalar_subquery(),
                     PriceSnapshot.source == "kuveyt-public-silver-page",
                     PriceSnapshot.currency == "USD",
                 )
@@ -215,7 +215,7 @@ def collect_kuveyt_public_silver(
             deviation = abs(usd_mid - avg_usd_mid) / avg_usd_mid
             if deviation > Decimal("0.10"):
                 raise ValueError(
-                    f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by {deviation * 100:.2f}% from the 5-run average ({avg_usd_mid:.4f})"
+                    f"Kuveyt USD/gram normalized mid price ({usd_mid:.4f}) deviates by {deviation * 100:.2f}% from the 5-run average ({avg_usd_mid:.4f})"
                 )
 
         # Global Cross-Control (Anomaly 4)
@@ -229,7 +229,7 @@ def collect_kuveyt_public_silver(
 
         yahoo_mid = None
         if latest_yahoo is not None:
-            yahoo_mid = latest_yahoo.mid_price
+            yahoo_mid = latest_yahoo.mid_price / Decimal("31.1035")
         else:
             try:
                 provider = YahooXagUsdProvider()
@@ -238,6 +238,7 @@ def collect_kuveyt_public_silver(
                     yahoo_mid = (parsed_yahoo.bid + parsed_yahoo.ask) / Decimal("2")
                 else:
                     yahoo_mid = parsed_yahoo.price
+                yahoo_mid = yahoo_mid / Decimal("31.1035")
             except Exception as e:
                 logger.warning(f"Failed to fetch Yahoo SI=F for cross-control: {e}")
 
@@ -246,20 +247,20 @@ def collect_kuveyt_public_silver(
             deviation_pct = abs(usd_mid - yahoo_mid) / yahoo_mid
             if deviation_pct > Decimal("0.05"):
                 logger.warning(
-                    f"Kuveyt USD normalized mid price ({usd_mid:.4f}) deviates by "
-                    f"{deviation_pct * 100:.2f}% from global Yahoo SI=F price ({yahoo_mid:.4f}) (Anomaly 4)"
+                    f"Kuveyt USD/gram normalized mid price ({usd_mid:.4f}) deviates by "
+                    f"{deviation_pct * 100:.2f}% from global Yahoo SI=F USD/gram price ({yahoo_mid:.4f}) (Anomaly 4)"
                 )
                 deviation_details = {
-                    "warning": f"Kuveyt USD mid price deviates by {deviation_pct * 100:.2f}% from global Yahoo SI=F price",
-                    "kuveyt_usd_mid": str(usd_mid),
-                    "yahoo_usd_mid": str(yahoo_mid),
+                    "warning": f"Kuveyt USD/gram mid price deviates by {deviation_pct * 100:.2f}% from global Yahoo SI=F USD/gram price",
+                    "kuveyt_usd_gram_mid": str(usd_mid),
+                    "yahoo_usd_gram_mid": str(yahoo_mid),
                     "deviation_pct": float(deviation_pct),
                 }
 
         run, success, snapshot = ingest_bank_price(
             db,
             source="kuveyt-public-silver-page",
-            asset_symbol="XAG",
+            asset_symbol="XAG_GRAM",
             buy_price=parsed.buy_price,
             sell_price=parsed.sell_price,
             currency=parsed.currency,
@@ -305,7 +306,7 @@ def collect_kuveyt_public_silver(
             error_msg = str(exc)
             provider = YahooXagUsdProvider()
             parsed_yahoo = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
-            yahoo_price = parsed_yahoo.price
+            yahoo_price = parsed_yahoo.price / Decimal("31.1035")
 
             degraded_payload = {
                 "error_reason": error_msg,
@@ -319,7 +320,7 @@ def collect_kuveyt_public_silver(
             return ingest_bank_price(
                 db,
                 source="kuveyt-public-silver-page",
-                asset_symbol="XAG",
+                asset_symbol="XAG_GRAM",
                 buy_price=Decimal("0"),
                 sell_price=Decimal("0"),
                 currency="TRY",
@@ -1736,10 +1737,6 @@ def collect_kuveyt_usd_try(
 # ==============================================================================
 
 RSS_FEEDS: dict[str, list[str]] = {
-    "kitco-rss": [
-        "https://www.fxstreet.com/rss/news",
-        "https://www.fxstreet.com/rss/analysis",
-    ],
     "bloomberght-rss": [
         "https://www.bloomberght.com/rss",
         "https://www.bloomberght.com/rss/tum-haberler",

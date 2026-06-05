@@ -64,6 +64,8 @@ This file is the canonical place for durable entity and payload contracts. Exact
 - `gross_amount`
 - `fees`
 - `taxes`
+- `spread_impact`
+- `cost_breakdown_json`
 - `net_amount`
 - `risk_decision_id`
 - `created_at`
@@ -282,6 +284,7 @@ Initial series:
 ### Phase 3.1 Collector Outputs
 
 - `kuveyt_public_silver` writes bank silver prices from Kuveyt Türk official public page data when a public GMS finance-portal row can be parsed; discovery/parser failure records a failed collector run.
+- Kuveyt Türk TRY/gram is normalized to `XAG_GRAM` USD/gram as `TRY/gram ÷ USDTRY`. It is not stored as USD/oz in the bank execution path.
 - `global_xag_usd` writes global XAG/USD using the configured provider priority. Current runtime defaults are Yahoo SI=F, Gold-API, then Metals.Dev.
 - `stooq_xag_usd` is legacy/diagnostic only unless explicitly enabled; Stooq timeout diagnostics remain in API responses for backward compatibility.
 - `tcmb_usd_try` writes daily USD/TRY using the midpoint of TCMB `ForexBuying` and `ForexSelling`.
@@ -415,7 +418,7 @@ Policy:
 - Missing/stale bank silver, global XAG/USD, or USD/TRY blocks Phase 4.
 - Fed RSS and FRED macro failures degrade readiness but do not block Phase 4 by themselves.
 - Stooq failure does not block Phase 4 when an approved fallback global XAG source is fresh.
-- `kitco-rss` is excluded from implicit active health defaults until a real Kitco feed is verified or the job is explicitly listed in `COLLECTOR_JOBS`.
+- `kitco-rss` is removed from active RSS jobs until a real Kitco feed is verified. FXStreet URLs must not be labeled as Kitco.
 
 ### Paper Trade Risk Contract
 
@@ -461,6 +464,7 @@ Policy:
 - `threshold_headroom` is diagnostic only; it must not relax or tighten the configured risk thresholds by itself.
 - `near_limit` is a monitoring state, not an automatic tuning trigger.
 - Request-specific checks such as spread, expected exit, cash, and position remain enforced by `POST /paper-trades`.
+- Every paper trade response and persisted trade row separates `gross_amount`, `fees`, `taxes`, `spread_impact`, and `net_amount`.
 - Global XAG diagnostics are tuning metadata only; they do not select sources or override the collector validation gate.
 - Source-aware risk metrics prevent fallback/source-mix price differences from creating synthetic volatility or FOMO blocks.
 

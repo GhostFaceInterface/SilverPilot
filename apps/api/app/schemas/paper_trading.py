@@ -46,7 +46,9 @@ class PaperTradePayload(BaseModel):
     gross_amount: Decimal
     fees: Decimal
     taxes: Decimal
+    spread_impact: Decimal
     net_amount: Decimal
+    cost_breakdown: dict
     risk_decision_id: int
 
 

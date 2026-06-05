@@ -44,7 +44,7 @@ async def test_hermes_sentiment_calculation_formula(db_session):
     # Add RawNews
     news1 = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Good Kitco News",
         url="http://example.com/1",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
@@ -117,7 +117,7 @@ async def test_hermes_sentiment_calculation_formula(db_session):
         # Verify specific details of Article 1
         art1 = val["articles"][0]
         assert art1["title"] == "Good Kitco News"
-        assert art1["source"] == "kitco-rss"
+        assert art1["source"] == "fxstreet-rss"
         assert art1["sentiment"] == "BULLISH"
         assert abs(art1["article_score"] - 0.32) < 1e-5
 
@@ -208,7 +208,7 @@ async def test_hermes_weekend_telegram_dispatch_success(db_session):
 
     news = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Silver prices skyrocket!",
         url="http://example.com/1",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
@@ -283,7 +283,7 @@ async def test_hermes_weekend_telegram_dispatch_failure_resilience(db_session):
 
     news = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Silver prices skyrocket!",
         url="http://example.com/1",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
@@ -351,7 +351,7 @@ async def test_hermes_llm_failure_graceful_recovery(db_session):
 
     news = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Silver news",
         url="http://example.com/1",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
@@ -461,7 +461,7 @@ async def test_hermes_on_demand_trigger_logic(db_session):
     # Scenario A: Matching news in the last 24 hours (e.g. 2 hours ago)
     recent_news = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Recent Silver Spot",
         url="http://example.com/recent",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=2),
@@ -484,7 +484,7 @@ async def test_hermes_on_demand_trigger_logic(db_session):
 
     fallback_recent = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Fallback Silver Spot Recent",
         url="http://example.com/fb_recent",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=36),
@@ -507,7 +507,7 @@ async def test_hermes_on_demand_trigger_logic(db_session):
 
     fallback_old = RawNews(
         collector_run_id=run.id,
-        source="kitco-rss",
+        source="fxstreet-rss",
         title="Fallback Silver Spot Old",
         url="http://example.com/fb_old",
         fetched_at=datetime.now(timezone.utc) - timedelta(hours=50),

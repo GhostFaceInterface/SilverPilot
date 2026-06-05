@@ -328,7 +328,7 @@ class TestCollectRssNews:
         with patch("app.collectors.public_sources._fetch_text", return_value=SAMPLE_RSS_XML):
             run, inserted = collect_rss_news(
                 db_session,
-                source="kitco-rss",
+                source="fxstreet-rss",
                 urls=["https://primary.example.com/rss", "https://backup.example.com/rss"],
             )
         assert run.status == "success"
@@ -348,7 +348,7 @@ class TestCollectRssNews:
         with patch("app.collectors.public_sources._fetch_text", side_effect=mock_fetch):
             run, inserted = collect_rss_news(
                 db_session,
-                source="kitco-rss",
+                source="fxstreet-rss",
                 urls=["https://dead.example.com/rss", "https://alive.example.com/rss"],
             )
         assert call_count == 2
@@ -363,7 +363,7 @@ class TestCollectRssNews:
         ):
             run, inserted = collect_rss_news(
                 db_session,
-                source="kitco-rss",
+                source="fxstreet-rss",
                 urls=["https://dead1.example.com", "https://dead2.example.com"],
             )
         assert run.status == "failed"
@@ -395,12 +395,12 @@ class TestCollectRssNews:
         with patch("app.collectors.public_sources._fetch_text", return_value=SAMPLE_RSS_XML):
             _run1, inserted1 = collect_rss_news(
                 db_session,
-                source="kitco-rss",
+                source="fxstreet-rss",
                 urls=["https://example.com/rss"],
             )
             _run2, inserted2 = collect_rss_news(
                 db_session,
-                source="kitco-rss",
+                source="fxstreet-rss",
                 urls=["https://example.com/rss"],
             )
         assert inserted1 == 2
@@ -427,8 +427,8 @@ class TestRssFeedsConfig:
                 assert url.startswith("https://"), f"{source} URL is not HTTPS: {url}"
 
     def test_expected_sources_exist(self):
-        """All 4 planned RSS sources should be registered."""
-        expected = {"kitco-rss", "bloomberght-rss", "fxstreet-rss", "investing-rss"}
+        """All active RSS sources should be registered."""
+        expected = {"bloomberght-rss", "fxstreet-rss", "investing-rss"}
         assert expected.issubset(set(RSS_FEEDS.keys()))
 
     def test_parser_version_is_set(self):

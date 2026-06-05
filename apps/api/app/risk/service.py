@@ -434,7 +434,7 @@ def _spread_block(db: Session, *, request: PaperTradeRequest, max_spread_percent
 def _execution_data_block(db: Session, *, stale_after_minutes: int, now: datetime | None = None) -> RiskDecision | None:
     if now is None:
         now = datetime.now(UTC)
-    health = collector_health(db, stale_after_minutes=stale_after_minutes)
+    health = collector_health(db, stale_after_minutes=stale_after_minutes, now=now)
     execution_status = health["execution_critical_status"]
     if execution_status not in {"blocked", "stale"}:
         return None
@@ -449,8 +449,15 @@ def _execution_data_block(db: Session, *, stale_after_minutes: int, now: datetim
         details={
             "execution_critical_status": execution_status,
             "bank_price": execution_critical["bank_price"],
+            "bank_price_source": execution_critical["source"],
+            "bank_price_age_seconds": execution_critical["age_seconds"],
             "global_xag_usd": execution_critical["global_xag_usd"],
+            "global_xag_source": execution_critical["global_xag_source"],
+            "global_xag_age_seconds": execution_critical["global_xag_age_seconds"],
+            "global_xag_observed_age_seconds": execution_critical.get("observed_age_seconds"),
             "usd_try": execution_critical["usd_try"],
+            "usd_try_source": execution_critical["usd_try_source"],
+            "usd_try_age_seconds": execution_critical["usd_try_age_seconds"],
             "stale_after_minutes": stale_after_minutes,
         },
     )

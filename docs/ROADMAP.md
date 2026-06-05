@@ -231,7 +231,7 @@ Rules:
 Unit Conversion Pipeline (Before writing to `price_snapshots`):
 
 - Yahoo SI=F (USD/troy oz) -> USD/troy oz: Direct. No conversion needed.
-- Kuveyt Türk (TRY/gram) -> USD/troy oz: `bank_try_gram ÷ USDTRY × 31.1035`
+- Kuveyt Türk (TRY/gram) -> XAG_GRAM USD/gram: `bank_try_gram ÷ USDTRY`
 - Yahoo USDTRY=X -> USD/TRY: Direct. Reference only (for Kuveyt conversion).
 - TCMB -> USD/TRY: Direct. Official reference for Kuveyt conversion.
 - Yahoo GC=F (USD/troy oz) -> Ratio: `GC÷SI`. Direct. Both in same unit.
@@ -265,7 +265,7 @@ Primary path:
 
 Fallback path:
 
-- Fallback: Use Yahoo SI=F USD/oz directly as the bank price proxy (DEGRADED mode). No TRY conversion needed — portfolio is USD-based.
+- Fallback: Use Yahoo SI=F converted to USD/gram (`USD/oz ÷ 31.1035`) as the bank price proxy (DEGRADED mode). No TRY conversion needed because the paper portfolio is USD-based.
 - Existing `POST /collectors/manual-price` can insert manual bank prices into `raw_bank_prices`.
 - Manual fallback is allowed only to unblock simulation and validation.
 - Manual fallback must be visible as manual/degraded in health and reports.
@@ -413,11 +413,11 @@ Anomaly controls:
 1. `buy_price > sell_price` check (if false -> BLOCK + ALERT, scraper swapped values).
 2. Spread between %2 and %25? (if false -> BLOCK + ALERT).
 3. Is the price within ±10% of the last 5 records? (if false -> DEGRADED).
-4. Cross-control: Convert Kuveyt Türk TRY/gram to USD/oz (÷ USDTRY × 31.1035), then compare with SI=F USD/oz. Deviation > ±5% triggers ALERT.
+4. Cross-control: Convert Kuveyt Türk TRY/gram to USD/gram (`÷ USDTRY`), then compare with SI=F converted to USD/gram (`USD/oz ÷ 31.1035`). Deviation > ±5% triggers ALERT.
 
 Retry & Fallback mechanism:
 - Retry 3 times, 5s intervals.
-- If Kuveyt Türk scraping fails completely -> Use Yahoo SI=F USD/oz directly as the bank price proxy -> Run in DEGRADED mode. Portfolio is USD-based, no TRY conversion needed.
+- If Kuveyt Türk scraping fails completely -> Use Yahoo SI=F converted to USD/gram as the bank price proxy -> Run in DEGRADED mode. Portfolio is USD-based, no TRY conversion needed.
 - Stay in DEGRADED mode until next successful scrape. Trade is allowed but risk engine logs warning.
 - If Kuveyt page struct changes -> Old parser logs FAILED.
 
@@ -971,4 +971,3 @@ Validation gate:
 ## Immediate Next Step
 
 Immediate next is Phase 8: Agent-Assisted Strategy Backtesting & Refinement. We will implement Option A: Offline-First pre-cached LLM, introducing a historical LLM agent cache (`historical_agent_cache` table or `AgentMemoryEvent` query fallback) to store pre-computed/cached news sentiment and risk critique events. We will modify the backtest engine to fetch and utilize these cached LLM results during simulations without incurring real LLM API latency or financial cost, and write a detailed strategy analyzer comparing deterministic indicators, simulated LLM sentiment signals, and basic "buy and hold" benchmarks. Once validated, we will progress to Phase 9: ML Dataset Automation and Phase 10: First ML Model.
-

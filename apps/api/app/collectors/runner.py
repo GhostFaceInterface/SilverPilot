@@ -28,7 +28,6 @@ JOB_CHOICES = (
     "fed-rss",
     "fred-macro",
     "hermes-agent",
-    "kitco-rss",
     "bloomberght-rss",
     "fxstreet-rss",
     "investing-rss",
@@ -174,6 +173,14 @@ def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:
     if unknown:
         raise ValueError(f"Unsupported collector job(s): {', '.join(unknown)}")
 
+    fx_jobs = {"tcmb-usd-try", "yahoo-usd-try", "kuveyt-usd-try"}
+    if "global-xag-usd" in jobs and any(job in fx_jobs for job in jobs):
+        reordered_jobs = [job for job in jobs if job not in fx_jobs]
+        global_idx = reordered_jobs.index("global-xag-usd")
+        for job in reversed([job for job in jobs if job in fx_jobs]):
+            reordered_jobs.insert(global_idx, job)
+        jobs = reordered_jobs
+
     # Ensure RSS feeds are fetched before hermes-agent inside the runner list
     if "hermes-agent" in jobs:
         rss_keys = set(RSS_FEEDS.keys()) | {"fed-rss"}
@@ -250,7 +257,7 @@ async def main_async() -> None:
         if is_closed_after_sleep:
             original_jobs = args.jobs
             original_job = args.job
-            allowed_jobs = {"fed-rss", "hermes-agent", "kitco-rss", "bloomberght-rss", "fxstreet-rss", "investing-rss"}
+            allowed_jobs = {"fed-rss", "hermes-agent", "bloomberght-rss", "fxstreet-rss", "investing-rss"}
 
             if args.jobs:
                 current_jobs_list = [j.strip() for j in args.jobs.split(",") if j.strip() in allowed_jobs]

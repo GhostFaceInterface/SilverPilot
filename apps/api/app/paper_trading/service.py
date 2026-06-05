@@ -31,6 +31,16 @@ class Position:
         return (self.buy_net_amount / self.buy_quantity).quantize(MONEY_QUANT)
 
 
+@dataclass(frozen=True)
+class TradeCostBreakdown:
+    gross_amount: Decimal
+    fees: Decimal
+    taxes: Decimal
+    spread_impact: Decimal
+    net_amount: Decimal
+    mid_price: Decimal
+
+
 def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperTrade, PortfolioSnapshot]:
     portfolio = _get_portfolio(db, request.portfolio_name, lock=True)
     if portfolio.is_real_money:
@@ -66,6 +76,9 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
             request.expected_exit_price = _money(request.expected_exit_price / fx_rate)
 
     quantity, price, gross_amount, net_amount = _calculate_trade_amounts(request, fx_rate=Decimal("1.0"))
+    cost_breakdown = _calculate_cost_breakdown(
+        request, quantity=quantity, gross_amount=gross_amount, net_amount=net_amount
+    )
     risk_decision = evaluate_paper_trade_risk(
         db,
         request=request,
@@ -90,7 +103,16 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
         gross_amount=gross_amount,
         fees=request.fees,
         taxes=request.taxes,
+        spread_impact=cost_breakdown.spread_impact,
         net_amount=net_amount,
+        cost_breakdown_json={
+            "gross_amount": str(cost_breakdown.gross_amount),
+            "fees": str(cost_breakdown.fees),
+            "taxes": str(cost_breakdown.taxes),
+            "spread_impact": str(cost_breakdown.spread_impact),
+            "net_amount": str(cost_breakdown.net_amount),
+            "mid_price": str(cost_breakdown.mid_price),
+        },
         risk_decision_id=risk_decision.id,
     )
     db.add(trade)
@@ -274,6 +296,33 @@ def _calculate_trade_amounts(
         return quantity, price, gross_amount, net_amount
 
     return Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
+
+
+def _calculate_cost_breakdown(
+    request: PaperTradeRequest,
+    *,
+    quantity: Decimal,
+    gross_amount: Decimal,
+    net_amount: Decimal,
+) -> TradeCostBreakdown:
+    buy_price = _money(request.buy_price)
+    sell_price = _money(request.sell_price)
+    mid_price = _money((buy_price + sell_price) / Decimal("2")) if buy_price and sell_price else Decimal("0")
+    midpoint_amount = _money(quantity * mid_price) if mid_price > 0 else gross_amount
+    if request.action == "paper_buy":
+        spread_impact = _money(gross_amount - midpoint_amount)
+    elif request.action == "paper_sell":
+        spread_impact = _money(midpoint_amount - gross_amount)
+    else:
+        spread_impact = Decimal("0")
+    return TradeCostBreakdown(
+        gross_amount=gross_amount,
+        fees=_money(request.fees),
+        taxes=_money(request.taxes),
+        spread_impact=spread_impact,
+        net_amount=net_amount,
+        mid_price=mid_price,
+    )
 
 
 def _get_portfolio(db: Session, name: str, lock: bool = False) -> Portfolio:

@@ -60,6 +60,15 @@ def make_client():
     return TestClient(app), testing_session
 
 
+def ensure_xag_gram(db) -> Asset:
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
+    if asset is None:
+        asset = Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True)
+        db.add(asset)
+        db.flush()
+    return asset
+
+
 def seed_fresh_global_xag_and_usd_try(testing_session, *, now: datetime | None = None) -> None:
     now = now or datetime.now(UTC)
     db = testing_session()
@@ -326,6 +335,7 @@ def test_collector_health_ignores_stale_manual_when_official_bank_price_is_fresh
     mock_client = httpx.Client(transport=httpx.MockTransport(handler))
     db = testing_session()
     try:
+        ensure_xag_gram(db)
         collect_kuveyt_public_silver(db, settings=Settings(), client=mock_client)
     finally:
         mock_client.close()
@@ -613,7 +623,7 @@ def test_runner_parse_collector_jobs_rejects_unknown_job():
 
 
 def test_runner_one_shot_job_ignores_env_jobs(monkeypatch):
-    monkeypatch.setenv("COLLECTOR_JOBS", "kuveyt-silver,kitco-rss")
+    monkeypatch.setenv("COLLECTOR_JOBS", "kuveyt-silver,fxstreet-rss")
     args = SimpleNamespace(loop=False, jobs=None, job="tcmb-usd-try")
 
     resolve_jobs_argument(args)
@@ -623,13 +633,36 @@ def test_runner_one_shot_job_ignores_env_jobs(monkeypatch):
 
 
 def test_runner_loop_uses_env_jobs(monkeypatch):
-    monkeypatch.setenv("COLLECTOR_JOBS", "kuveyt-silver,kitco-rss")
+    monkeypatch.setenv("COLLECTOR_JOBS", "kuveyt-silver,fxstreet-rss")
     args = SimpleNamespace(loop=True, jobs=None, job="tcmb-usd-try")
 
     resolve_jobs_argument(args)
 
-    assert args.jobs == "kuveyt-silver,kitco-rss"
-    assert parse_collector_jobs(args.jobs, fallback_job=args.job) == ["kuveyt-silver", "kitco-rss"]
+    assert args.jobs == "kuveyt-silver,fxstreet-rss"
+    assert parse_collector_jobs(args.jobs, fallback_job=args.job) == ["kuveyt-silver", "fxstreet-rss"]
+
+
+def test_runner_parse_collector_jobs_runs_fx_before_global_xag_auto_trader_trigger():
+    jobs = parse_collector_jobs(
+        "kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss",
+        fallback_job="manual",
+    )
+
+    assert jobs == ["kuveyt-silver", "tcmb-usd-try", "global-xag-usd", "fed-rss"]
+
+
+def test_runner_parse_collector_jobs_preserves_multiple_fx_order_before_global_xag():
+    jobs = parse_collector_jobs(
+        "global-xag-usd,yahoo-usd-try,kuveyt-usd-try,tcmb-usd-try",
+        fallback_job="manual",
+    )
+
+    assert jobs == ["yahoo-usd-try", "kuveyt-usd-try", "tcmb-usd-try", "global-xag-usd"]
+
+
+def test_runner_rejects_removed_kitco_rss_job():
+    with pytest.raises(ValueError, match="kitco-rss"):
+        parse_collector_jobs("kitco-rss", fallback_job="manual")
 
 
 def test_runner_reports_failed_collector_job(monkeypatch):
@@ -1028,7 +1061,7 @@ def test_default_health_excludes_kitco_rss_failures(monkeypatch):
 
 
 def test_validation_gate_reports_generic_provider_failure_counts(monkeypatch):
-    monkeypatch.setenv("COLLECTOR_JOBS", "fed-rss,kitco-rss")
+    monkeypatch.setenv("COLLECTOR_JOBS", "fed-rss,fxstreet-rss")
     client, testing_session = make_client()
     db = testing_session()
     try:
@@ -1048,15 +1081,15 @@ def test_validation_gate_reports_generic_provider_failure_counts(monkeypatch):
                     details_json={},
                 ),
                 CollectorRun(
-                    collector_name="kitco_rss",
-                    source="kitco-rss",
+                    collector_name="fxstreet_rss",
+                    source="fxstreet-rss",
                     status="failed",
                     records_seen=0,
                     records_inserted=0,
                     duplicates=0,
                     started_at=now - timedelta(minutes=5),
                     finished_at=now - timedelta(minutes=5),
-                    error_message="kitco failed",
+                    error_message="fxstreet failed",
                     details_json={},
                 ),
                 CollectorRun(
@@ -1081,7 +1114,7 @@ def test_validation_gate_reports_generic_provider_failure_counts(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["provider_failure_counts"] == {"fed_rss": 1, "kitco_rss": 1}
+    assert body["provider_failure_counts"] == {"fed_rss": 1, "fxstreet_rss": 1}
     assert body["stooq_xag_usd_timeout_count"] == 1
 
 
@@ -1297,6 +1330,9 @@ def test_kuveyt_discovery_reads_public_script_and_endpoint():
 def test_kuveyt_public_collector_uses_public_browser_loaded_json():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
+    db.commit()
+    db.commit()
 
     # Seed USDTRY FX rate first
     fx_run = CollectorRun(
@@ -1353,11 +1389,10 @@ def test_kuveyt_public_collector_uses_public_browser_loaded_json():
         assert run.status == "success"
         assert raw_inserted is True
         assert snapshot is not None
-        # Converted to USD/oz: try_price / USDTRY * 31.1035
-        # 129.63761 / 32.50 * 31.1035 = 124.067332
-        # 125.87879 / 32.50 * 31.1035 = 120.467883
-        assert str(snapshot.buy_price) == "124.067182"
-        assert str(snapshot.sell_price) == "120.469875"
+        # Converted to USD/gram: try_price / USDTRY
+        assert snapshot.asset.symbol == "XAG_GRAM"
+        assert str(snapshot.buy_price) == "3.988850"
+        assert str(snapshot.sell_price) == "3.873194"
         raw = db.query(RawBankPrice).one()
         assert raw.raw_payload_hash
         assert raw.parser_version == "kuveyt-public-finance-portal-v2"
@@ -1370,6 +1405,7 @@ def test_kuveyt_public_collector_uses_public_browser_loaded_json():
 def test_kuveyt_anomaly_inverted_spread():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
 
     # Seed USDTRY FX rate first
     fx_run = CollectorRun(
@@ -1529,7 +1565,7 @@ def test_kuveyt_anomaly_mid_price_deviation():
         )
     )
 
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+    asset = ensure_xag_gram(db)
     for i in range(5):
         db.add(
             PriceSnapshot(
@@ -1584,6 +1620,8 @@ def test_kuveyt_anomaly_mid_price_deviation():
 def test_kuveyt_proxy_degraded_fallback():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
+    db.commit()
 
     observed_at = datetime.now(UTC) - timedelta(minutes=1)
     observed_timestamp = int(observed_at.timestamp())
@@ -1619,8 +1657,8 @@ def test_kuveyt_proxy_degraded_fallback():
         assert run.status == "success"
         assert raw_inserted is True
         assert snapshot is not None
-        assert str(snapshot.buy_price) == "28.450000"
-        assert str(snapshot.sell_price) == "28.450000"
+        assert str(snapshot.buy_price) == "0.914688"
+        assert str(snapshot.sell_price) == "0.914688"
         raw = db.query(RawBankPrice).one()
         assert raw.payload_json["degraded_mode"] is True
         assert raw.payload_json["proxy_source"] == "yahoo-si-f"
@@ -1879,6 +1917,7 @@ def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
 def test_kuveyt_hardening_successful_run():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
 
     # Seed USDTRY FX rate
     fx_run = CollectorRun(
@@ -1976,9 +2015,7 @@ def test_kuveyt_deviation_check_uses_same_asset_history():
     db = testing_session()
 
     xag = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
-    xag_gram = Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True)
-    db.add(xag_gram)
-    db.flush()
+    xag_gram = ensure_xag_gram(db)
 
     now = datetime.now(UTC)
     fx_run = CollectorRun(
@@ -2093,7 +2130,7 @@ def test_kuveyt_deviation_check_uses_same_asset_history():
         assert snapshot.is_degraded is False
         raw = (
             db.query(RawBankPrice)
-            .where(RawBankPrice.source == "kuveyt-public-silver-page", RawBankPrice.asset_id == xag.id)
+            .where(RawBankPrice.source == "kuveyt-public-silver-page", RawBankPrice.asset_id == xag_gram.id)
             .order_by(RawBankPrice.observed_at.desc())
             .first()
         )
@@ -2108,6 +2145,7 @@ def test_kuveyt_deviation_check_uses_same_asset_history():
 def test_kuveyt_hardening_degraded_fallback():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
 
     # Seed USDTRY FX rate
     fx_run = CollectorRun(
@@ -2187,6 +2225,7 @@ def test_kuveyt_hardening_degraded_fallback():
 def test_kuveyt_retry_mechanism():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
 
     # Seed USDTRY FX rate
     fx_run = CollectorRun(
@@ -2518,6 +2557,7 @@ def test_kuveyt_hardening_out_of_bounds_spread_hard_block():
 def test_kuveyt_hardening_cross_control_warning():
     _, testing_session = make_client()
     db = testing_session()
+    ensure_xag_gram(db)
 
     # Seed USDTRY FX rate
     fx_run = CollectorRun(
@@ -2600,9 +2640,9 @@ def test_kuveyt_hardening_cross_control_warning():
         assert raw_inserted is True
         assert snapshot is not None
         assert "warning" in run.details_json
-        assert "Kuveyt USD mid price deviates by" in run.details_json["warning"]
-        assert run.details_json["kuveyt_usd_mid"]
-        assert run.details_json["yahoo_usd_mid"] == "100.0"
+        assert "Kuveyt USD/gram mid price deviates by" in run.details_json["warning"]
+        assert run.details_json["kuveyt_usd_gram_mid"]
+        assert run.details_json["yahoo_usd_gram_mid"].startswith("3.215")
         assert run.details_json["deviation_pct"] > 0.05
     finally:
         client.close()

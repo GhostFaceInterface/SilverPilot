@@ -125,7 +125,9 @@ def create_paper_trade(request: PaperTradeRequest, db: Session = Depends(get_db)
             "gross_amount": trade.gross_amount,
             "fees": trade.fees,
             "taxes": trade.taxes,
+            "spread_impact": trade.spread_impact,
             "net_amount": trade.net_amount,
+            "cost_breakdown": trade.cost_breakdown_json,
             "risk_decision_id": trade.risk_decision_id,
         },
         risk_decision={
