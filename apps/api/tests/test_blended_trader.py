@@ -10,6 +10,7 @@ from app.core.db import Base
 from app.core.config import Settings
 from app.models import (
     Asset,
+    MarketBar,
     Portfolio,
     PriceSnapshot,
     TechnicalIndicator,
@@ -21,19 +22,47 @@ from app.models import (
 from app.services.regime import get_market_regime
 from app.services.strategy import StrategyRunner
 from app.services.auto_trader import run_auto_trading
+from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
 
-def seed_indicator_history(db, asset, count=15):
-    """Utility to seed historical PriceSnapshots and TechnicalIndicators for tests."""
+def _ready_indicator_context(latest_indicator, previous_indicator=None, timeframe="5m") -> IndicatorContext:
+    readiness = IndicatorReadiness(
+        asset_symbol="XAG_GRAM",
+        timeframe=timeframe,
+        status="ready",
+        usable=True,
+        reason_codes=[],
+        required_min_bar_count=50,
+        required_fields=(),
+        indicator=latest_indicator,
+        indicator_id=latest_indicator.id,
+        market_bar_id=latest_indicator.market_bar_id,
+        price_snapshot_id=latest_indicator.price_snapshot_id,
+        source=latest_indicator.price_snapshot.source if latest_indicator.price_snapshot else "yahoo-si-f",
+        bar_timestamp=latest_indicator.bar_timestamp,
+        age_seconds=0,
+        freshness_minutes=60,
+        calculation_version=latest_indicator.calculation_version,
+        quality_status="ok",
+        input_bar_count=latest_indicator.input_bar_count,
+        missing_required_fields=[],
+        close_usd_oz=latest_indicator.close_usd_oz,
+    )
+    return IndicatorContext(readiness=readiness, previous_indicator=previous_indicator)
+
+
+def seed_indicator_history(db, asset, count=15, timeframe="5m", source="yahoo-si-f"):
+    """Utility to seed historical PriceSnapshots, MarketBars and TechnicalIndicators for tests."""
     now = datetime.datetime.now(datetime.timezone.utc)
+    indicators = []
     for i in range(count):
-        observed_time = now - datetime.timedelta(minutes=15 * (count - i))
+        observed_time = now - datetime.timedelta(minutes=5 * (count - i))
         # Increasing price pattern for trending behavior or static for sideways
         price = Decimal("25.00") + Decimal(str(i * 0.1))
 
         snapshot = PriceSnapshot(
             asset_id=asset.id,
-            source="yahoo-si-f",
+            source=source,
             buy_price=price + Decimal("0.05"),
             sell_price=price - Decimal("0.05"),
             mid_price=price,
@@ -45,10 +74,36 @@ def seed_indicator_history(db, asset, count=15):
         db.add(snapshot)
         db.flush()
 
+        bar_start = observed_time.replace(second=0, microsecond=0)
+        bar_start = bar_start - datetime.timedelta(minutes=bar_start.minute % 5)
+        market_bar = MarketBar(
+            asset_id=asset.id,
+            source=source,
+            timeframe=timeframe,
+            bar_start_at=bar_start,
+            bar_end_at=bar_start + datetime.timedelta(minutes=5),
+            open=price,
+            high=price + Decimal("0.2"),
+            low=price - Decimal("0.2"),
+            close=price,
+            currency="USD",
+            sample_count=1,
+            first_price_snapshot_id=snapshot.id,
+            last_price_snapshot_id=snapshot.id,
+            quality_status="ok",
+            bar_builder_version="market-bars-v1",
+        )
+        db.add(market_bar)
+        db.flush()
+
         indicator = TechnicalIndicator(
             price_snapshot_id=snapshot.id,
-            bar_timestamp=observed_time,
-            timeframe="15m",
+            market_bar_id=market_bar.id,
+            bar_timestamp=bar_start,
+            timeframe=timeframe,
+            calculation_version="technical-indicators-v1",
+            input_bar_count=i + 1,
+            quality_status="ok",
             close_usd_oz=price,
             rsi_14=Decimal("45.0") + Decimal(str(i)),
             bb_upper_20_2=price + Decimal("1.5"),
@@ -59,7 +114,9 @@ def seed_indicator_history(db, asset, count=15):
             atr_14=Decimal("0.3"),
         )
         db.add(indicator)
+        indicators.append(indicator)
     db.commit()
+    return indicators
 
 
 @pytest.mark.anyio
@@ -109,7 +166,7 @@ async def test_regime_classifier_trending():
         db.add(asset)
         db.flush()
 
-        seed_indicator_history(db, asset, count=20)
+        seed_indicator_history(db, asset, count=50)
 
         regime = get_market_regime(db)
         assert "regime" in regime
@@ -189,7 +246,9 @@ async def test_auto_trading_blended_bullish_consensus():
         )
         db.flush()
 
-        seed_indicator_history(db, asset, count=16)
+        indicators = seed_indicator_history(db, asset, count=16)
+        latest_indicator = indicators[-1]
+        prev_indicator = indicators[-2] if len(indicators) > 1 else None
 
         settings = Settings(
             auto_trading_enabled=True, strategy_name="blended", telegram_bot_token="test_token", telegram_chat_id=12345
@@ -209,6 +268,10 @@ async def test_auto_trading_blended_bullish_consensus():
 
         with (
             patch("app.services.auto_trader.get_settings", return_value=settings),
+            patch(
+                "app.services.auto_trader.get_latest_indicator_context",
+                return_value=_ready_indicator_context(latest_indicator, prev_indicator),
+            ),
             patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
             patch("app.services.telegram.Bot") as MockBot,
@@ -282,7 +345,9 @@ async def test_auto_trading_blended_neutral_consensus_silent():
         db.add(portfolio)
         db.flush()
 
-        seed_indicator_history(db, asset, count=16)
+        indicators = seed_indicator_history(db, asset, count=16)
+        latest_indicator = indicators[-1]
+        prev_indicator = indicators[-2] if len(indicators) > 1 else None
 
         settings = Settings(
             auto_trading_enabled=True, strategy_name="blended", telegram_bot_token="test_token", telegram_chat_id=12345
@@ -294,6 +359,10 @@ async def test_auto_trading_blended_neutral_consensus_silent():
 
         with (
             patch("app.services.auto_trader.get_settings", return_value=settings),
+            patch(
+                "app.services.auto_trader.get_latest_indicator_context",
+                return_value=_ready_indicator_context(latest_indicator, prev_indicator),
+            ),
             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
             patch("app.services.telegram.Bot") as MockBot,
         ):

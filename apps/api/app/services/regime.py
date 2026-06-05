@@ -3,12 +3,23 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.models import TechnicalIndicator, PriceSnapshot
+from app.models import Asset, TechnicalIndicator, PriceSnapshot
+from app.services.indicator_readiness import (
+    DEFAULT_ALLOWED_SOURCES,
+    DEFAULT_INDICATOR_TIMEFRAME,
+    get_indicator_readiness,
+)
 
 logger = logging.getLogger("silverpilot.services.regime")
 
 
-def get_market_regime(db: Session, limit: int = 50) -> dict:
+def get_market_regime(
+    db: Session,
+    *,
+    asset_symbol: str = "XAG_GRAM",
+    timeframe: str = DEFAULT_INDICATOR_TIMEFRAME,
+    limit: int = 50,
+) -> dict:
     """
     Computes the market regime (TRENDING_UP, TRENDING_DOWN, SIDEWAYS) using ADX,
     Bollinger Bandwidth, and SMA values.
@@ -19,10 +30,45 @@ def get_market_regime(db: Session, limit: int = 50) -> dict:
     - Handles NaN or infinity cleanly.
     """
     try:
-        # Fetch latest TechnicalIndicator records
+        readiness = get_indicator_readiness(
+            db,
+            asset_symbol=asset_symbol,
+            timeframe=timeframe,
+            allowed_sources=DEFAULT_ALLOWED_SOURCES,
+        )
+        if not readiness.usable or readiness.indicator is None or readiness.source is None:
+            logger.info(
+                "Indicator readiness not usable for regime; asset=%s timeframe=%s status=%s reasons=%s.",
+                asset_symbol,
+                timeframe,
+                readiness.status,
+                ",".join(readiness.reason_codes) if readiness.reason_codes else "",
+            )
+            return {
+                "regime": "SIDEWAYS",
+                "adx": 0.0,
+                "bb_bandwidth": 0.0,
+                "relative_atr": 0.0,
+            }
+
+        asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
+        if asset is None:
+            return {
+                "regime": "SIDEWAYS",
+                "adx": 0.0,
+                "bb_bandwidth": 0.0,
+                "relative_atr": 0.0,
+            }
+
+        # Fetch latest TechnicalIndicator records from the same series only
         stmt = (
             select(TechnicalIndicator)
             .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
+            .where(PriceSnapshot.asset_id == asset.id)
+            .where(TechnicalIndicator.timeframe == timeframe)
+            .where(TechnicalIndicator.calculation_version == readiness.calculation_version)
+            .where(TechnicalIndicator.quality_status == "ok")
+            .where(PriceSnapshot.source == readiness.source)
             .order_by(TechnicalIndicator.bar_timestamp.desc())
             .limit(limit)
         )

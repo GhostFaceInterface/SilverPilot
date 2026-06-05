@@ -6,12 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Asset, PriceSnapshot, TechnicalIndicator, Portfolio, Signal, AgentMemoryEvent
+from app.models import Asset, Portfolio, Signal, AgentMemoryEvent
 from app.services.strategy import StrategyRunner
 from app.paper_trading.service import execute_paper_trade, calculate_position
 from app.schemas.paper_trading import PaperTradeRequest
 from app.services.regime import get_market_regime
 from app.agents.orchestrator import run_blended_consensus_resolution
+from app.services.indicator_readiness import get_latest_indicator_context
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
 
@@ -231,28 +232,26 @@ async def _run_auto_trading_impl(db: Session, settings):
         logger.error("Asset 'XAG_GRAM' not found")
         return
 
-    # 3. Fetch two latest indicators from any global source for XAG_GRAM
-    stmt = (
-        select(TechnicalIndicator)
-        .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
-        .where(
-            PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]),
-            PriceSnapshot.asset_id == asset.id,
+    # 3. Resolve the latest usable indicator from a single synchronized series.
+    indicator_context = get_latest_indicator_context(db, asset_symbol=asset.symbol)
+    readiness = indicator_context.readiness
+    if not readiness.usable or readiness.indicator is None:
+        logger.warning(
+            "Indicator readiness not usable for auto trading; asset=%s status=%s reasons=%s.",
+            asset.symbol,
+            readiness.status,
+            ",".join(readiness.reason_codes) if readiness.reason_codes else "",
         )
-        .order_by(TechnicalIndicator.bar_timestamp.desc())
-        .limit(2)
-    )
-    indicators = db.execute(stmt).scalars().all()
-    if not indicators:
-        logger.warning("No technical indicators found for XAG_GRAM from any global source")
         return
 
-    latest_indicator = indicators[0]
-    prev_indicator = indicators[1] if len(indicators) > 1 else None
+    latest_indicator = readiness.indicator
+    prev_indicator = indicator_context.previous_indicator
 
     # Get matching PriceSnapshot for the latest indicator
     latest_snapshot = latest_indicator.price_snapshot
     if not latest_snapshot:
+        from app.models import PriceSnapshot
+
         latest_snapshot = db.execute(
             select(PriceSnapshot).where(PriceSnapshot.id == latest_indicator.price_snapshot_id)
         ).scalar_one_or_none()
@@ -285,7 +284,7 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     # 4. Evaluate strategy
     if settings.strategy_name == "blended":
-        regime_info = get_market_regime(db)
+        regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=readiness.timeframe)
         strategy_votes = StrategyRunner.evaluate_blended_strategies(
             close=latest_indicator.close_usd_oz,
             rsi_14=latest_indicator.rsi_14,

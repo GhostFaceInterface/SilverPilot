@@ -397,6 +397,7 @@ def test_telegram_html_tag_balance_audit():
 def test_telegram_canli_report_html_safety_merciless():
     from app.agents.telegram_bot import run_canli_analysis_report
     from app.models import TechnicalIndicator, PriceSnapshot
+    from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -473,9 +474,36 @@ def test_telegram_canli_report_html_safety_merciless():
         "resolution_markdown": "We should **BUY** gümüş now because RSI is < 30 and price is near **bb_lower** & volatility is high.",
     }
 
+    readiness = IndicatorReadiness(
+        asset_symbol="XAG_GRAM",
+        timeframe="1d",
+        status="ready",
+        usable=True,
+        reason_codes=[],
+        required_min_bar_count=1,
+        required_fields=(),
+        indicator=indicator,
+        indicator_id=indicator.id,
+        market_bar_id=None,
+        price_snapshot_id=snapshot.id,
+        source="yahoo-si-f",
+        bar_timestamp=indicator.bar_timestamp,
+        age_seconds=0,
+        freshness_minutes=60,
+        calculation_version="technical-indicators-v1",
+        quality_status="ok",
+        input_bar_count=1,
+        missing_required_fields=[],
+        close_usd_oz=indicator.close_usd_oz,
+    )
+
     with (
         patch("app.collectors.public_sources.collect_kuveyt_public_silver"),
         patch("app.collectors.public_sources.collect_global_xag_usd"),
+        patch(
+            "app.services.indicator_readiness.get_latest_indicator_context",
+            return_value=IndicatorContext(readiness=readiness, previous_indicator=None),
+        ),
         patch("app.agents.orchestrator.run_blended_consensus_resolution", new_callable=AsyncMock) as mock_consensus,
     ):
         mock_consensus.return_value = mock_consensus_event

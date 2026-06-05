@@ -501,11 +501,12 @@ def generate_daily_price_caption(db: Session) -> str:
 
 async def run_canli_analysis_report(db: Session, settings) -> str:
     from app.collectors.public_sources import collect_kuveyt_public_silver, collect_global_xag_usd
-    from app.models import TechnicalIndicator, PriceSnapshot, Portfolio, Asset
+    from app.models import PriceSnapshot, Portfolio, Asset
     from app.services.regime import get_market_regime
     from app.services.strategy import StrategyRunner
     from app.agents.orchestrator import run_blended_consensus_resolution
     from app.paper_trading.service import calculate_position
+    from app.services.indicator_readiness import get_latest_indicator_context
 
     # Run collectors synchronously to refresh snapshots and indicators
     try:
@@ -521,20 +522,17 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
     asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
 
-    stmt = (
-        select(TechnicalIndicator)
-        .join(PriceSnapshot, TechnicalIndicator.price_snapshot_id == PriceSnapshot.id)
-        .where(PriceSnapshot.source.in_(["yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"]))
-        .where(PriceSnapshot.asset_id == asset.id)
-        .order_by(TechnicalIndicator.bar_timestamp.desc())
-        .limit(2)
-    )
-    indicators = db.execute(stmt).scalars().all()
-    if not indicators:
-        return "❌ Teknik gösterge verisi bulunamadı."
+    indicator_context = get_latest_indicator_context(db, asset_symbol=asset.symbol)
+    readiness = indicator_context.readiness
+    if not readiness.usable or readiness.indicator is None:
+        return (
+            "❌ Teknik gösterge verisi hazır değil.\n"
+            f"Durum: {readiness.status}\n"
+            f"Nedenler: {', '.join(readiness.reason_codes) if readiness.reason_codes else 'Yok'}"
+        )
 
-    latest_indicator = indicators[0]
-    prev_indicator = indicators[1] if len(indicators) > 1 else None
+    latest_indicator = readiness.indicator
+    prev_indicator = indicator_context.previous_indicator
 
     latest_snapshot = latest_indicator.price_snapshot
     if not latest_snapshot:
@@ -548,7 +546,7 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     current_position = calculate_position(db, portfolio.id, asset.id)
     has_open_position = current_position.quantity > 0
 
-    regime_info = get_market_regime(db)
+    regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=readiness.timeframe)
     strategy_votes = StrategyRunner.evaluate_blended_strategies(
         close=latest_indicator.close_usd_oz,
         rsi_14=latest_indicator.rsi_14,

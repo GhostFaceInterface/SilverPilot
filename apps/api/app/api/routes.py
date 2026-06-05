@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
+from app.services.indicator_readiness import get_indicator_readiness
 from app.agents.hermes import run_hermes_sentiment_analysis
 from app.agents.risk import run_signal_critique
 from app.agents.report import run_daily_performance_report
@@ -45,6 +46,7 @@ from app.schemas.collectors import (
     ManualPriceIngestResponse,
 )
 from app.schemas.health import HealthResponse
+from app.schemas.indicators import IndicatorReadinessResponse
 from app.schemas.paper_trading import PaperTradeRequest, PaperTradeResponse
 from app.schemas.risk import RiskPolicyStatusResponse
 from app.schemas.agent import (
@@ -204,6 +206,23 @@ def get_latest_price(db: Session = Depends(get_db)):
             "observed_at": snapshot.observed_at,
         }
     }
+
+
+@router.get("/indicators/readiness", response_model=IndicatorReadinessResponse)
+def get_indicator_readiness_status(
+    asset_symbol: str = "XAG_GRAM",
+    timeframe: str = "5m",
+    required_min_bar_count: int = 50,
+    db: Session = Depends(get_db),
+) -> IndicatorReadinessResponse:
+    return IndicatorReadinessResponse.model_validate(
+        get_indicator_readiness(
+            db,
+            asset_symbol=asset_symbol,
+            timeframe=timeframe,
+            required_min_bar_count=required_min_bar_count,
+        ).to_dict()
+    )
 
 
 @router.post("/collectors/manual-price", response_model=ManualPriceIngestResponse)

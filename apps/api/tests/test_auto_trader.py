@@ -10,6 +10,33 @@ from app.core.db import Base
 from app.core.config import Settings
 from app.models import Asset, Portfolio, PriceSnapshot, TechnicalIndicator, Signal, PaperTrade, RiskDecision
 from app.services.auto_trader import run_auto_trading
+from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
+
+
+def _ready_indicator_context(indicator: TechnicalIndicator) -> IndicatorContext:
+    readiness = IndicatorReadiness(
+        asset_symbol="XAG_GRAM",
+        timeframe=indicator.timeframe,
+        status="ready",
+        usable=True,
+        reason_codes=[],
+        required_min_bar_count=1,
+        required_fields=(),
+        indicator=indicator,
+        indicator_id=indicator.id,
+        market_bar_id=indicator.market_bar_id,
+        price_snapshot_id=indicator.price_snapshot_id,
+        source=indicator.price_snapshot.source if indicator.price_snapshot else "yahoo-si-f",
+        bar_timestamp=indicator.bar_timestamp,
+        age_seconds=0,
+        freshness_minutes=60,
+        calculation_version=indicator.calculation_version,
+        quality_status="ok",
+        input_bar_count=indicator.input_bar_count,
+        missing_required_fields=[],
+        close_usd_oz=indicator.close_usd_oz,
+    )
+    return IndicatorContext(readiness=readiness, previous_indicator=None)
 
 
 @pytest.mark.anyio
@@ -119,6 +146,9 @@ async def test_auto_trading_buy_signal():
 
     with (
         patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch(
+            "app.services.auto_trader.get_latest_indicator_context", return_value=_ready_indicator_context(indicator)
+        ),
         patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
         patch("app.services.telegram.Bot") as MockBot,
     ):
@@ -255,6 +285,9 @@ async def test_auto_trading_sell_signal():
 
     with (
         patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch(
+            "app.services.auto_trader.get_latest_indicator_context", return_value=_ready_indicator_context(indicator)
+        ),
         patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk_decision),
         patch("app.services.telegram.Bot") as MockBot,
     ):
