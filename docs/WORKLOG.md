@@ -218,6 +218,18 @@ Sustained collector validation started on VPS.
 - `/collectors/health` returned `healthy` with fresh official bank price.
 - `/collectors/quality` is expected to remain degraded until enough runtime fills the validation window and older failed POC runs age out.
 
+## 2026-06-06
+
+Phase 3 multi-timeframe indicator synchronization started locally.
+
+- Added a persistent phase plan artifact at `docs/PHASE_PLAN.md`.
+- Expanded technical indicator storage and computation to v2 fields.
+- Added `5m`, `1h`, and `1d` market bar building from the same snapshot stream.
+- Fixed multi-timeframe bar reuse so higher timeframes no longer overwrite `5m` rows.
+- Added a regression test for synchronized multi-timeframe bar and indicator creation.
+- Validation passed locally: `tests/test_indicators.py`, `tests/test_indicator_readiness.py`, `tests/test_blended_trader.py`, `tests/test_telegram.py`, and `tests/test_auto_trader.py`.
+- Next: commit, push, deploy, and then continue with the remaining Phase 3 surfaces only after VPS smoke validation.
+
 Collector quality warm-up semantics tightened.
 
 - Updated `/collectors/quality` so missing-run ratio is measured against elapsed runtime, not future intervals in the selected validation window.
@@ -434,4 +446,3 @@ Phase 5.5, 6, 8, 9, 10, and 11 implementation completed.
 - **Phase 9 (ML Dataset Automation):** Constructed time-series ML feature-label dataset generator (`scripts/build_dataset.py`) ensuring zero data-leakage and token security.
 - **Phase 10 (First ML Model & Live Inference):** Trained LightGBM models locally (Off-VPS Training Rule). Integrated FastAPI real-time O(1) inference from pickled model weights, accompanied by pre-trade risk vetoes.
 - **Phase 11 (Model Registry & Scheduled Training):** Fully integrated local MLflow training and model registration tracking. Created automatic evaluation script (`scripts/evaluate_challenger.py`) comparing challenger vs champion. Implemented manual promotion CLI (`scripts/promote_model.py`) generating `champion_metadata.json` and git staging. Implemented token-secured `GET /api/v1/ml/model/active` API visibility endpoint. Fortified full E2E test suite to 133/133 passing green tests and pushed changes to main branch.
-

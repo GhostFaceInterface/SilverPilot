@@ -383,3 +383,68 @@ class TestIngestGlobalPriceIndicatorWiring:
             .all()
         )
         assert len(indicator_count) == 0, "No indicator should be created for bank sources"
+
+    def test_multitimeframe_bars_and_indicators_are_built(self, db_session):
+        from app.collectors.service import ingest_global_price
+
+        asset = Asset(symbol="XAG", name="Silver Spot", asset_type="metal", is_active=True)
+        db_session.add(asset)
+        db_session.commit()
+
+        base_time = datetime(2026, 6, 4, 0, 0, tzinfo=UTC)
+        for i in range(300):
+            observed_at = base_time + timedelta(minutes=5 * i)
+            snap = PriceSnapshot(
+                asset_id=asset.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("30.500000"),
+                sell_price=Decimal("30.400000"),
+                mid_price=Decimal("30.450000"),
+                currency="USD",
+                spread_absolute=Decimal("0.100000"),
+                spread_percent=Decimal("0.328410"),
+                observed_at=observed_at,
+            )
+            db_session.add(snap)
+        db_session.commit()
+
+        observed_at = base_time + timedelta(minutes=5 * 300)
+        _, _, snapshot = ingest_global_price(
+            db_session,
+            source="yahoo-si-f",
+            asset_symbol="XAG",
+            buy_price=Decimal("30.600000"),
+            sell_price=Decimal("30.500000"),
+            currency="USD",
+            observed_at=observed_at,
+            fetched_at=datetime.now(UTC),
+            payload={"test": True},
+            raw_payload="test_raw_payload",
+            parser_version="test-v1",
+            collector_name="test_global_xag_usd",
+        )
+
+        assert snapshot is not None
+
+        timeframes = {"5m", "1h", "1d"}
+        bars = db_session.execute(select(MarketBar).where(MarketBar.asset_id == asset.id)).scalars().all()
+        assert timeframes.issubset({bar.timeframe for bar in bars})
+
+        indicators = (
+            db_session.execute(
+                select(TechnicalIndicator)
+                .join(MarketBar, TechnicalIndicator.market_bar_id == MarketBar.id)
+                .where(MarketBar.asset_id == asset.id)
+            )
+            .scalars()
+            .all()
+        )
+        assert {indicator.timeframe for indicator in indicators} >= {"5m", "1h", "1d"}
+        assert any(
+            indicator.timeframe == "1h" and indicator.calculation_version == "technical-indicators-v2"
+            for indicator in indicators
+        )
+        assert any(
+            indicator.timeframe == "1d" and indicator.calculation_version == "technical-indicators-v2"
+            for indicator in indicators
+        )

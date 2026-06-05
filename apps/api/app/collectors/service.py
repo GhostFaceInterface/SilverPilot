@@ -284,6 +284,11 @@ _INDICATOR_HISTORY_BARS = 200
 _INDICATOR_GLOBAL_SOURCES = {"yahoo-si-f", "gold-api-xag-usd", "metals-dev-silver-spot"}
 _MARKET_BAR_TIMEFRAME = "5m"
 _MARKET_BAR_MINUTES = 5
+_MARKET_BAR_TIMEFRAMES = {
+    "5m": 5,
+    "1h": 60,
+    "1d": 60 * 24,
+}
 _MARKET_BAR_BUILDER_VERSION = "market-bars-v1"
 _INDICATOR_CALCULATION_VERSION = "technical-indicators-v2"
 
@@ -306,89 +311,112 @@ def _try_compute_and_store_indicator(
         return
 
     try:
-        bars = _ensure_recent_market_bars_from_snapshots(db, asset=asset, source=source)
-        if not bars:
-            logger.warning("indicator_skip: no market bars for asset_id=%s source=%s", asset.id, source)
-            return
-
-        records = []
-        for bar in bars:
-            records.append(
-                {
-                    "high": float(bar.high or bar.close or 0),
-                    "low": float(bar.low or bar.close or 0),
-                    "close": float(bar.close or 0),
-                }
+        for timeframe, timeframe_minutes in _MARKET_BAR_TIMEFRAMES.items():
+            complete_only = timeframe != _MARKET_BAR_TIMEFRAME
+            bars = _ensure_recent_market_bars_from_snapshots(
+                db,
+                asset=asset,
+                source=source,
+                timeframe=timeframe,
+                timeframe_minutes=timeframe_minutes,
+                complete_only=complete_only,
             )
-        df = pd.DataFrame(records)
+            if not bars:
+                logger.warning(
+                    "indicator_skip: no market bars for asset_id=%s source=%s timeframe=%s",
+                    asset.id,
+                    source,
+                    timeframe,
+                )
+                continue
 
-        # Calculate indicators
-        df_ind = calculate_indicators(df)
-        last = df_ind.iloc[-1]
+            records = []
+            for bar in bars:
+                records.append(
+                    {
+                        "high": float(bar.high or bar.close or 0),
+                        "low": float(bar.low or bar.close or 0),
+                        "close": float(bar.close or 0),
+                    }
+                )
+            df = pd.DataFrame(records)
 
-        def _to_dec(val) -> Decimal | None:
-            if pd.isna(val) or val is None:
-                return None
-            return Decimal(str(val)).quantize(PRICE_QUANT)
+            # Calculate indicators
+            df_ind = calculate_indicators(df)
+            last = df_ind.iloc[-1]
 
-        indicator_values = {
-            "price_snapshot_id": snapshot.id,
-            "market_bar_id": bars[-1].id,
-            "bar_timestamp": bars[-1].bar_start_at,
-            "timeframe": _MARKET_BAR_TIMEFRAME,
-            "calculation_version": _INDICATOR_CALCULATION_VERSION,
-            "input_bar_count": len(bars),
-            "quality_status": bars[-1].quality_status,
-            "close_usd_oz": bars[-1].close,
-            "rsi_14": _to_dec(last.get("rsi_14")),
-            "macd_line": _to_dec(last.get("macd_line")),
-            "macd_signal": _to_dec(last.get("macd_signal")),
-            "macd_histogram": _to_dec(last.get("macd_histogram")),
-            "bb_upper_20_2": _to_dec(last.get("bb_upper_20_2")),
-            "bb_middle_20_2": _to_dec(last.get("bb_middle_20_2")),
-            "bb_lower_20_2": _to_dec(last.get("bb_lower_20_2")),
-            "sma_20": _to_dec(last.get("sma_20")),
-            "sma_50": _to_dec(last.get("sma_50")),
-            "sma_200": _to_dec(last.get("sma_200")),
-            "ema_20": _to_dec(last.get("ema_20")),
-            "ema_50": _to_dec(last.get("ema_50")),
-            "ema_200": _to_dec(last.get("ema_200")),
-            "adx_14": _to_dec(last.get("adx_14")),
-            "plus_di_14": _to_dec(last.get("plus_di_14")),
-            "minus_di_14": _to_dec(last.get("minus_di_14")),
-            "bb_bandwidth_20_2": _to_dec(last.get("bb_bandwidth_20_2")),
-            "bb_percent_b_20_2": _to_dec(last.get("bb_percent_b_20_2")),
-            "atr_percent_14": _to_dec(last.get("atr_percent_14")),
-            "rsi_slope_1": _to_dec(last.get("rsi_slope_1")),
-            "macd_histogram_slope_1": _to_dec(last.get("macd_histogram_slope_1")),
-            "atr_14": _to_dec(last.get("atr_14")),
-            "xau_xag_ratio": None,
-        }
-        indicator = db.execute(
-            select(TechnicalIndicator).where(
-                TechnicalIndicator.market_bar_id == bars[-1].id,
-                TechnicalIndicator.calculation_version == _INDICATOR_CALCULATION_VERSION,
+            def _to_dec(val) -> Decimal | None:
+                if pd.isna(val) or val is None:
+                    return None
+                return Decimal(str(val)).quantize(PRICE_QUANT)
+
+            indicator_values = {
+                "price_snapshot_id": bars[-1].last_price_snapshot_id,
+                "market_bar_id": bars[-1].id,
+                "bar_timestamp": bars[-1].bar_start_at,
+                "timeframe": timeframe,
+                "calculation_version": _INDICATOR_CALCULATION_VERSION,
+                "input_bar_count": len(bars),
+                "quality_status": bars[-1].quality_status,
+                "close_usd_oz": bars[-1].close,
+                "rsi_14": _to_dec(last.get("rsi_14")),
+                "macd_line": _to_dec(last.get("macd_line")),
+                "macd_signal": _to_dec(last.get("macd_signal")),
+                "macd_histogram": _to_dec(last.get("macd_histogram")),
+                "bb_upper_20_2": _to_dec(last.get("bb_upper_20_2")),
+                "bb_middle_20_2": _to_dec(last.get("bb_middle_20_2")),
+                "bb_lower_20_2": _to_dec(last.get("bb_lower_20_2")),
+                "sma_20": _to_dec(last.get("sma_20")),
+                "sma_50": _to_dec(last.get("sma_50")),
+                "sma_200": _to_dec(last.get("sma_200")),
+                "ema_20": _to_dec(last.get("ema_20")),
+                "ema_50": _to_dec(last.get("ema_50")),
+                "ema_200": _to_dec(last.get("ema_200")),
+                "adx_14": _to_dec(last.get("adx_14")),
+                "plus_di_14": _to_dec(last.get("plus_di_14")),
+                "minus_di_14": _to_dec(last.get("minus_di_14")),
+                "bb_bandwidth_20_2": _to_dec(last.get("bb_bandwidth_20_2")),
+                "bb_percent_b_20_2": _to_dec(last.get("bb_percent_b_20_2")),
+                "atr_percent_14": _to_dec(last.get("atr_percent_14")),
+                "rsi_slope_1": _to_dec(last.get("rsi_slope_1")),
+                "macd_histogram_slope_1": _to_dec(last.get("macd_histogram_slope_1")),
+                "atr_14": _to_dec(last.get("atr_14")),
+                "xau_xag_ratio": None,
+            }
+            indicator = db.execute(
+                select(TechnicalIndicator).where(
+                    TechnicalIndicator.market_bar_id == bars[-1].id,
+                    TechnicalIndicator.calculation_version == _INDICATOR_CALCULATION_VERSION,
+                )
+            ).scalar_one_or_none()
+            if indicator is None:
+                db.add(TechnicalIndicator(**indicator_values))
+            else:
+                for key, value in indicator_values.items():
+                    setattr(indicator, key, value)
+            logger.info(
+                "indicator_computed: snapshot_id=%s market_bar_id=%s timeframe=%s rsi=%.2f sma20=%s",
+                snapshot.id,
+                bars[-1].id,
+                timeframe,
+                float(last.get("rsi_14", 0) or 0),
+                last.get("sma_20"),
             )
-        ).scalar_one_or_none()
-        if indicator is None:
-            db.add(TechnicalIndicator(**indicator_values))
-        else:
-            for key, value in indicator_values.items():
-                setattr(indicator, key, value)
-        logger.info(
-            "indicator_computed: snapshot_id=%s market_bar_id=%s rsi=%.2f sma20=%s",
-            snapshot.id,
-            bars[-1].id,
-            float(last.get("rsi_14", 0) or 0),
-            last.get("sma_20"),
-        )
     except Exception:
         logger.exception(
             "indicator_error: failed to compute indicators for snapshot_id=%s — price snapshot preserved", snapshot.id
         )
 
 
-def _ensure_recent_market_bars_from_snapshots(db: Session, *, asset: Asset, source: str) -> list[MarketBar]:
+def _ensure_recent_market_bars_from_snapshots(
+    db: Session,
+    *,
+    asset: Asset,
+    source: str,
+    timeframe: str,
+    timeframe_minutes: int,
+    complete_only: bool,
+) -> list[MarketBar]:
     latest_ids_sq = (
         select(PriceSnapshot.id)
         .where(
@@ -412,10 +440,13 @@ def _ensure_recent_market_bars_from_snapshots(db: Session, *, asset: Asset, sour
 
     grouped: dict[datetime, list[PriceSnapshot]] = {}
     for snapshot in snapshots:
-        grouped.setdefault(_bar_start(snapshot.observed_at), []).append(snapshot)
+        grouped.setdefault(_bar_start(snapshot.observed_at, timeframe_minutes), []).append(snapshot)
 
     bars: list[MarketBar] = []
+    cutoff_bar_start = _bar_start(snapshots[-1].observed_at, timeframe_minutes)
     for bar_start_at in sorted(grouped):
+        if complete_only and bar_start_at + timedelta(minutes=timeframe_minutes) > cutoff_bar_start:
+            continue
         group = sorted(grouped[bar_start_at], key=lambda item: (_aware(item.observed_at), item.id))
         first = group[0]
         last = group[-1]
@@ -427,12 +458,12 @@ def _ensure_recent_market_bars_from_snapshots(db: Session, *, asset: Asset, sour
             select(MarketBar).where(
                 MarketBar.asset_id == asset.id,
                 MarketBar.source == source,
-                MarketBar.timeframe == _MARKET_BAR_TIMEFRAME,
+                MarketBar.timeframe == timeframe,
                 MarketBar.bar_start_at == bar_start_at,
             )
         ).scalar_one_or_none()
         values = {
-            "bar_end_at": bar_start_at + timedelta(minutes=_MARKET_BAR_MINUTES),
+            "bar_end_at": bar_start_at + timedelta(minutes=timeframe_minutes),
             "open": _price(first.mid_price),
             "high": _price(max(prices)),
             "low": _price(min(prices)),
@@ -448,7 +479,7 @@ def _ensure_recent_market_bars_from_snapshots(db: Session, *, asset: Asset, sour
             existing = MarketBar(
                 asset_id=asset.id,
                 source=source,
-                timeframe=_MARKET_BAR_TIMEFRAME,
+                timeframe=timeframe,
                 bar_start_at=bar_start_at,
                 **values,
             )
@@ -462,9 +493,14 @@ def _ensure_recent_market_bars_from_snapshots(db: Session, *, asset: Asset, sour
     return bars[-_INDICATOR_HISTORY_BARS:]
 
 
-def _bar_start(value: datetime) -> datetime:
+def _bar_start(value: datetime, timeframe_minutes: int = _MARKET_BAR_MINUTES) -> datetime:
     aware_value = _aware(value)
-    minute = aware_value.minute - (aware_value.minute % _MARKET_BAR_MINUTES)
+    if timeframe_minutes >= 60 * 24:
+        return aware_value.replace(hour=0, minute=0, second=0, microsecond=0)
+    if timeframe_minutes >= 60:
+        hour = aware_value.hour - (aware_value.hour % (timeframe_minutes // 60))
+        return aware_value.replace(hour=hour, minute=0, second=0, microsecond=0)
+    minute = aware_value.minute - (aware_value.minute % timeframe_minutes)
     return aware_value.replace(minute=minute, second=0, microsecond=0)
 
 
