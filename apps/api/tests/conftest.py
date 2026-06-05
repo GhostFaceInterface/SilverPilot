@@ -2,14 +2,37 @@ import os
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "1")
 os.environ.setdefault("PTB_TIMEDELTA", "1")
 
 import pytest
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+_SQLITE_CONNECTIONS = set()
+
+
+@event.listens_for(Engine, "connect")
+def _track_sqlite_connection(dbapi_conn, connection_record):
+    if dbapi_conn.__class__.__module__ == "sqlite3":
+        _SQLITE_CONNECTIONS.add(dbapi_conn)
+
+
 from app.core.db import Base
+
+
+@pytest.fixture(autouse=True)
+def close_tracked_sqlite_connections():
+    yield
+    for connection in list(_SQLITE_CONNECTIONS):
+        try:
+            connection.close()
+        except Exception:
+            pass
+        finally:
+            _SQLITE_CONNECTIONS.discard(connection)
 
 
 @pytest.fixture()

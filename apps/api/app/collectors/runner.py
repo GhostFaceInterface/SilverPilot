@@ -16,6 +16,7 @@ from app.collectors.public_sources import (
 from app.collectors.service import ingest_manual_price
 from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
 from app.core.db import SessionLocal
+from app.core.logging import configure_logging
 from app.schemas.collectors import ManualPriceIngestRequest
 
 JOB_CHOICES = (
@@ -203,7 +204,7 @@ def resolve_jobs_argument(args: argparse.Namespace) -> None:
 
 
 async def main_async() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    configure_logging()
     parser = argparse.ArgumentParser(description="Run SilverPilot collector jobs.")
     parser.add_argument("--loop", action="store_true", help="Run continuously.")
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "900")))

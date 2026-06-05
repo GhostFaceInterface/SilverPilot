@@ -22,6 +22,19 @@ from app.models import (
     RiskDecision,
 )
 
+_CLIENT_RESOURCES = []
+
+
+@pytest.fixture(autouse=True)
+def cleanup_client_resources():
+    yield
+    while _CLIENT_RESOURCES:
+        client, app, engine = _CLIENT_RESOURCES.pop()
+        client.close()
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
 
 def make_client():
     engine = create_engine(
@@ -84,7 +97,9 @@ def make_client():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(app), testing_session
+    client = TestClient(app)
+    _CLIENT_RESOURCES.append((client, app, engine))
+    return client, testing_session
 
 
 def seed_execution_critical_data(testing_session, *, observed_at: datetime | None = None):

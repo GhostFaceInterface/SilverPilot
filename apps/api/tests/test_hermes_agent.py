@@ -457,10 +457,11 @@ async def test_hermes_on_demand_trigger_logic(db_session):
     )
     db_session.add(run)
     db_session.commit()
+    run_id = run.id
 
     # Scenario A: Matching news in the last 24 hours (e.g. 2 hours ago)
     recent_news = RawNews(
-        collector_run_id=run.id,
+        collector_run_id=run_id,
         source="fxstreet-rss",
         title="Recent Silver Spot",
         url="http://example.com/recent",
@@ -481,9 +482,10 @@ async def test_hermes_on_demand_trigger_logic(db_session):
     # Scenario B: No matching news in 24 hours, but latest matching news is within 48 hours (e.g., 36 hours ago)
     db_session.query(RawNews).delete()
     db_session.commit()
+    db_session.expunge_all()
 
     fallback_recent = RawNews(
-        collector_run_id=run.id,
+        collector_run_id=run_id,
         source="fxstreet-rss",
         title="Fallback Silver Spot Recent",
         url="http://example.com/fb_recent",
@@ -504,9 +506,10 @@ async def test_hermes_on_demand_trigger_logic(db_session):
     # Scenario C: No matching news in 24 hours, and latest matching news is older than 48 hours (e.g., 50 hours ago)
     db_session.query(RawNews).delete()
     db_session.commit()
+    db_session.expunge_all()
 
     fallback_old = RawNews(
-        collector_run_id=run.id,
+        collector_run_id=run_id,
         source="fxstreet-rss",
         title="Fallback Silver Spot Old",
         url="http://example.com/fb_old",

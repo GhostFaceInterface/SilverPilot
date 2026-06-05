@@ -655,6 +655,23 @@ async def test_send_telegram_message_does_not_log_token_bearing_exception(caplog
     assert "TelegramError" in caplog.text
 
 
+def test_logging_redacts_telegram_bot_urls_from_dependency_logs(caplog):
+    import logging
+
+    from app.core.logging import configure_logging
+
+    logger = logging.getLogger("httpx")
+    secret_url = "https://api.telegram.org/botSECRET_TOKEN/sendMessage"
+
+    with caplog.at_level("WARNING", logger="httpx"):
+        configure_logging()
+        logger.warning('HTTP Request: POST "%s" "HTTP/1.1 200 OK"', secret_url)
+
+    assert "SECRET_TOKEN" not in caplog.text
+    assert "https://api.telegram.org/botSECRET_TOKEN/sendMessage" not in caplog.text
+    assert "https://api.telegram.org/bot<redacted>/sendMessage" in caplog.text
+
+
 @pytest.mark.anyio
 async def test_set_telegram_webhook_does_not_log_full_webhook_url(caplog):
     from app.agents.telegram_bot import set_telegram_webhook
