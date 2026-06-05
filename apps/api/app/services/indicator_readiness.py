@@ -165,7 +165,7 @@ def get_indicator_readiness(
     if market_bar is not None and market_bar.source not in allowed_sources:
         reasons.append("SOURCE_NOT_ALLOWED")
         status = "degraded"
-    if indicator.calculation_version != CURRENT_INDICATOR_CALCULATION_VERSION:
+    if indicator.calculation_version not in SUPPORTED_INDICATOR_CALCULATION_VERSIONS:
         reasons.append("CALCULATION_VERSION_MISMATCH")
         status = "degraded"
     if indicator.quality_status != "ok":
