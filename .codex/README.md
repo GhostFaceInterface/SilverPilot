@@ -20,6 +20,11 @@ This directory is the project-scoped Codex framework for engineering verificatio
 - It is not a secrets store, deployment credential store, or production automation tool.
 - It does not authorize commit, push, deploy, rollback, production log access, or production database mutation.
 
+## Documentation budget
+- Avoid markdown sprawl.
+- Prefer updating the existing canonical file over creating a new markdown file.
+- Add a new markdown file only when no current canonical source can absorb the change without becoming misleading.
+
 ## Boundary rules
 - Keep Codex framework files inside `.codex/`.
 - Do not modify `.agent/` from this framework.
@@ -128,6 +133,7 @@ bash .codex/scripts/verify-git-clean.sh
 ```
 
 Then use `workflows/commit-readiness.md`. A commit is only a proposal until the user explicitly approves `git add` and `git commit`.
+If the current session already includes explicit release approval, do not stop after tests; continue through commit, push, and deploy once the gates pass.
 
 ## Push readiness
 ```bash
@@ -146,6 +152,7 @@ bash .codex/scripts/verify-tests.sh
 ```
 
 Deployment is only a proposal until the user explicitly approves the exact deploy target and command.
+If the current session already includes explicit release approval and the target is known, continue through the approved deploy flow instead of pausing after validation.
 
 ## Monitor CI
 ```bash

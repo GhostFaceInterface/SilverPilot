@@ -1,5 +1,22 @@
 # Worklog
 
+Implementation routing note.
+
+- Execute from `docs/PHASE_PLAN.md` first.
+- Treat `docs/ROADMAP.md` as historical context only.
+
+## 2026-06-07
+
+Phase 3-5 hardening slice implemented locally.
+
+- Canonical phase authority remains `docs/PHASE_PLAN.md`; `docs/ROADMAP.md` stays archival only.
+- Runtime now consumes synchronized `1d -> 1h -> 5m` layers with fail-closed guards for stale, missing, and misaligned inputs.
+- Deterministic Strategy V2 replaced the simple vote-based execution path.
+- Trade intents are now the required bridge between strategy output and paper-trade execution.
+- Hermes or later agent surfaces can no longer upgrade a deterministic `HOLD` into `BUY`.
+- Local validation passed: targeted strategy, auto-trader, trade-intent, Hermes, indicator-readiness, and paper-trading regressions plus Docker Compose config verification.
+- No new markdown files were created; existing canonical documents were updated instead.
+
 ## 2026-05-12
 
 Phase 0 started.

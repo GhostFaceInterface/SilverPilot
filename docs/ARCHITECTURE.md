@@ -1,6 +1,6 @@
 # Architecture
 
-This file is the canonical architecture overview. Phase details live in `docs/ROADMAP.md`; durable decisions live in `docs/DECISIONS.md`.
+This file is the canonical architecture overview. Phase execution details live in `docs/PHASE_PLAN.md`; durable decisions live in `docs/DECISIONS.md`.
 
 ## Core Principle
 

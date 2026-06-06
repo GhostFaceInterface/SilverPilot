@@ -1,6 +1,7 @@
 import logging
 import html
 import re
+from datetime import UTC, datetime
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,13 +9,17 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import Asset, Portfolio, Signal, AgentMemoryEvent
 from app.services.strategy import StrategyRunner
-from app.paper_trading.service import execute_paper_trade, calculate_position
-from app.schemas.paper_trading import PaperTradeRequest
-from app.services.regime import get_market_regime
-from app.agents.orchestrator import run_blended_consensus_resolution
+from app.paper_trading.service import calculate_position
 from app.services.indicator_readiness import get_latest_indicator_context
+from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
+
+STRATEGY_TIMEFRAME_POLICY = {
+    "1d": 48 * 60,
+    "1h": 3 * 60,
+    "5m": 20,
+}
 
 
 def escape_html_response(text: str) -> str:
@@ -209,7 +214,7 @@ async def run_auto_trading(db: Session = None):
 async def _run_auto_trading_impl(db: Session, settings):
     # 0. Pazartesi Isınma Süresi Kontrolü (Indicator Warmup)
     # Pazar 18:00 - 18:05 ET arası (piyasa açılışının ilk 5 dakikası) işlemler ertelenir
-    from datetime import datetime, timezone
+    from datetime import timezone
     from zoneinfo import ZoneInfo
 
     et_tz = ZoneInfo("America/New_York")
@@ -232,42 +237,32 @@ async def _run_auto_trading_impl(db: Session, settings):
         logger.error("Asset 'XAG_GRAM' not found")
         return
 
-    # 3. Resolve the latest usable indicator from a single synchronized series.
-    indicator_context = get_latest_indicator_context(db, asset_symbol=asset.symbol)
-    readiness = indicator_context.readiness
-    if not readiness.usable or readiness.indicator is None:
-        logger.warning(
-            "Indicator readiness not usable for auto trading; asset=%s status=%s reasons=%s.",
-            asset.symbol,
-            readiness.status,
-            ",".join(readiness.reason_codes) if readiness.reason_codes else "",
-        )
-        return
+    timeframe_contexts = get_strategy_timeframe_contexts(db, asset.symbol)
+    daily_context = timeframe_contexts["1d"]
+    hourly_context = timeframe_contexts["1h"]
+    execution_context = timeframe_contexts["5m"]
+    strategy_readiness_flags = evaluate_timeframe_guardrails(timeframe_contexts)
 
-    latest_indicator = readiness.indicator
-    prev_indicator = indicator_context.previous_indicator
+    latest_indicator = hourly_context.readiness.indicator
+    execution_indicator = execution_context.readiness.indicator
 
-    # Get matching PriceSnapshot for the latest indicator
-    latest_snapshot = latest_indicator.price_snapshot
+    latest_snapshot = execution_indicator.price_snapshot if execution_indicator is not None else None
     if not latest_snapshot:
         from app.models import PriceSnapshot
 
-        latest_snapshot = db.execute(
-            select(PriceSnapshot).where(PriceSnapshot.id == latest_indicator.price_snapshot_id)
-        ).scalar_one_or_none()
+        latest_snapshot_id = execution_context.readiness.price_snapshot_id or hourly_context.readiness.price_snapshot_id
+        if latest_snapshot_id is not None:
+            latest_snapshot = db.execute(
+                select(PriceSnapshot).where(PriceSnapshot.id == latest_snapshot_id)
+            ).scalar_one_or_none()
 
     if not latest_snapshot:
-        logger.error(f"PriceSnapshot not found for indicator ID {latest_indicator.id}")
+        logger.error("PriceSnapshot not found for strategy execution.")
         return
 
     # Get position status
     current_position = calculate_position(db, portfolio.id, asset.id)
     has_open_position = current_position.quantity > 0
-
-    regime_info = {}
-    strategy_votes = {}
-    resolved_stance = "NEUTRAL"
-    resolution_markdown = "Standard Strategy Selected."
 
     # Retrieve latest 'hermes-agent' memory event from db
     latest_event = db.execute(
@@ -277,55 +272,49 @@ async def _run_auto_trading_impl(db: Session, settings):
         .limit(1)
     ).scalar_one_or_none()
 
-    hermes_sentiment = latest_event.value_json if latest_event else None
     news_sentiment = "NEUTRAL"
     if latest_event and latest_event.value_json:
         news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
 
-    # 4. Evaluate strategy
-    if settings.strategy_name == "blended":
-        regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=readiness.timeframe)
-        strategy_votes = StrategyRunner.evaluate_blended_strategies(
-            close=latest_indicator.close_usd_oz,
-            rsi_14=latest_indicator.rsi_14,
-            sma_20=latest_indicator.sma_20,
-            sma_50=latest_indicator.sma_50,
-            prev_sma_20=prev_indicator.sma_20 if prev_indicator else None,
-            prev_sma_50=prev_indicator.sma_50 if prev_indicator else None,
-            bb_lower=latest_indicator.bb_lower_20_2,
-            bb_upper=latest_indicator.bb_upper_20_2,
+    # 4. Evaluate deterministic multi-timeframe strategy.
+    if latest_indicator is None or daily_context.readiness.indicator is None:
+        execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+        strategy_decision = StrategyRunner.evaluate_strategy_v2(
+            daily_close=None,
+            daily_sma_20=None,
+            daily_sma_50=None,
+            entry_close=None,
+            entry_rsi_14=None,
+            entry_sma_20=None,
+            entry_sma_50=None,
+            entry_macd_histogram=None,
+            entry_bb_middle=None,
+            entry_atr_14=None,
             has_open_position=has_open_position,
+            execution_ready=execution_ready,
+            readiness_block_flags=strategy_readiness_flags,
         )
-        # Call Supreme Consensus Engine
-        consensus_event = await run_blended_consensus_resolution(
-            db, regime_info, strategy_votes, latest_snapshot, hermes_sentiment=hermes_sentiment
-        )
-        resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
-        resolution_markdown = consensus_event.value_json.get("resolution_markdown", "No details.")
-
-        # Map stance to action: BULLISH -> BUY, BEARISH -> SELL, NEUTRAL -> HOLD
-        if resolved_stance == "BULLISH":
-            action = "BUY"
-        elif resolved_stance == "BEARISH":
-            action = "SELL"
-        else:
-            action = "HOLD"
-        reason_code = f"BLENDED_{resolved_stance}"
     else:
-        action, reason_code = StrategyRunner.evaluate_all_strategies(
-            close=latest_indicator.close_usd_oz,
-            rsi_14=latest_indicator.rsi_14,
-            sma_20=latest_indicator.sma_20,
-            sma_50=latest_indicator.sma_50,
-            prev_sma_20=prev_indicator.sma_20 if prev_indicator else None,
-            prev_sma_50=prev_indicator.sma_50 if prev_indicator else None,
-            bb_lower=latest_indicator.bb_lower_20_2,
-            bb_upper=latest_indicator.bb_upper_20_2,
+        execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+        strategy_decision = StrategyRunner.evaluate_strategy_v2(
+            daily_close=daily_context.readiness.indicator.close_usd_oz,
+            daily_sma_20=daily_context.readiness.indicator.sma_20,
+            daily_sma_50=daily_context.readiness.indicator.sma_50,
+            entry_close=latest_indicator.close_usd_oz,
+            entry_rsi_14=latest_indicator.rsi_14,
+            entry_sma_20=latest_indicator.sma_20,
+            entry_sma_50=latest_indicator.sma_50,
+            entry_macd_histogram=latest_indicator.macd_histogram,
+            entry_bb_middle=latest_indicator.bb_middle_20_2,
+            entry_atr_14=latest_indicator.atr_14,
             has_open_position=has_open_position,
-            strategy_name=settings.strategy_name,
+            execution_ready=execution_ready,
+            readiness_block_flags=strategy_readiness_flags,
         )
 
-    logger.info(f"Strategy evaluation: action={action}, reason={reason_code}")
+    action = strategy_decision.action
+    reason_code = strategy_decision.reason_code
+    logger.info("Strategy V2 evaluation: action=%s reason=%s.", action, reason_code)
 
     risk_decision_val = "APPROVED"
 
@@ -342,27 +331,18 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     # 5. Create Signal record
     details = {
-        "strategy_name": settings.strategy_name,
-        "rsi_14": float(latest_indicator.rsi_14) if latest_indicator.rsi_14 is not None else None,
-        "sma_20": float(latest_indicator.sma_20) if latest_indicator.sma_20 is not None else None,
-        "sma_50": float(latest_indicator.sma_50) if latest_indicator.sma_50 is not None else None,
-        "bb_lower": float(latest_indicator.bb_lower_20_2) if latest_indicator.bb_lower_20_2 is not None else None,
-        "bb_upper": float(latest_indicator.bb_upper_20_2) if latest_indicator.bb_upper_20_2 is not None else None,
+        "strategy_name": "strategy_v2",
+        "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+        "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+        "agent_sentiment": news_sentiment,
+        "agent_filter_reason": filter_reason or None,
+        **strategy_decision.to_signal_details(),
     }
-    if settings.strategy_name == "blended":
-        details.update(
-            {
-                "regime_info": regime_info,
-                "strategy_votes": strategy_votes,
-                "arbiter_decision": resolved_stance,
-                "arbiter_reason": resolution_markdown,
-            }
-        )
 
     signal = Signal(
         observed_at=latest_snapshot.observed_at,
         price_snapshot_id=latest_snapshot.id,
-        indicator_id=latest_indicator.id,
+        indicator_id=latest_indicator.id if latest_indicator is not None else None,
         action=action,
         reason_code=reason_code,
         price_usd_oz=latest_snapshot.mid_price,
@@ -375,53 +355,59 @@ async def _run_auto_trading_impl(db: Session, settings):
     buy_price = latest_snapshot.buy_price if latest_snapshot.buy_price else latest_snapshot.mid_price
     sell_price = latest_snapshot.sell_price if latest_snapshot.sell_price else latest_snapshot.mid_price
 
-    # 6. Trade execution
+    # 6. Trade execution via trade intents only.
     if action == "BUY" and not has_open_position:
-        cash = portfolio.cash_balance
-        if cash > Decimal("0.05"):
-            request = PaperTradeRequest(
-                portfolio_name="gram-paper",
-                asset_symbol="XAG_GRAM",
-                action="paper_buy",
-                quantity=None,
-                cash_amount=cash,
-                buy_price=buy_price,
-                sell_price=sell_price,
-                fees=Decimal("0.05"),
-                taxes=Decimal("0"),
-            )
-            original_commit = db.commit
-            db.commit = db.flush
-            try:
-                with db.begin_nested():
-                    trade, snapshot = execute_paper_trade(db, request)
-                logger.info(f"Auto trader BUY executed: trade_id={trade.id}, status={trade.action}")
-            except Exception:
-                logger.exception("Failed to execute auto trader BUY")
-            finally:
-                db.commit = original_commit
-        else:
-            logger.warning(f"Insufficient cash balance to buy: {cash}")
-
-    elif action == "SELL" and has_open_position:
-        request = PaperTradeRequest(
+        intent = TradeIntent(
             portfolio_name="gram-paper",
             asset_symbol="XAG_GRAM",
-            action="paper_sell",
-            quantity=current_position.quantity,
-            buy_price=buy_price,
-            sell_price=sell_price,
-            fees=Decimal("0.05"),
-            taxes=Decimal("0"),
+            action="BUY",
+            confidence=strategy_decision.confidence,
+            reason_code=reason_code,
+            stop_loss_price=strategy_decision.stop_loss_price,
+            take_profit_price=strategy_decision.take_profit_price,
+            expected_exit_price=strategy_decision.expected_exit_price,
+            metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
         )
         original_commit = db.commit
         db.commit = db.flush
         try:
             with db.begin_nested():
-                trade, snapshot = execute_paper_trade(db, request)
-            logger.info(f"Auto trader SELL executed: trade_id={trade.id}, status={trade.action}")
+                trade, snapshot = execute_trade_intent(
+                    db,
+                    intent=intent,
+                    buy_price=buy_price,
+                    sell_price=sell_price,
+                    fee_amount=Decimal("0.05"),
+                )
+            logger.info("Auto trader BUY intent executed: trade_id=%s status=%s", trade.id, trade.action)
         except Exception:
-            logger.exception("Failed to execute auto trader SELL")
+            logger.exception("Failed to execute auto trader BUY intent")
+        finally:
+            db.commit = original_commit
+
+    elif action == "SELL" and has_open_position:
+        intent = TradeIntent(
+            portfolio_name="gram-paper",
+            asset_symbol="XAG_GRAM",
+            action="SELL",
+            confidence=strategy_decision.confidence,
+            reason_code=reason_code,
+            metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
+        )
+        original_commit = db.commit
+        db.commit = db.flush
+        try:
+            with db.begin_nested():
+                trade, snapshot = execute_trade_intent(
+                    db,
+                    intent=intent,
+                    buy_price=buy_price,
+                    sell_price=sell_price,
+                    fee_amount=Decimal("0.05"),
+                )
+            logger.info("Auto trader SELL intent executed: trade_id=%s status=%s", trade.id, trade.action)
+        except Exception:
+            logger.exception("Failed to execute auto trader SELL intent")
         finally:
             db.commit = original_commit
 
@@ -434,13 +420,23 @@ async def _run_auto_trading_impl(db: Session, settings):
         "fees": float(trade.fees) if trade else 0.0,
         "cash_balance": float(portfolio.cash_balance),
         "xag_balance": float(current_position.quantity),
-        "strategy_name": settings.strategy_name,
+        "strategy_name": "strategy_v2",
         "indicators": {
-            "rsi": float(latest_indicator.rsi_14) if latest_indicator.rsi_14 is not None else 0.0,
-            "sma_20": float(latest_indicator.sma_20) if latest_indicator.sma_20 is not None else 0.0,
-            "sma_50": float(latest_indicator.sma_50) if latest_indicator.sma_50 is not None else 0.0,
-            "bb_upper": float(latest_indicator.bb_upper_20_2) if latest_indicator.bb_upper_20_2 is not None else 0.0,
-            "bb_lower": float(latest_indicator.bb_lower_20_2) if latest_indicator.bb_lower_20_2 is not None else 0.0,
+            "rsi": float(latest_indicator.rsi_14)
+            if (latest_indicator and latest_indicator.rsi_14 is not None)
+            else 0.0,
+            "sma_20": float(latest_indicator.sma_20)
+            if (latest_indicator and latest_indicator.sma_20 is not None)
+            else 0.0,
+            "sma_50": float(latest_indicator.sma_50)
+            if (latest_indicator and latest_indicator.sma_50 is not None)
+            else 0.0,
+            "bb_upper": float(latest_indicator.bb_upper_20_2)
+            if (latest_indicator and latest_indicator.bb_upper_20_2 is not None)
+            else 0.0,
+            "bb_lower": float(latest_indicator.bb_lower_20_2)
+            if (latest_indicator and latest_indicator.bb_lower_20_2 is not None)
+            else 0.0,
         },
         "risk_decision": {
             "decision": trade.risk_decision.decision,
@@ -451,19 +447,78 @@ async def _run_auto_trading_impl(db: Session, settings):
         else None,
     }
 
-    if settings.strategy_name == "blended":
-        notification_data.update(
-            {
-                "regime_info": regime_info,
-                "strategy_votes": strategy_votes,
-                "arbiter_decision": resolved_stance,
-                "arbiter_reason": resolution_markdown,
-            }
-        )
-
     # Commit transactions
     db.commit()
 
     # 8. Send Telegram message
     is_silent = notification_data["action"] == "HOLD"
     await send_telegram_notification(notification_data, settings, disable_notification=is_silent)
+
+
+def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
+    return {
+        timeframe: get_latest_indicator_context(
+            db,
+            asset_symbol=asset_symbol,
+            timeframe=timeframe,
+            max_age_minutes=max_age_minutes,
+        )
+        for timeframe, max_age_minutes in STRATEGY_TIMEFRAME_POLICY.items()
+    }
+
+
+def evaluate_timeframe_guardrails(timeframe_contexts: dict) -> list[str]:
+    flags: list[str] = []
+    daily_readiness = timeframe_contexts["1d"].readiness
+    hourly_readiness = timeframe_contexts["1h"].readiness
+    execution_readiness = timeframe_contexts["5m"].readiness
+
+    if not daily_readiness.usable or daily_readiness.indicator is None:
+        flags.append("DAILY_TREND_MISSING")
+
+    if hourly_readiness.status == "stale":
+        flags.append("ENTRY_TIMEFRAME_STALE")
+    elif not hourly_readiness.usable or hourly_readiness.indicator is None:
+        flags.append("ENTRY_TIMEFRAME_UNUSABLE")
+
+    if execution_readiness.status == "stale":
+        flags.append("EXECUTION_TIMEFRAME_STALE")
+    elif not execution_readiness.usable or execution_readiness.indicator is None:
+        flags.append("EXECUTION_TIMEFRAME_UNUSABLE")
+
+    aligned_sources = {
+        readiness.source
+        for readiness in (
+            daily_readiness,
+            hourly_readiness,
+            execution_readiness,
+        )
+        if readiness.source is not None
+    }
+    if len(aligned_sources) > 1:
+        flags.append("TIMEFRAME_SOURCE_MISMATCH")
+
+    return flags
+
+
+def summarize_timeframe_inputs(timeframe_contexts: dict) -> dict:
+    summary = {}
+    now = datetime.now(UTC)
+    for timeframe, context in timeframe_contexts.items():
+        readiness = context.readiness
+        age_minutes = None
+        if readiness.bar_timestamp is not None:
+            timestamp = readiness.bar_timestamp
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=UTC)
+            age_minutes = int((now - timestamp).total_seconds() // 60)
+        summary[timeframe] = {
+            "usable": readiness.usable,
+            "status": readiness.status,
+            "source": readiness.source,
+            "reason_codes": list(readiness.reason_codes),
+            "age_minutes": age_minutes,
+            "indicator_id": readiness.indicator_id,
+            "bar_timestamp": readiness.bar_timestamp.isoformat() if readiness.bar_timestamp is not None else None,
+        }
+    return summary

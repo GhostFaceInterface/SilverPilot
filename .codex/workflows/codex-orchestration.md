@@ -127,6 +127,9 @@ The following actions require explicit user approval:
 - Any command that may expose or alter secrets
 
 Codex may propose exact commands, but must not execute them without approval.
+When the current session already includes explicit release approval, Codex
+should continue through commit, push, deploy, and approved smoke checks once
+validation gates pass instead of stopping after the first green test run.
 
 ## 8. Completion Report
 

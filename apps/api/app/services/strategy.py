@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, TYPE_CHECKING
 from sqlalchemy.orm import Session
@@ -10,6 +11,44 @@ if TYPE_CHECKING:
 StrategyType = Literal[
     "rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents", "blended"
 ]
+
+CONFIDENCE_QUANT = Decimal("0.0001")
+
+
+@dataclass(frozen=True)
+class StrategyDecision:
+    action: str
+    reason_code: str
+    confidence: Decimal
+    trend_state: str
+    entry_state: str
+    execution_state: str
+    buy_score: Decimal
+    sell_score: Decimal
+    component_scores: dict[str, float]
+    readiness_block_flags: list[str]
+    stop_loss_price: Decimal | None
+    take_profit_price: Decimal | None
+    expected_exit_price: Decimal | None
+    exit_metadata: dict[str, str | float | None]
+
+    def to_signal_details(self) -> dict:
+        return {
+            "action": self.action,
+            "reason_code": self.reason_code,
+            "confidence": float(self.confidence),
+            "trend_state": self.trend_state,
+            "entry_state": self.entry_state,
+            "execution_state": self.execution_state,
+            "buy_score": float(self.buy_score),
+            "sell_score": float(self.sell_score),
+            "component_scores": self.component_scores,
+            "readiness_block_flags": list(self.readiness_block_flags),
+            "stop_loss_price": float(self.stop_loss_price) if self.stop_loss_price is not None else None,
+            "take_profit_price": float(self.take_profit_price) if self.take_profit_price is not None else None,
+            "expected_exit_price": float(self.expected_exit_price) if self.expected_exit_price is not None else None,
+            "exit_metadata": self.exit_metadata,
+        }
 
 
 class StrategyRunner:
@@ -192,6 +231,278 @@ class StrategyRunner:
             return "HOLD", "UNKNOWN_STRATEGY"
 
     @classmethod
+    def classify_trend(
+        cls,
+        *,
+        close: Decimal | float | None,
+        sma_20: Decimal | float | None,
+        sma_50: Decimal | float | None,
+    ) -> str:
+        if cls._is_invalid(close) or cls._is_invalid(sma_20) or cls._is_invalid(sma_50):
+            return "MISSING"
+
+        close_value = float(close)
+        sma_20_value = float(sma_20)
+        sma_50_value = float(sma_50)
+
+        if sma_20_value > sma_50_value and close_value >= sma_20_value:
+            return "BULLISH"
+        if sma_20_value < sma_50_value and close_value <= sma_20_value:
+            return "BEARISH"
+        return "NEUTRAL"
+
+    @classmethod
+    def evaluate_strategy_v2(
+        cls,
+        *,
+        daily_close: Decimal | float | None,
+        daily_sma_20: Decimal | float | None,
+        daily_sma_50: Decimal | float | None,
+        entry_close: Decimal | float | None,
+        entry_rsi_14: Decimal | float | None,
+        entry_sma_20: Decimal | float | None,
+        entry_sma_50: Decimal | float | None,
+        entry_macd_histogram: Decimal | float | None,
+        entry_bb_middle: Decimal | float | None,
+        entry_atr_14: Decimal | float | None,
+        has_open_position: bool,
+        execution_ready: bool = True,
+        readiness_block_flags: list[str] | None = None,
+    ) -> StrategyDecision:
+        block_flags = list(readiness_block_flags or [])
+        if not execution_ready and "EXECUTION_TIMEFRAME_STALE" not in block_flags:
+            block_flags.append("EXECUTION_TIMEFRAME_STALE")
+
+        if "TIMEFRAME_SOURCE_MISMATCH" in block_flags:
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="TIMEFRAME_SOURCE_MISMATCH",
+                confidence=Decimal("0.9900"),
+                trend_state="BLOCKED",
+                entry_state="BLOCKED",
+                execution_state="BLOCKED",
+                buy_score=Decimal("0.0000"),
+                sell_score=Decimal("0.0000"),
+                component_scores={},
+                readiness_block_flags=block_flags,
+                stop_loss_price=None,
+                take_profit_price=None,
+                expected_exit_price=None,
+                exit_metadata={"mode": "fail_closed", "reason": "timeframe_source_mismatch"},
+            )
+
+        if "ENTRY_TIMEFRAME_STALE" in block_flags or "ENTRY_TIMEFRAME_UNUSABLE" in block_flags:
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="ENTRY_TIMEFRAME_STALE"
+                if "ENTRY_TIMEFRAME_STALE" in block_flags
+                else "ENTRY_TIMEFRAME_UNUSABLE",
+                confidence=Decimal("0.9800"),
+                trend_state="BLOCKED",
+                entry_state="BLOCKED",
+                execution_state="READY" if execution_ready else "BLOCKED",
+                buy_score=Decimal("0.0000"),
+                sell_score=Decimal("0.0000"),
+                component_scores={},
+                readiness_block_flags=block_flags,
+                stop_loss_price=None,
+                take_profit_price=None,
+                expected_exit_price=None,
+                exit_metadata={"mode": "fail_closed", "reason": "entry_timeframe_not_usable"},
+            )
+
+        trend_state = cls.classify_trend(close=daily_close, sma_20=daily_sma_20, sma_50=daily_sma_50)
+        if trend_state == "MISSING":
+            if "DAILY_TREND_MISSING" not in block_flags:
+                block_flags.append("DAILY_TREND_MISSING")
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="DAILY_TREND_MISSING",
+                confidence=Decimal("0.9900"),
+                trend_state=trend_state,
+                entry_state="BLOCKED",
+                execution_state="READY" if execution_ready else "BLOCKED",
+                buy_score=Decimal("0.0000"),
+                sell_score=Decimal("0.0000"),
+                component_scores={},
+                readiness_block_flags=block_flags,
+                stop_loss_price=None,
+                take_profit_price=None,
+                expected_exit_price=None,
+                exit_metadata={"mode": "fail_closed", "reason": "missing_daily_trend"},
+            )
+
+        buy_score = Decimal("0.0000")
+        sell_score = Decimal("0.0000")
+        component_scores: dict[str, float] = {}
+        buy_components = 0
+        sell_components = 0
+
+        if not cls._is_invalid(entry_sma_20) and not cls._is_invalid(entry_sma_50):
+            if float(entry_sma_20) > float(entry_sma_50):
+                buy_score += Decimal("1.1000")
+                buy_components += 1
+                component_scores["hour_sma_trend_buy"] = 1.1
+            elif float(entry_sma_20) < float(entry_sma_50):
+                sell_score += Decimal("1.1000")
+                sell_components += 1
+                component_scores["hour_sma_trend_sell"] = 1.1
+
+        if not cls._is_invalid(entry_macd_histogram):
+            if float(entry_macd_histogram) > 0:
+                buy_score += Decimal("0.9000")
+                buy_components += 1
+                component_scores["hour_macd_buy"] = 0.9
+            elif float(entry_macd_histogram) < 0:
+                sell_score += Decimal("0.9000")
+                sell_components += 1
+                component_scores["hour_macd_sell"] = 0.9
+
+        if not cls._is_invalid(entry_rsi_14):
+            rsi = float(entry_rsi_14)
+            if 45.0 <= rsi <= 62.0:
+                buy_score += Decimal("0.6000")
+                buy_components += 1
+                component_scores["hour_rsi_trend_buy"] = 0.6
+            elif 38.0 <= rsi < 45.0:
+                buy_score += Decimal("0.4000")
+                buy_components += 1
+                component_scores["hour_rsi_recovery_buy"] = 0.4
+            elif rsi < 30.0:
+                buy_score += Decimal("0.3000")
+                buy_components += 1
+                component_scores["hour_rsi_oversold_buy"] = 0.3
+            elif rsi >= 68.0:
+                sell_score += Decimal("0.7000")
+                sell_components += 1
+                component_scores["hour_rsi_exit_sell"] = 0.7
+
+        if not cls._is_invalid(entry_close) and not cls._is_invalid(entry_bb_middle):
+            if float(entry_close) >= float(entry_bb_middle):
+                buy_score += Decimal("0.4000")
+                buy_components += 1
+                component_scores["hour_price_above_mid_buy"] = 0.4
+            else:
+                sell_score += Decimal("0.4000")
+                sell_components += 1
+                component_scores["hour_price_below_mid_sell"] = 0.4
+
+        atr_value = None if cls._is_invalid(entry_atr_14) else Decimal(str(entry_atr_14))
+        close_value = None if cls._is_invalid(entry_close) else Decimal(str(entry_close))
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        if not execution_ready:
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="EXECUTION_TIMEFRAME_STALE",
+                confidence=Decimal("0.9700"),
+                trend_state=trend_state,
+                entry_state="READY",
+                execution_state="BLOCKED",
+                buy_score=buy_score.quantize(CONFIDENCE_QUANT),
+                sell_score=sell_score.quantize(CONFIDENCE_QUANT),
+                component_scores=component_scores,
+                readiness_block_flags=block_flags,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                expected_exit_price=expected_exit_price,
+                exit_metadata={"mode": "fail_closed", "reason": "stale_execution_timeframe"},
+            )
+
+        if trend_state == "BEARISH" and not has_open_position and buy_score >= Decimal("2.0000"):
+            if "DAILY_TREND_DOWN_BUY_BLOCK" not in block_flags:
+                block_flags.append("DAILY_TREND_DOWN_BUY_BLOCK")
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="DAILY_TREND_DOWN_BUY_BLOCK",
+                confidence=Decimal("0.9300"),
+                trend_state=trend_state,
+                entry_state="BLOCKED",
+                execution_state="READY",
+                buy_score=buy_score.quantize(CONFIDENCE_QUANT),
+                sell_score=sell_score.quantize(CONFIDENCE_QUANT),
+                component_scores=component_scores,
+                readiness_block_flags=block_flags,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                expected_exit_price=expected_exit_price,
+                exit_metadata={"mode": "trend_filter", "reason": "daily_downtrend_blocks_buy"},
+            )
+
+        buy_ready = buy_score >= Decimal("2.0000") and buy_components >= 2
+        sell_ready = sell_score >= Decimal("2.0000") and sell_components >= 2
+
+        if not has_open_position and buy_ready:
+            confidence = min(Decimal("0.9900"), Decimal("0.5500") + (buy_score / Decimal("4.0")))
+            return StrategyDecision(
+                action="BUY",
+                reason_code="STRATEGY_V2_BUY_CONFIRMED",
+                confidence=confidence.quantize(CONFIDENCE_QUANT),
+                trend_state=trend_state,
+                entry_state="BUY_READY",
+                execution_state="READY",
+                buy_score=buy_score.quantize(CONFIDENCE_QUANT),
+                sell_score=sell_score.quantize(CONFIDENCE_QUANT),
+                component_scores=component_scores,
+                readiness_block_flags=block_flags,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                expected_exit_price=expected_exit_price,
+                exit_metadata={"mode": "atr_targets", "reason": "hourly_score_confirmed"},
+            )
+
+        if has_open_position and sell_ready:
+            confidence = min(Decimal("0.9900"), Decimal("0.5500") + (sell_score / Decimal("4.0")))
+            return StrategyDecision(
+                action="SELL",
+                reason_code="STRATEGY_V2_SELL_CONFIRMED",
+                confidence=confidence.quantize(CONFIDENCE_QUANT),
+                trend_state=trend_state,
+                entry_state="SELL_READY",
+                execution_state="READY",
+                buy_score=buy_score.quantize(CONFIDENCE_QUANT),
+                sell_score=sell_score.quantize(CONFIDENCE_QUANT),
+                component_scores=component_scores,
+                readiness_block_flags=block_flags,
+                stop_loss_price=None,
+                take_profit_price=None,
+                expected_exit_price=None,
+                exit_metadata={"mode": "position_exit", "reason": "hourly_score_exit"},
+            )
+
+        hold_reason = "STRATEGY_V2_NO_EDGE"
+        if not has_open_position and not buy_ready and buy_components == 1:
+            hold_reason = "STRATEGY_V2_INSUFFICIENT_CONFIRMATION"
+        elif has_open_position and not sell_ready:
+            hold_reason = "STRATEGY_V2_HOLD_POSITION"
+
+        confidence = min(Decimal("0.9500"), Decimal("0.5000") + (max(buy_score, sell_score) / Decimal("5.0")))
+        return StrategyDecision(
+            action="HOLD",
+            reason_code=hold_reason,
+            confidence=confidence.quantize(CONFIDENCE_QUANT),
+            trend_state=trend_state,
+            entry_state="NO_EDGE",
+            execution_state="READY",
+            buy_score=buy_score.quantize(CONFIDENCE_QUANT),
+            sell_score=sell_score.quantize(CONFIDENCE_QUANT),
+            component_scores=component_scores,
+            readiness_block_flags=block_flags,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata={"mode": "stand_aside", "reason": "score_below_threshold"},
+        )
+
+    @classmethod
     def apply_agent_filters(
         cls,
         action: str,
@@ -200,11 +511,8 @@ class StrategyRunner:
         db: Session | None = None,
     ) -> tuple[str, str]:
         """
-        Applies agent filters (news sentiment and risk decision) to the strategy action.
-        Vetoes BUY action to HOLD if news_sentiment is BEARISH or risk_decision is REJECTED.
-        Also checks hermes-agent weighted sentiment score and vetoes to HOLD if below threshold.
-        Promotes HOLD to BUY if latest Hermes news sentiment score is >= hermes_boost_threshold
-        (only if not rejected by risk decision).
+        Applies agent vetoes to the strategy action.
+        BUY can be downgraded to HOLD, but HOLD is never upgraded to BUY.
         """
         if db is not None:
             from app.models.entities import AgentMemoryEvent
@@ -230,13 +538,6 @@ class StrategyRunner:
                     score_dec = Decimal(str(score_val))
                     if action == "BUY" and score_dec < settings.hermes_veto_threshold:
                         return "HOLD", "AGENT_VETO_HERMES_BEARISH_NEWS"
-                    elif (
-                        action == "HOLD"
-                        and risk_decision != "REJECTED"
-                        and score_dec >= settings.hermes_boost_threshold
-                    ):
-                        return "BUY", "AGENT_BOOST_HERMES_BULLISH_NEWS"
-
         if action == "BUY":
             if news_sentiment == "BEARISH":
                 return "HOLD", "AGENT_VETO_BEARISH_NEWS"

@@ -199,3 +199,39 @@ class TestStrategyRunnerAllRouting:
         )
         assert action == "HOLD"
         assert reason == "UNKNOWN_STRATEGY"
+
+
+class TestStrategyRunnerV2:
+    def test_single_oversold_rsi_cannot_buy_by_itself(self):
+        decision = StrategyRunner.evaluate_strategy_v2(
+            daily_close=30.0,
+            daily_sma_20=29.0,
+            daily_sma_50=28.0,
+            entry_close=28.0,
+            entry_rsi_14=25.0,
+            entry_sma_20=28.0,
+            entry_sma_50=28.0,
+            entry_macd_histogram=0.0,
+            entry_bb_middle=29.0,
+            entry_atr_14=0.4,
+            has_open_position=False,
+        )
+        assert decision.action == "HOLD"
+        assert decision.reason_code == "STRATEGY_V2_INSUFFICIENT_CONFIRMATION"
+
+    def test_daily_trend_down_blocks_buy(self):
+        decision = StrategyRunner.evaluate_strategy_v2(
+            daily_close=28.0,
+            daily_sma_20=29.0,
+            daily_sma_50=30.0,
+            entry_close=30.0,
+            entry_rsi_14=52.0,
+            entry_sma_20=30.0,
+            entry_sma_50=29.0,
+            entry_macd_histogram=0.3,
+            entry_bb_middle=29.5,
+            entry_atr_14=0.4,
+            has_open_position=False,
+        )
+        assert decision.action == "HOLD"
+        assert decision.reason_code == "DAILY_TREND_DOWN_BUY_BLOCK"

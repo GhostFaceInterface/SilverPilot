@@ -1,5 +1,10 @@
 # Roadmap
 
+> [!WARNING]
+> This file is archival only. Do not use it for current implementation routing,
+> phase authority, or execution order. `docs/PHASE_PLAN.md` is the only active
+> execution artifact.
+
 This file is the canonical delivery roadmap for SilverPilot. It should describe what gets built, in what order, and which validation gates must pass before moving forward.
 
 ## Current Position

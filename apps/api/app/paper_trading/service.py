@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_DOWN
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, RawFxRate
+from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, RawFxRate, RiskDecision
 from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
 
@@ -42,6 +42,22 @@ class TradeCostBreakdown:
 
 
 def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperTrade, PortfolioSnapshot]:
+    return _execute_paper_trade(db, request, precomputed_risk_decision=None)
+
+
+def execute_paper_trade_with_risk_decision(
+    db: Session,
+    request: PaperTradeRequest,
+    risk_decision: RiskDecision,
+) -> tuple[PaperTrade, PortfolioSnapshot]:
+    return _execute_paper_trade(db, request, precomputed_risk_decision=risk_decision)
+
+
+def _execute_paper_trade(
+    db: Session,
+    request: PaperTradeRequest,
+    precomputed_risk_decision: RiskDecision | None,
+) -> tuple[PaperTrade, PortfolioSnapshot]:
     portfolio = _get_portfolio(db, request.portfolio_name, lock=True)
     if portfolio.is_real_money:
         raise PaperTradingError("Real-money portfolios are not allowed in SilverPilot")
@@ -79,7 +95,7 @@ def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperT
     cost_breakdown = _calculate_cost_breakdown(
         request, quantity=quantity, gross_amount=gross_amount, net_amount=net_amount
     )
-    risk_decision = evaluate_paper_trade_risk(
+    risk_decision = precomputed_risk_decision or evaluate_paper_trade_risk(
         db,
         request=request,
         portfolio=portfolio,

@@ -1,321 +1,321 @@
 import datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
+
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.db import Base
 from app.core.config import Settings
-from app.models import Asset, Portfolio, PriceSnapshot, TechnicalIndicator, Signal, PaperTrade, RiskDecision
+from app.core.db import Base
+from app.models import Asset, PaperTrade, Portfolio, PriceSnapshot, RiskDecision, Signal, TechnicalIndicator
 from app.services.auto_trader import run_auto_trading
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
 
-def _ready_indicator_context(indicator: TechnicalIndicator) -> IndicatorContext:
+def _make_context(
+    indicator: TechnicalIndicator | None,
+    *,
+    timeframe: str,
+    usable: bool = True,
+    status: str = "ready",
+    reason_codes: list[str] | None = None,
+    source: str = "yahoo-si-f",
+) -> IndicatorContext:
     readiness = IndicatorReadiness(
         asset_symbol="XAG_GRAM",
-        timeframe=indicator.timeframe,
-        status="ready",
-        usable=True,
-        reason_codes=[],
+        timeframe=timeframe,
+        status=status,
+        usable=usable,
+        reason_codes=reason_codes or [],
         required_min_bar_count=1,
         required_fields=(),
         indicator=indicator,
-        indicator_id=indicator.id,
-        market_bar_id=indicator.market_bar_id,
-        price_snapshot_id=indicator.price_snapshot_id,
-        source=indicator.price_snapshot.source if indicator.price_snapshot else "yahoo-si-f",
-        bar_timestamp=indicator.bar_timestamp,
+        indicator_id=indicator.id if indicator is not None else None,
+        market_bar_id=indicator.market_bar_id if indicator is not None else None,
+        price_snapshot_id=indicator.price_snapshot_id if indicator is not None else None,
+        source=source,
+        bar_timestamp=indicator.bar_timestamp if indicator is not None else None,
         age_seconds=0,
         freshness_minutes=60,
-        calculation_version=indicator.calculation_version,
-        quality_status="ok",
-        input_bar_count=indicator.input_bar_count,
+        calculation_version=indicator.calculation_version if indicator is not None else None,
+        quality_status="ok" if indicator is not None else None,
+        input_bar_count=indicator.input_bar_count if indicator is not None else None,
         missing_required_fields=[],
-        close_usd_oz=indicator.close_usd_oz,
+        close_usd_oz=indicator.close_usd_oz if indicator is not None else None,
     )
     return IndicatorContext(readiness=readiness, previous_indicator=None)
 
 
-@pytest.mark.anyio
-async def test_auto_trading_disabled():
-    # Setup database
+def _seed_runtime_state():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    testing_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
-    db = TestingSession()
+    db = testing_session()
 
-    # Override settings
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+    db.add(asset)
+    db.flush()
+
+    portfolio = Portfolio(
+        name="gram-paper",
+        base_currency="USD",
+        initial_cash=Decimal("600.00"),
+        cash_balance=Decimal("600.00"),
+        is_real_money=False,
+    )
+    db.add(portfolio)
+    db.flush()
+
+    snapshots = {}
+    indicators = {}
+    for timeframe, price in (("1d", Decimal("31.00")), ("1h", Decimal("30.00")), ("5m", Decimal("30.20"))):
+        snapshot = PriceSnapshot(
+            asset_id=asset.id,
+            source="yahoo-si-f",
+            buy_price=price + Decimal("0.05"),
+            sell_price=price - Decimal("0.05"),
+            mid_price=price,
+            currency="USD",
+            spread_absolute=Decimal("0.10"),
+            spread_percent=Decimal("0.33"),
+            observed_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        db.add(snapshot)
+        db.flush()
+        indicator = TechnicalIndicator(
+            price_snapshot_id=snapshot.id,
+            bar_timestamp=datetime.datetime.now(datetime.timezone.utc),
+            timeframe=timeframe,
+            calculation_version="technical-indicators-v2",
+            input_bar_count=100,
+            quality_status="ok",
+            close_usd_oz=price,
+            rsi_14=Decimal("50.00"),
+            macd_histogram=Decimal("0.2000"),
+            bb_middle_20_2=price - Decimal("0.10"),
+            bb_upper_20_2=price + Decimal("1.00"),
+            bb_lower_20_2=price - Decimal("1.00"),
+            sma_20=price - Decimal("0.20"),
+            sma_50=price - Decimal("0.50"),
+            atr_14=Decimal("0.40"),
+        )
+        db.add(indicator)
+        db.flush()
+        snapshots[timeframe] = snapshot
+        indicators[timeframe] = indicator
+
+    db.commit()
+    return engine, db, asset, portfolio, snapshots, indicators
+
+
+@pytest.mark.anyio
+async def test_auto_trading_disabled():
+    engine, db, _, _, _, _ = _seed_runtime_state()
     settings = Settings(
-        auto_trading_enabled=False, strategy_name="rsi", telegram_bot_token="test_token", telegram_chat_id=12345
+        auto_trading_enabled=False,
+        strategy_name="rsi",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
     )
 
     with patch("app.services.auto_trader.get_settings", return_value=settings):
-        # We don't seed anything. If it's enabled it would fail/query. Since it's disabled, it should return early.
         await run_auto_trading(db)
 
     db.close()
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 @pytest.mark.anyio
-async def test_auto_trading_buy_signal():
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = TestingSession()
-
-    # 1. Seed critical asset and portfolio
-    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
-    db.add(asset)
-    db.flush()
-
-    portfolio = Portfolio(
-        name="gram-paper",
-        base_currency="USD",
-        initial_cash=Decimal("2500.00"),
-        cash_balance=Decimal("2500.00"),
-        is_real_money=False,
-    )
-    db.add(portfolio)
-    db.flush()
-
-    db.add(
-        PriceSnapshot(
-            asset_id=asset.id,
-            source="tcmb-today-xml",
-            buy_price=Decimal("32.00"),
-            sell_price=Decimal("32.00"),
-            mid_price=Decimal("32.00"),
-            currency="TRY",
-            spread_absolute=Decimal("0.0"),
-            spread_percent=Decimal("0.0"),
-            observed_at=datetime.datetime.now(datetime.timezone.utc),
-        )
-    )
-    db.flush()
-
-    # 2. Seed price snapshot and indicator for buy signal (RSI < 30)
-    snapshot = PriceSnapshot(
-        asset_id=asset.id,
-        source="yahoo-si-f",
-        buy_price=Decimal("30.00"),
-        sell_price=Decimal("29.90"),
-        mid_price=Decimal("29.95"),
-        currency="USD",
-        spread_absolute=Decimal("0.10"),
-        spread_percent=Decimal("0.33"),
-        observed_at=datetime.datetime.now(datetime.timezone.utc),
-    )
-    db.add(snapshot)
-    db.flush()
-
-    indicator = TechnicalIndicator(
-        price_snapshot_id=snapshot.id,
-        bar_timestamp=datetime.datetime.now(datetime.timezone.utc),
-        timeframe="15m",
-        close_usd_oz=Decimal("29.95"),
-        rsi_14=Decimal("25.00"),  # Oversold!
-        bb_upper_20_2=Decimal("35.00"),
-        bb_lower_20_2=Decimal("28.00"),
-        sma_20=Decimal("31.00"),
-        sma_50=Decimal("32.00"),
-    )
-    db.add(indicator)
-    db.commit()
-
-    # Settings setup
+async def test_auto_trading_uses_strategy_v2_and_trade_intent():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
     settings = Settings(
-        auto_trading_enabled=True, strategy_name="rsi", telegram_bot_token="test_token", telegram_chat_id=12345
+        auto_trading_enabled=True,
+        strategy_name="rsi",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
     )
-
-    # Risk decision mock
-    mock_risk = RiskDecision(
-        decision="allow", reason_code="RISK_CHECK_PASSED", risk_level="low", confidence=Decimal("1.0"), details_json={}
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+    allow_decision = RiskDecision(
+        decision="allow",
+        reason_code="RISK_CHECK_PASSED",
+        risk_level="low",
+        confidence=Decimal("1.0000"),
+        details_json={},
     )
+    db.add(allow_decision)
+    db.flush()
 
     with (
         patch("app.services.auto_trader.get_settings", return_value=settings),
-        patch(
-            "app.services.auto_trader.get_latest_indicator_context", return_value=_ready_indicator_context(indicator)
-        ),
-        patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
-        patch("app.services.telegram.Bot") as MockBot,
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.trade_intents.evaluate_paper_trade_risk", return_value=allow_decision),
+        patch("app.services.telegram.Bot") as bot_cls,
     ):
-        mock_bot_instance = AsyncMock()
-        MockBot.return_value = mock_bot_instance
+        bot = AsyncMock()
+        bot_cls.return_value = bot
 
-        # Run auto trading
         await run_auto_trading(db)
 
-        # Check Signal record created
-        signal = db.execute(select(Signal).where(Signal.action == "BUY")).scalar_one_or_none()
-        assert signal is not None
-        assert signal.reason_code == "RSI_OVERSOLD"
-        assert signal.price_snapshot_id == snapshot.id
-        assert signal.indicator_id == indicator.id
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "BUY"
+        assert signal.reason_code == "STRATEGY_V2_BUY_CONFIRMED"
+        assert signal.details_json["strategy_name"] == "strategy_v2"
+        assert signal.details_json["timeframe_policy"] == {"trend": "1d", "entry": "1h", "execution": "5m"}
+        assert signal.details_json["stop_loss_price"] is not None
+        assert signal.details_json["take_profit_price"] is not None
 
-        # Check PaperTrade record created
-        trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one_or_none()
-        assert trade is not None
-        assert trade.price == Decimal("30.000000")
-        assert trade.fees == Decimal("0.050000")
-
-        # Verify portfolio cash balance updated
-        assert portfolio.cash_balance == Decimal("0.000000")
-
-        # Verify telegram message was sent
-        mock_bot_instance.send_message.assert_called_once()
-        sent_text = mock_bot_instance.send_message.call_args[1]["text"]
-        assert "SilverPilot Auto-Trading Raporu" in sent_text
-        assert "ALIM (BUY)" in sent_text
-        assert "XAG_GRAM" in sent_text
+        trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one()
+        assert trade.risk_decision.reason_code == "RISK_CHECK_PASSED"
+        assert portfolio.cash_balance < Decimal("0.001000")
+        bot.send_message.assert_called_once()
 
     db.close()
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 @pytest.mark.anyio
-async def test_auto_trading_sell_signal():
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = TestingSession()
-
-    # 1. Seed critical asset and portfolio
-    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
-    db.add(asset)
-    db.flush()
-
-    portfolio = Portfolio(
-        name="gram-paper",
-        base_currency="USD",
-        initial_cash=Decimal("2500.00"),
-        cash_balance=Decimal("100.00"),  # Already invested mostly
-        is_real_money=False,
-    )
-    db.add(portfolio)
-    db.flush()
-
-    db.add(
-        PriceSnapshot(
-            asset_id=asset.id,
-            source="tcmb-today-xml",
-            buy_price=Decimal("32.00"),
-            sell_price=Decimal("32.00"),
-            mid_price=Decimal("32.00"),
-            currency="TRY",
-            spread_absolute=Decimal("0.0"),
-            spread_percent=Decimal("0.0"),
-            observed_at=datetime.datetime.now(datetime.timezone.utc),
-        )
-    )
-    db.flush()
-
-    # 2. Seed open position of 15 XAG
-    # To have an open position, we need to add a successful trade
-    mock_risk_decision = RiskDecision(
-        decision="allow", reason_code="RISK_CHECK_PASSED", risk_level="low", confidence=Decimal("1.0"), details_json={}
-    )
-    db.add(mock_risk_decision)
-    db.flush()
-
-    buy_trade = PaperTrade(
-        portfolio_id=portfolio.id,
-        asset_id=asset.id,
-        action="paper_buy",
-        quantity=Decimal("15.000000"),
-        price=Decimal("30.000000"),
-        gross_amount=Decimal("450.000000"),
-        fees=Decimal("0.050000"),
-        taxes=Decimal("0.000000"),
-        net_amount=Decimal("450.050000"),
-        risk_decision_id=mock_risk_decision.id,
-    )
-    db.add(buy_trade)
-    db.flush()
-
-    # 3. Seed price snapshot and indicator for sell signal (RSI > 70)
-    snapshot = PriceSnapshot(
-        asset_id=asset.id,
-        source="yahoo-si-f",
-        buy_price=Decimal("35.00"),
-        sell_price=Decimal("34.90"),
-        mid_price=Decimal("34.95"),
-        currency="USD",
-        spread_absolute=Decimal("0.10"),
-        spread_percent=Decimal("0.28"),
-        observed_at=datetime.datetime.now(datetime.timezone.utc),
-    )
-    db.add(snapshot)
-    db.flush()
-
-    indicator = TechnicalIndicator(
-        price_snapshot_id=snapshot.id,
-        bar_timestamp=datetime.datetime.now(datetime.timezone.utc),
-        timeframe="15m",
-        close_usd_oz=Decimal("34.95"),
-        rsi_14=Decimal("75.00"),  # Overbought!
-        bb_upper_20_2=Decimal("33.00"),
-        bb_lower_20_2=Decimal("26.00"),
-        sma_20=Decimal("29.00"),
-        sma_50=Decimal("28.00"),
-    )
-    db.add(indicator)
-    db.commit()
-
-    # Settings setup
-    settings = Settings(
-        auto_trading_enabled=True, strategy_name="rsi", telegram_bot_token="test_token", telegram_chat_id=12345
-    )
+async def test_auto_trading_holds_when_daily_trend_missing():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(auto_trading_enabled=True, telegram_bot_token="token", telegram_chat_id=1)
+    contexts = {
+        "1d": _make_context(None, timeframe="1d", usable=False, status="empty", reason_codes=["INDICATOR_NOT_FOUND"]),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
 
     with (
         patch("app.services.auto_trader.get_settings", return_value=settings),
-        patch(
-            "app.services.auto_trader.get_latest_indicator_context", return_value=_ready_indicator_context(indicator)
-        ),
-        patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk_decision),
-        patch("app.services.telegram.Bot") as MockBot,
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
     ):
-        mock_bot_instance = AsyncMock()
-        MockBot.return_value = mock_bot_instance
+        bot = AsyncMock()
+        bot_cls.return_value = bot
 
-        # Run auto trading
         await run_auto_trading(db)
 
-        # Check Signal record created
-        signal = db.execute(select(Signal).where(Signal.action == "SELL")).scalar_one_or_none()
-        assert signal is not None
-        assert signal.reason_code == "RSI_OVERBOUGHT"
-
-        # Check PaperTrade record created
-        trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_sell")).scalar_one_or_none()
-        assert trade is not None
-        assert trade.price == Decimal("34.900000")
-        assert trade.fees == Decimal("0.050000")
-        assert trade.quantity == Decimal("15.00")
-
-        # Verify portfolio cash balance updated (100 + net_amount)
-        assert portfolio.cash_balance == Decimal("623.450000")
-
-        # Verify telegram message was sent
-        mock_bot_instance.send_message.assert_called_once()
-        sent_text = mock_bot_instance.send_message.call_args[1]["text"]
-        assert "SATIM (SELL)" in sent_text
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "DAILY_TREND_MISSING"
+        assert signal.details_json["readiness_block_flags"] == ["DAILY_TREND_MISSING"]
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
 
     db.close()
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_holds_when_execution_timeframe_stale():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(auto_trading_enabled=True, telegram_bot_token="token", telegram_chat_id=1)
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(
+            indicators["5m"], timeframe="5m", usable=False, status="stale", reason_codes=["INDICATOR_STALE"]
+        ),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "EXECUTION_TIMEFRAME_STALE"
+        assert "EXECUTION_TIMEFRAME_STALE" in signal.details_json["readiness_block_flags"]
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_holds_when_entry_timeframe_stale():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(auto_trading_enabled=True, telegram_bot_token="token", telegram_chat_id=1)
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(
+            indicators["1h"], timeframe="1h", usable=False, status="stale", reason_codes=["INDICATOR_STALE"]
+        ),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "ENTRY_TIMEFRAME_STALE"
+        assert "ENTRY_TIMEFRAME_STALE" in signal.details_json["readiness_block_flags"]
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_holds_when_timeframe_sources_do_not_align():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(auto_trading_enabled=True, telegram_bot_token="token", telegram_chat_id=1)
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d", source="yahoo-si-f"),
+        "1h": _make_context(indicators["1h"], timeframe="1h", source="gold-api-xag-usd"),
+        "5m": _make_context(indicators["5m"], timeframe="5m", source="yahoo-si-f"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "TIMEFRAME_SOURCE_MISMATCH"
+        assert "TIMEFRAME_SOURCE_MISMATCH" in signal.details_json["readiness_block_flags"]
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()

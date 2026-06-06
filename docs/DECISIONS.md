@@ -4,7 +4,7 @@
 
 Status: accepted.
 
-Use one canonical development memory (`.agent/memory/`) and short `.agent/agents/*.md` files. Separate large memory banks per agent are rejected because they create synchronization and duplication risk.
+Use one canonical development memory and short canonical documents. Separate large memory banks per agent are rejected because they create synchronization and duplication risk.
 
 ## D-002: Backend Owns Decisions
 
@@ -77,6 +77,8 @@ Paid market-data APIs are disabled for MVP. Collectors may use official free API
 Status: accepted.
 
 GitHub Actions runs tests, Docker Compose validation, and API image build automatically on push and pull request. VPS deployment and smoke checks are manual because they require server secrets and can mutate the running VPS.
+
+If the user has already granted explicit release approval in the current Codex session and the deploy target is known, the agent should continue through the validated commit, push, deploy, and smoke sequence without waiting for a second prompt.
 
 ## D-014: FRED First For Macro MVP
 

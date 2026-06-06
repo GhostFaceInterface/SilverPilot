@@ -99,6 +99,12 @@ Codex, token tasarrufu icin RTK protokolunu uygular:
    subagent kullanilir ve ana konusmaya yalnizca bulgu ozeti tasinir.
 4. Ayni dosya tekrar tekrar okunmaz; onceki bulgular yeniden kullanilir.
 
+## Markdown Butcesi
+
+- Yeni markdown dosyasi olusturmak istisnadir.
+- Var olan kanonik belge guncellenebiliyorsa yeni belge acilmaz.
+- Ayni gercegi birden fazla markdown dosyasina dagitmak yasaktir.
+
 ## Yeni Gorev Protokolu
 
 1. Talebin kapsamini belirle.
@@ -110,7 +116,9 @@ Codex, token tasarrufu icin RTK protokolunu uygular:
 5. Implementasyonu kucuk, geri alinabilir ve testlenebilir tut.
 6. Degisiklikten sonra ilgili `.codex/scripts/verify-*.sh` veya hedefli test
    komutlariyla kanit uret.
-7. `git add`, `git commit`, `git push`, deploy, rollback ve production/staging
+7. Oturumda acik release onayi varsa dogrulama gectikten sonra commit, push ve
+   deploy zincirini duraksamadan tamamla.
+8. `git add`, `git commit`, `git push`, deploy, rollback ve production/staging
    erisimleri icin acik kullanici onayi olmadan islem yapma.
 
 ## Legacy Boundary

@@ -372,12 +372,9 @@ async def test_hermes_llm_failure_graceful_recovery(db_session):
 
 
 @pytest.mark.anyio
-async def test_hermes_boost_converts_hold_to_buy(db_session):
+async def test_hermes_boost_does_not_upgrade_hold(db_session):
     """
-    Verifies that StrategyRunner promotes HOLD to BUY when:
-    - action is HOLD
-    - latest Hermes sentiment score is >= hermes_boost_threshold
-    - risk_decision is NOT REJECTED (e.g. APPROVED)
+    Verifies HOLD is never upgraded to BUY, even with bullish Hermes sentiment.
     """
     settings = get_settings()
     settings.hermes_boost_threshold = Decimal("0.40")
@@ -397,18 +394,16 @@ async def test_hermes_boost_converts_hold_to_buy(db_session):
     db_session.add(event_boost)
     db_session.commit()
 
-    # Call apply_agent_filters and assert action gets promoted from HOLD to BUY
+    # HOLD remains HOLD in the Phase 4 deterministic runtime.
     action, reason = StrategyRunner.apply_agent_filters("HOLD", "BULLISH", "APPROVED", db=db_session)
-    assert action == "BUY"
-    assert reason == "AGENT_BOOST_HERMES_BULLISH_NEWS"
+    assert action == "HOLD"
+    assert reason == ""
 
 
 @pytest.mark.anyio
 async def test_hermes_boost_respects_risk_rejection(db_session):
     """
-    Verifies that StrategyRunner does NOT promote HOLD to BUY even if
-    the latest Hermes sentiment score is >= hermes_boost_threshold when
-    risk_decision is REJECTED.
+    Verifies HOLD stays HOLD when risk is rejected.
     """
     settings = get_settings()
     settings.hermes_boost_threshold = Decimal("0.40")
