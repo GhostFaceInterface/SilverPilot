@@ -142,25 +142,33 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
 
     system_prompt = (
         "You are Hermes, a precision sentiment analysis agent specializing in precious metals markets, particularly Silver (XAG), and macro-financial markets.\n"
-        "Analyze the provided list of recent news articles. For each article, perform multi-aspect sentiment, relevance, and speculation calculations.\n"
+        "Analyze the provided list of recent news articles. For each article, perform multi-aspect sentiment, relevance, speculation, and impact severity calculations.\n"
+        "Take into account indirect correlation factors:\n"
+        "- The US Dollar Index (DXY) has a negative correlation with precious metals (DXY strength is bearish, DXY weakness is bullish).\n"
+        "- Gold and general commodities have a positive correlation with Silver.\n"
+        "- Federal Reserve interest rate decisions and inflation metrics (CPI, PPI) exhibit high sensitivity to the market.\n"
+        "- Note specifically: Gold-specific news has a relevance of approximately 0.80, and macro-financial news has a relevance of approximately 0.70.\n\n"
         "You must respond ONLY with a raw JSON array of news analyses. Each analysis in the array MUST correspond exactly to the articles list in order, containing exactly the following keys:\n"
         '- "title": string, the title of the article analyzed\n'
         '- "sentiment": string, must be one of "BULLISH", "BEARISH", or "NEUTRAL"\n'
         '- "relevance": float between 0.0 and 1.0 (closeness to Silver market / macro factors like USD, rate decisions, inflation, industrial demand)\n'
-        '- "speculation": float between 0.0 and 1.0 (clickbait, sensationalism, or rumor score)\n\n'
+        '- "speculation": float between 0.0 and 1.0 (clickbait, sensationalism, or rumor score)\n'
+        '- "impact_severity": float between 0.0 and 1.0 representing the magnitude or size of the news impact on precious metals or macro markets\n\n'
         "Example response format:\n"
         "[\n"
         "  {\n"
         '    "title": "Fed leaves interest rates unchanged",\n'
         '    "sentiment": "NEUTRAL",\n'
-        '    "relevance": 0.90,\n'
-        '    "speculation": 0.10\n'
+        '    "relevance": 0.70,\n'
+        '    "speculation": 0.10,\n'
+        '    "impact_severity": 0.85\n'
         "  },\n"
         "  {\n"
         '    "title": "Silver price set to triple tomorrow says popular blog",\n'
         '    "sentiment": "BULLISH",\n'
-        '    "relevance": 0.70,\n'
-        '    "speculation": 0.95\n'
+        '    "relevance": 0.90,\n'
+        '    "speculation": 0.95,\n'
+        '    "impact_severity": 0.20\n'
         "  }\n"
         "]\n"
         "Provide ONLY the raw JSON array response. Do not include markdown code blocks, text wrapper, or explanations."
@@ -217,7 +225,14 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     # If parsing failed or returned empty list, recover by creating a neutral fallback entry for each article
     if not parsed_list:
         parsed_list = [
-            {"title": item.title, "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5} for item in news_items
+            {
+                "title": item.title,
+                "sentiment": "NEUTRAL",
+                "relevance": 0.5,
+                "speculation": 0.5,
+                "impact_severity": 0.5,
+            }
+            for item in news_items
         ]
 
     # 6. Calculate the Weighted Sentiment Score
@@ -251,17 +266,29 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         else:
             sentiment_numeric = 0.0
 
-        relevance = float(parsed.get("relevance", 0.5))
-        speculation = float(parsed.get("speculation", 0.5))
+        try:
+            relevance = float(parsed.get("relevance", 0.5))
+        except (ValueError, TypeError):
+            relevance = 0.5
+        try:
+            speculation = float(parsed.get("speculation", 0.5))
+        except (ValueError, TypeError):
+            speculation = 0.5
+        try:
+            impact_severity = float(parsed.get("impact_severity", 0.5))
+        except (ValueError, TypeError):
+            impact_severity = 0.5
 
         # Clamp calculations safely
         relevance = max(0.0, min(1.0, relevance))
         speculation = max(0.0, min(1.0, speculation))
+        impact_severity = max(0.0, min(1.0, impact_severity))
 
-        article_score = sentiment_numeric * (1.0 - speculation) * relevance * source_weight
+        numerator_term = sentiment_numeric * (1.0 - speculation) * relevance * impact_severity * source_weight
+        denominator_term = relevance * impact_severity * source_weight
 
-        total_weighted_score += article_score
-        total_source_weight += source_weight
+        total_weighted_score += numerator_term
+        total_source_weight += denominator_term
 
         analyzed_articles.append(
             {
@@ -270,7 +297,8 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
                 "sentiment": sentiment_label,
                 "relevance": relevance,
                 "speculation": speculation,
-                "article_score": article_score,
+                "impact_severity": impact_severity,
+                "article_score": numerator_term,
                 "source_weight": source_weight,
             }
         )
@@ -292,13 +320,13 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         f"- **Overall Score**: `{final_score:.4f}` (Range: [-1.0, 1.0])\n"
         f"- **Resolved Sentiment**: `{final_sentiment}`\n"
         f"- **Veto Threshold**: `{veto_threshold}`\n\n"
-        f"| Article Title | Source | Sentiment | Relevance | Speculation | Article Score |\n"
-        f"| :--- | :--- | :---: | :---: | :---: | :---: |\n"
+        f"| Article Title | Source | Sentiment | Relevance | Speculation | Impact Severity | Article Score |\n"
+        f"| :--- | :--- | :---: | :---: | :---: | :---: | :---: |\n"
     )
     for art in analyzed_articles:
         summary_markdown += (
             f"| {art['title']} | `{art['source']}` | **{art['sentiment']}** | "
-            f"`{art['relevance']:.2f}` | `{art['speculation']:.2f}` | `{art['article_score']:.4f}` |\n"
+            f"`{art['relevance']:.2f}` | `{art['speculation']:.2f}` | `{art['impact_severity']:.2f}` | `{art['article_score']:.4f}` |\n"
         )
 
     # 7. Save to AgentMemoryEvent

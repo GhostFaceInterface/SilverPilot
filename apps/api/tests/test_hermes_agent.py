@@ -14,16 +14,19 @@ from app.models import RawNews, AgentMemoryEvent, CollectorRun
 async def test_hermes_sentiment_calculation_formula(db_session):
     """
     Verifies that the multi-aspect weighted score calculation is mathematically correct:
-    - Article 1: Kitco (Global Authority, weight = 0.5), BULLISH (+1), relevance = 0.8, speculation = 0.2.
-      Unweighted = 1 * (1 - 0.2) * 0.8 = 0.64. Weighted = 0.64 * 0.5 = 0.32.
-    - Article 2: GCM (Local Expert, weight = 0.3), BEARISH (-1), relevance = 0.9, speculation = 0.1.
-      Unweighted = -1 * (1 - 0.1) * 0.9 = -0.81. Weighted = -0.81 * 0.3 = -0.243.
-    - Article 3: Investing (Local Forum, weight = 0.2), NEUTRAL (0), relevance = 0.5, speculation = 0.5.
-      Unweighted = 0. Weighted = 0.
+    - Article 1: fxstreet-rss (Global Authority, weight = 0.5), BULLISH (+1), relevance = 0.8, speculation = 0.2, impact_severity = 0.5.
+      Numerator term = 1 * (1 - 0.2) * 0.8 * 0.5 * 0.5 = 0.16.
+      Denominator term = 0.8 * 0.5 * 0.5 = 0.20.
+    - Article 2: GCM (Local Expert, weight = 0.3), BEARISH (-1), relevance = 0.9, speculation = 0.1, impact_severity = 0.5.
+      Numerator term = -1 * (1 - 0.1) * 0.9 * 0.5 * 0.3 = -0.1215.
+      Denominator term = 0.9 * 0.5 * 0.3 = 0.135.
+    - Article 3: Investing (Local Forum, weight = 0.2), NEUTRAL (0), relevance = 0.5, speculation = 0.5, impact_severity = 0.5.
+      Numerator term = 0.
+      Denominator term = 0.5 * 0.5 * 0.2 = 0.05.
 
-    Total Weighted Score = 0.32 + (-0.243) + 0 = 0.077.
-    Total Source Weight = 0.5 + 0.3 + 0.2 = 1.0.
-    Final Score = 0.077 / 1.0 = 0.077.
+    Total Weighted Score (Numerator) = 0.16 + (-0.1215) + 0 = 0.0385.
+    Total Source Weight (Denominator) = 0.20 + 0.135 + 0.05 = 0.385.
+    Final Score = 0.0385 / 0.385 = 0.10.
     """
     settings = get_settings()
     settings.deepseek_api_key = "sk-mock-key"
@@ -75,9 +78,27 @@ async def test_hermes_sentiment_calculation_formula(db_session):
     # Mock DeepSeek API response corresponding to the articles
     mock_llm_json = json.dumps(
         [
-            {"title": "Good Kitco News", "sentiment": "BULLISH", "relevance": 0.8, "speculation": 0.2},
-            {"title": "Bad GCM News", "sentiment": "BEARISH", "relevance": 0.9, "speculation": 0.1},
-            {"title": "Neutral Investing News", "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5},
+            {
+                "title": "Good Kitco News",
+                "sentiment": "BULLISH",
+                "relevance": 0.8,
+                "speculation": 0.2,
+                "impact_severity": 0.5,
+            },
+            {
+                "title": "Bad GCM News",
+                "sentiment": "BEARISH",
+                "relevance": 0.9,
+                "speculation": 0.1,
+                "impact_severity": 0.5,
+            },
+            {
+                "title": "Neutral Investing News",
+                "sentiment": "NEUTRAL",
+                "relevance": 0.5,
+                "speculation": 0.5,
+                "impact_severity": 0.5,
+            },
         ]
     )
 
@@ -110,8 +131,8 @@ async def test_hermes_sentiment_calculation_formula(db_session):
         assert event.key == "latest_analysis"
 
         val = event.value_json
-        assert abs(val["score"] - 0.077) < 1e-5
-        assert val["sentiment"] == "NEUTRAL"  # 0.077 is between -0.45 and 0.15
+        assert abs(val["score"] - 0.10) < 1e-5
+        assert val["sentiment"] == "NEUTRAL"  # 0.10 is between -0.45 and 0.15
         assert len(val["articles"]) == 3
 
         # Verify specific details of Article 1
@@ -119,7 +140,8 @@ async def test_hermes_sentiment_calculation_formula(db_session):
         assert art1["title"] == "Good Kitco News"
         assert art1["source"] == "fxstreet-rss"
         assert art1["sentiment"] == "BULLISH"
-        assert abs(art1["article_score"] - 0.32) < 1e-5
+        assert abs(art1["article_score"] - 0.16) < 1e-5
+        assert abs(art1["impact_severity"] - 0.5) < 1e-5
 
 
 @pytest.mark.anyio
@@ -521,3 +543,109 @@ async def test_hermes_on_demand_trigger_logic(db_session):
             await run_hermes_sentiment_analysis(db_session)
             # Should trigger on-demand fetch because latest fallback news is older than 48h
             mock_collect.assert_called()
+
+
+@pytest.mark.anyio
+async def test_hermes_impact_severity_clamping_and_fallback(db_session):
+    """
+    Verifies that:
+    1. impact_severity clamps to 1.0 if greater than 1.0, and 0.0 if less than 0.0.
+    2. impact_severity defaults to 0.5 when missing or on fallback.
+    """
+    settings = get_settings()
+    settings.deepseek_api_key = "sk-mock-key"
+    settings.weight_global_authority = Decimal("0.5")
+
+    # Add dummy RawNews
+    run = CollectorRun(
+        collector_name="hermes-test",
+        source="test",
+        status="SUCCESS",
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    news1 = RawNews(
+        collector_run_id=run.id,
+        source="fxstreet-rss",
+        title="High impact news",
+        url="http://example.com/high",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        raw_payload_hash="h_high",
+        parser_version="1.0",
+    )
+    news2 = RawNews(
+        collector_run_id=run.id,
+        source="fxstreet-rss",
+        title="Low impact news",
+        url="http://example.com/low",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        raw_payload_hash="h_low",
+        parser_version="1.0",
+    )
+    news3 = RawNews(
+        collector_run_id=run.id,
+        source="fxstreet-rss",
+        title="Missing impact news",
+        url="http://example.com/missing",
+        fetched_at=datetime.now(timezone.utc) - timedelta(hours=3),
+        raw_payload_hash="h_missing",
+        parser_version="1.0",
+    )
+    db_session.add_all([news1, news2, news3])
+    db_session.commit()
+
+    mock_llm_json = json.dumps(
+        [
+            {
+                "title": "High impact news",
+                "sentiment": "BULLISH",
+                "relevance": 0.8,
+                "speculation": 0.2,
+                "impact_severity": 1.5,
+            },
+            {
+                "title": "Low impact news",
+                "sentiment": "BEARISH",
+                "relevance": 0.9,
+                "speculation": 0.1,
+                "impact_severity": -0.5,
+            },
+            {"title": "Missing impact news", "sentiment": "NEUTRAL", "relevance": 0.5, "speculation": 0.5},
+        ]
+    )
+
+    with patch("httpx.AsyncClient.post") as mock_post:
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = lambda: None
+        mock_response.json = lambda: {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": mock_llm_json,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 100},
+        }
+        mock_post.return_value = mock_response
+
+        # Execute
+        event = await run_hermes_sentiment_analysis(db_session)
+
+        assert event is not None
+        val = event.value_json
+        articles = val["articles"]
+        assert len(articles) == 3
+
+        # Article 1: impact_severity 1.5 -> clamped to 1.0
+        assert abs(articles[0]["impact_severity"] - 1.0) < 1e-5
+        # Article 2: impact_severity -0.5 -> clamped to 0.0
+        assert abs(articles[1]["impact_severity"] - 0.0) < 1e-5
+        # Article 3: impact_severity missing -> default 0.5
+        assert abs(articles[2]["impact_severity"] - 0.5) < 1e-5
