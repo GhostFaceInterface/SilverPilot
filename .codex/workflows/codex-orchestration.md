@@ -220,6 +220,22 @@ RTK means targeted reading and context conservation:
 
 ## 6. Implementation Gate
 
+Before any specialist output or file edit:
+
+1. Run skill preflight: read the relevant `.codex/skills/<skill-name>/SKILL.md`
+   files for the selected agent and task.
+2. Include `Loaded skills: ...` in the agent output, or `Loaded skills: none`
+   with a short reason when no skill applies.
+3. Treat skill commands as constrained by the agent sandbox. Read-only agents
+   may inspect files and propose commands, but they must not execute write,
+   migration, deploy, rollback, or production/staging commands.
+4. After first-pass repository inspection, ask the user for clarification when
+   unresolved ambiguity would materially change scope, risk, target files,
+   database/deploy behavior, or approval requirements.
+5. If a read-only agent needs a persistent markdown/report change, it proposes
+   the exact change and hands write ownership to the main context,
+   `implementation_worker`, or `troubleshooter`.
+
 Before editing files:
 
 1. State the intended files or directories.

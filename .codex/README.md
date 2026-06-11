@@ -36,13 +36,19 @@ This directory is the project-scoped Codex framework for engineering verificatio
 - Do not run destructive database operations.
 
 ## Compatibility note
-OpenAI's current Codex skill documentation describes skill packages as directory-based bundles centered on `SKILL.md`, and repo-scoped auto-discovery may require a path outside `.codex/`. SilverPilot intentionally keeps this framework under `.codex/` because this repository has a separate `.agent/` framework and this task forbids new root-level agent framework directories.
+OpenAI's current Codex skill documentation describes skill packages as directory-based bundles centered on `SKILL.md`, and repo-scoped auto-discovery uses `.agents/skills`. SilverPilot intentionally keeps this framework under `.codex/` because this repository has a separate `.agent/` framework and this task forbids new root-level agent framework directories.
 
 Within the user's `.codex/`-only boundary, these are Codex-local skill bundles/playbooks, not guaranteed official auto-discovered Codex skills. The local convention is:
 
 ```text
 .codex/skills/<skill-name>/SKILL.md
 ```
+
+Because the local convention is not the official repo auto-discovery path, each
+project-scoped custom agent in `.codex/agents/*.toml` must explicitly follow
+the skill preflight contract: read the relevant local `SKILL.md` file before
+specialist output, report `Loaded skills`, and treat any command in a skill as
+limited by that agent's sandbox and approval rules.
 
 ## Structure
 - `config.toml`: project-scoped Codex settings. No provider auth or secrets.

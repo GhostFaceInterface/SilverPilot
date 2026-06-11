@@ -71,6 +71,39 @@ kullanilan paketler:
 - `.codex/skills/financial-risk-regression/SKILL.md`
 - `.codex/skills/streamlit-dashboard/SKILL.md`
 
+Bu paketler SilverPilot-local playbook'lardir. Resmi Codex repo skill
+auto-discovery yolu olan `.agents/skills` ile karistirilmaz; bu repo icin
+`.codex/` siniri kanoniktir. Bu nedenle her Codex subagent kendi
+`developer_instructions` metnindeki skill preflight sozlesmesine uyar.
+
+### Agent Skill Matrix
+
+Her subagent, goreve baslamadan once ilgili `.codex/skills/<skill-name>/SKILL.md`
+dosyalarini okur ve ciktiya `Loaded skills` satiri ekler. Gorev icin skill
+gerekmiyorsa `Loaded skills: none` ve kisa gerekce yazar.
+
+| Codex agent | Varsayilan skill paketleri |
+| --- | --- |
+| `scout` | `financial-agent-runtime` when runtime agents or API boundaries are in scope |
+| `architect` | `fastapi-sqlalchemy`, `financial-agent-runtime`, `deployment-safety` when those boundaries are in scope |
+| `implementation_worker` | Changed subsystem skills from this matrix |
+| `troubleshooter` | Failure subsystem skills from this matrix |
+| `db_investigator` | `fastapi-sqlalchemy`, `alembic-migrations` |
+| `test_strategist` | `pytest-fastapi`, `integration-testing`, `financial-risk-regression`, `docker-compose-ops` when relevant |
+| `test_verifier` | `pytest-fastapi`, `integration-testing`, `docker-compose-ops`, `financial-risk-regression` |
+| `git_guardian` | `git-safe-operations` |
+| `ci_investigator` | `github-actions-monitoring` |
+| `deploy_guardian` | `deployment-safety`, `docker-compose-ops`, `alembic-migrations` |
+| `deployment_investigator` | `deployment-safety`, `docker-compose-ops` |
+| `post_deploy_monitor` | `deployment-safety`, `github-actions-monitoring`, `integration-testing` |
+| `rollback_planner` | `deployment-safety`, `alembic-migrations` when schema rollback is in scope |
+| `security_reviewer` | `git-safe-operations`, `github-actions-monitoring`, `financial-agent-runtime` when relevant |
+| `final_reviewer` | `git-safe-operations`, `deployment-safety`, `pytest-fastapi`, `integration-testing` when relevant |
+
+Read-only ajanlar skill icindeki write, migration, deploy, rollback veya
+production komutlarini calistirmaz; bunlari yalnizca kanit plani ya da onay
+gerektiren komut onerisi olarak raporlar.
+
 ## Installed Plugin Layer
 
 SilverPilot, yerel `.codex` framework'unun uzerine kurulu onayli bir plugin
@@ -162,17 +195,20 @@ Codex, token tasarrufu icin RTK protokolunu uygular:
 7. Kullanici commit/push/deploy/release istemedikce gate ajanlari
    (`git_guardian`, `deploy_guardian`, `final_reviewer`, `rollback_planner`)
    otomatik acilmaz.
-8. Gerekli `.codex/skills/*/SKILL.md` paketlerini yukle.
+8. Gerekli `.codex/skills/*/SKILL.md` paketlerini yukle ve subagent
+   ciktilarinda `Loaded skills` satiriyla belirt.
    Plugin komutu kullanildiysa, buna ek olarak SilverPilot skill paketleriyle
    yerel kural ve verification gate'lerini tamamla.
-9. Kod degisikligi yapmadan once hedef dosyalari ve beklenen etki alanini
+9. Ilk repo incelemesinden sonra sonucu, riski veya uygulanacak dosyalari
+   degistirebilecek belirsizlik kalirsa kullanicidan netlestirme iste.
+10. Kod degisikligi yapmadan once hedef dosyalari ve beklenen etki alanini
    bildir.
-10. Implementasyonu kucuk, geri alinabilir ve testlenebilir tut.
-11. Degisiklikten sonra ilgili `.codex/scripts/verify-*.sh` veya hedefli test
+11. Implementasyonu kucuk, geri alinabilir ve testlenebilir tut.
+12. Degisiklikten sonra ilgili `.codex/scripts/verify-*.sh` veya hedefli test
    komutlariyla kanit uret.
-12. Oturumda acik release onayi varsa dogrulama gectikten sonra commit, push ve
+13. Oturumda acik release onayi varsa dogrulama gectikten sonra commit, push ve
    deploy zincirini duraksamadan tamamla.
-13. `git add`, `git commit`, `git push`, deploy, rollback ve production/staging
+14. `git add`, `git commit`, `git push`, deploy, rollback ve production/staging
    erisimleri icin acik kullanici onayi olmadan islem yapma.
 
 ## Legacy Boundary
