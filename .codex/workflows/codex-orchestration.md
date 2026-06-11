@@ -35,6 +35,105 @@ conflicts with `.codex/`, follow `.codex/` for Codex work.
 | Security review | `security_reviewer` | `architect`, `git_guardian` | strongest | read-only |
 | Final release gate | `final_reviewer` | `git_guardian`, `deploy_guardian`, `rollback_planner` | strongest | read-only |
 
+## 2.2 External Plugin Preference
+
+When an installed `claude-code-workflows` plugin cleanly matches the task,
+prefer that command surface before inventing a custom orchestration path.
+Treat plugin workflows as accelerators, not authorities.
+
+| Task class | Preferred plugin | Typical command |
+| --- | --- | --- |
+| Backend feature slice | `backend-development` | `/backend-development:feature-development` |
+| Bug triage or unclear failure | `debugging-toolkit` | `/debugging-toolkit:smart-debug` |
+| Regression or test expansion | `unit-testing` | `/unit-testing:test-generate` |
+| Broad code review | `comprehensive-review` | `/comprehensive-review:full-review` |
+| Migration-oriented change | `database-migrations` | `/database-migrations:sql-migrations` |
+| Deploy gate or config audit | `deployment-validation` | `/deployment-validation:config-validate` |
+| Security audit | `security-scanning` | `/security-scanning:security-hardening` |
+| Agent/task optimization | `agent-orchestration` | `/agent-orchestration:multi-agent-optimize` |
+| Context save/restore | `context-management` | `/context-management:context-save` or `/context-management:context-restore` |
+
+Fallback rule:
+
+- If the plugin path is too broad, too generic, or mismatched to SilverPilot's
+  repo boundaries, stay on local `.codex` agents and skills.
+- If a plugin implies multi-step autonomy that would exceed local approval or
+  verification gates, collapse back to local orchestration.
+
+## 2.5 Default Task Recipes
+
+Use these recipes when the user request does not already force a narrower path.
+The goal is to make agent spawning predictable instead of ad hoc.
+
+### A. Small, low-risk implementation
+
+Use when all are true:
+
+- one or two files;
+- no schema change;
+- no deploy/CI/security boundary;
+- no unclear failure path.
+
+Route:
+
+1. Stay in main context or use `implementation_worker`.
+2. Do not spawn `scout` unless file location is unclear.
+3. Use one verification step with `test_verifier` only if runtime behavior changed.
+
+### B. Normal bug fix or feature slice
+
+Use when the task touches several files, an execution path is unclear, or tests
+must be added/updated.
+
+Route:
+
+1. Prefer the matching plugin surface first:
+   `/backend-development:feature-development` for feature work or
+   `/debugging-toolkit:smart-debug` for failure-heavy work.
+2. `scout` first only if the file map remains unclear.
+3. `implementation_worker` for the patch.
+4. `test_strategist` before broad new tests or shared behavior changes.
+5. `test_verifier` after edits.
+
+### C. Debugging / failing tests / runtime regressions
+
+Use when the user reports a bug, stack trace, broken behavior, or failing CI.
+
+Route:
+
+1. Prefer `/debugging-toolkit:smart-debug` for first-pass narrowing.
+2. `troubleshooter` owns the task.
+3. Spawn `scout` if the failing path is still unclear after the first read.
+4. Spawn `db_investigator` if persistence, migration, query, or data shape is involved.
+5. Spawn `test_verifier` after the fix.
+
+### D. Architecture / design / refactor planning
+
+Use when the user asks for a plan, tradeoff analysis, framework direction, or a
+high-risk refactor.
+
+Route:
+
+1. `architect` owns the task.
+2. Consider `/agent-orchestration:multi-agent-optimize` when the user is
+   explicitly asking how agents, skills, or workflows should be coordinated.
+3. Spawn `security_reviewer` for auth, secrets, CI permission, or prompt-injection surfaces.
+4. Spawn `db_investigator` for schema or migration consequences.
+5. Do not use `implementation_worker` until the design is accepted.
+
+### E. Release and deployment work
+
+Use when the user asks about commit, push, CI, release, deploy, smoke, or rollback.
+
+Route:
+
+1. Prefer `/deployment-validation:config-validate` for first-pass deploy checks.
+2. `git_guardian` for commit/push scope.
+3. `ci_investigator` for red workflows or flaky CI.
+4. `deploy_guardian` before deploy.
+5. `rollback_planner` when deploy risk or migration risk exists.
+6. `final_reviewer` before broad release claims.
+
 ## 3. Model Policy
 
 - Mini models: read-heavy scouting, git checks, test execution summaries, and
@@ -57,6 +156,26 @@ available model with the same role and report the fallback.
 
 ## 4. Subagent Delegation
 
+### Spawn Rules
+
+Subagent spawning is allowed only when at least one of these is true:
+
+- the task spans more than one subsystem;
+- the first-pass file map is unclear;
+- a specialist review changes the risk class;
+- verification would otherwise drown the main context.
+
+Do not spawn specialists only because they exist. Default to the minimum number
+of agents that preserve clarity.
+
+### Fan-out Limits
+
+- Default maximum parallel specialists for a normal task: 2.
+- Default maximum total specialist roles in one task: 4.
+- For small tasks, prefer 0 or 1 spawned agent.
+- If a task needs more than 4 distinct roles, pause and collapse the plan into
+  phases instead of expanding fan-out.
+
 Use subagents when they reduce main-context noise or enforce role separation:
 
 - Use `scout` for broad file discovery, import tracing, and dependency mapping.
@@ -70,6 +189,17 @@ Use subagents when they reduce main-context noise or enforce role separation:
 
 Do not delegate merely to create parallel busywork. For small single-file
 changes, stay in the main context and apply the relevant skill directly.
+
+### Ownership Rules
+
+- Only one write-capable owner at a time: `implementation_worker`,
+  `troubleshooter`, or the main coding context.
+- Read-only reviewers may run before or after implementation, but they do not
+  take over write ownership unless the task is explicitly reframed.
+- `test_verifier` verifies; it does not redesign.
+- `architect` plans; it does not patch.
+- `security_reviewer`, `git_guardian`, `deploy_guardian`, and
+  `final_reviewer` are gatekeepers, not implementers.
 
 ## 5. RTK Protocol
 

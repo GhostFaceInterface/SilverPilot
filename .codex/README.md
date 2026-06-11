@@ -13,6 +13,7 @@ This directory is the project-scoped Codex framework for engineering verificatio
 - A Codex-only operating layer for safe engineering work inside SilverPilot.
 - A set of custom subagent definitions, workflows, skills, prompts, memory policies, and local verification scripts.
 - A release discipline built around one rule: work is not complete until verification evidence exists.
+- A repo-local policy layer that can steer installed Codex plugins toward predictable SilverPilot workflows.
 
 ## What this is not
 - It is not the Antigravity framework in `.agent/`.
@@ -53,6 +54,32 @@ Within the user's `.codex/`-only boundary, these are Codex-local skill bundles/p
 - `memory/`: durable Codex-side validation and release policies.
 - `scripts/`: safe, non-destructive local diagnostics and verification helpers.
 
+## External plugin layer
+SilverPilot now uses a hybrid model:
+
+- `.codex/` remains the policy and safety source of truth.
+- Installed Codex plugins provide reusable command surfaces, specialist prompts, and orchestration helpers.
+- Marketplace plugins do not replace local approval gates, verification gates, or token-discipline rules.
+
+Installed `claude-code-workflows` plugins currently approved for SilverPilot:
+
+- `developer-essentials`
+- `backend-development`
+- `agent-orchestration`
+- `comprehensive-review`
+- `database-migrations`
+- `deployment-validation`
+- `security-scanning`
+- `unit-testing`
+- `debugging-toolkit`
+- `context-management`
+
+Practical meaning:
+
+- For recurring coding flows, prefer the installed plugin command or capability first.
+- For repo-specific conventions, safety gates, or validation, fall back to `.codex/workflows/*` and `.codex/skills/*`.
+- If an installed plugin suggests behavior that conflicts with SilverPilot safety rules, `.codex/` wins.
+
 ## Model policy
 Recommended routing:
 - `scout`: `gpt-5.4-mini`
@@ -77,13 +104,34 @@ If a requested model is unavailable in the current Codex installation, use the c
 ## Codex orchestration
 Use `workflows/codex-orchestration.md` before large, multi-file, risk-sensitive, deploy, CI, or release work. It defines:
 - agent routing by task type;
+- default task recipes for when to spawn which coding agent;
+- preferred external plugin routing for common task classes;
 - subagent delegation rules;
+- fan-out and ownership limits so agent spawning stays controlled;
 - RTK targeted-reading protocol;
 - model tier selection;
 - sandbox expectations;
 - approval gates.
 
 For small single-file changes, apply the relevant `.codex/skills/*/SKILL.md` bundle directly and keep the work in the main context.
+
+Practical defaults:
+- Small low-risk change: main context or `implementation_worker`.
+- Multi-file but still straightforward: `scout` then `implementation_worker`.
+- Bug/debugging: `troubleshooter` owns, with `scout` or `db_investigator` only if needed.
+- Architecture/refactor planning: `architect` first, implementation later.
+- Release/deploy/rollback: gate agents only when the user asks for those phases.
+
+Plugin-first shortcuts:
+
+- Backend feature slice: prefer `/backend-development:feature-development`, then enforce SilverPilot validation locally.
+- Debugging and unclear failures: prefer `/debugging-toolkit:smart-debug` before broad manual spelunking.
+- Test generation or regression expansion: prefer `/unit-testing:test-generate`.
+- Multi-perspective audit or release review: prefer `/comprehensive-review:full-review`.
+- Migration-oriented work: prefer `/database-migrations:sql-migrations`.
+- Pre-deploy checks: prefer `/deployment-validation:config-validate`.
+- Security sweep: prefer `/security-scanning:security-hardening` or `/security-scanning:security-sast`.
+- Agent tuning or task decomposition improvements: prefer `/agent-orchestration:multi-agent-optimize`.
 
 ## RTK targeted-reading protocol
 Use RTK for token economy:

@@ -1,5 +1,11 @@
 # SilverPilot
 
+> [!WARNING]
+> This file is overview-only. It is non-canonical for phase status,
+> implementation routing, and execution order.
+>
+> Use `docs/PHASE_PLAN.md` for the current baseline.
+
 SilverPilot is a paper-trading and analysis system for silver scenarios using a virtual 600 USD starting balance.
 
 ## Scope
@@ -9,11 +15,11 @@ SilverPilot is a paper-trading and analysis system for silver scenarios using a 
 - No live buy/sell execution.
 - Data first, simulation second, risk policy third, LLM agents later, ML last.
 
-## Current Phase
+## Execution Status
 
-Core implementation follows `docs/PHASE_PLAN.md` first. `docs/ROADMAP.md` is legacy context only and must not be used for current phase routing.
-
-Current official phase is Phase 3 closeout before Strategy V2 and trade intents. Multi-timeframe storage exists, but runtime hardening still needs to enforce `1d -> 1h -> 5m`, fail closed on stale/misaligned data, and keep agent/ML expansion frozen until Phase 5 completes.
+Current implementation status is maintained only in `docs/PHASE_PLAN.md`.
+This README intentionally avoids restating live phase labels so it does not
+drift from the canonical artifact.
 
 ## Canonical Sources
 
@@ -38,11 +44,7 @@ Current official phase is Phase 3 closeout before Strategy V2 and trade intents.
 
 ## Next Work
 
-Next implementation task:
-
-- Close Phase 3 in runtime consumption, not only storage.
-- Enforce deterministic Strategy V2 on `1d` trend plus `1h` entry inputs.
-- Require trade intents between strategy and paper execution before further agent/ML expansion.
+Implementation order is locked in `docs/PHASE_PLAN.md`.
 
 ## Local Validation
 

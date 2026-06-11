@@ -67,6 +67,34 @@ This audit records sources considered for the Codex-only verification and releas
 - Security concerns: community agent instructions may request excessive permissions or unsafe autonomy.
 - Final decision: cautiously adapted taxonomy ideas only.
 
+## wshobson/agents marketplace
+- Source URL: https://github.com/wshobson/agents
+- Classification: community plugin marketplace for Codex/Claude-style workflows.
+- Adoption signal: large public plugin catalog, explicit Codex marketplace support, modular installation model, and readable local plugin manifests.
+- Adopted:
+  - marketplace registration in local Codex home as `claude-code-workflows`;
+  - installed plugins:
+    - `developer-essentials`
+    - `backend-development`
+    - `agent-orchestration`
+    - `comprehensive-review`
+    - `database-migrations`
+    - `deployment-validation`
+    - `security-scanning`
+    - `unit-testing`
+    - `debugging-toolkit`
+    - `context-management`
+  - plugin-first routing guidance for recurring coding tasks.
+- Rejected:
+  - wholesale installation of the full marketplace;
+  - opaque external plugins not needed for SilverPilot;
+  - any plugin path that would bypass local approval, validation, or rollback gates.
+- Security concerns:
+  - community-maintained prompts and scripts may drift over time;
+  - plugin workflows can encourage broader autonomy than SilverPilot allows;
+  - marketplace updates may change behavior outside this repository's git history.
+- Final decision: adopted as a constrained acceleration layer under `.codex` governance, with local policy remaining authoritative.
+
 ## Community Codex skills repositories
 - Source URLs:
   - https://github.com/vadimcomanescu/codex-skills

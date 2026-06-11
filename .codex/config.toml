@@ -6,7 +6,8 @@ sandbox_mode = "workspace-write"
 approval_policy = "on-request"
 
 [agents]
-# Keep enough room for parallel review agents while preventing uncontrolled fan-out.
+# Keep enough room for specialist review while preventing uncontrolled fan-out.
+# Operational routing rules still live in `.codex/workflows/codex-orchestration.md`.
 max_threads = 8
-max_depth = 1
+max_depth = 2
 job_max_runtime_seconds = 1800

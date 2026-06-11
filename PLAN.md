@@ -1,5 +1,12 @@
 # Implementation Plan: İzole Codex Ajan Yapısı ve Savaş Odası Kurulumu [TAMAMLANDI]
 
+> [!WARNING]
+> This file is an archive of the `.codex/` bootstrap effort. It is not a
+> canonical source for current SilverPilot phase status, implementation order,
+> or execution authority.
+>
+> Refer to `docs/PHASE_PLAN.md` for the live baseline.
+
 Bu plan, SilverPilot projesinde Codex kullanımı için tamamen izole bir `.codex/` dizini oluşturmayı, Antigravity (`.agent/`) ve çalışma zamanı finansal ajanlarına (`agents/`) hiçbir şekilde dokunmadan Codex'in kendi kural, ajan, workflow, beceri ve yardımcı scriptlerini barındırmasını sağlar.
 
 ---

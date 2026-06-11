@@ -71,6 +71,40 @@ kullanilan paketler:
 - `.codex/skills/financial-risk-regression/SKILL.md`
 - `.codex/skills/streamlit-dashboard/SKILL.md`
 
+## Installed Plugin Layer
+
+SilverPilot, yerel `.codex` framework'unun uzerine kurulu onayli bir plugin
+katmani da kullanir. Bu katman su anda `claude-code-workflows` marketplace
+uzerinden yuklenmis su pluginlerle sinirlidir:
+
+- `developer-essentials`
+- `backend-development`
+- `agent-orchestration`
+- `comprehensive-review`
+- `database-migrations`
+- `deployment-validation`
+- `security-scanning`
+- `unit-testing`
+- `debugging-toolkit`
+- `context-management`
+
+Bu pluginler karar otoritesi degil, hizlandirici katmandir:
+
+- Repo policy, approval gate ve risk sinirlari icin `.codex/` kanoniktir.
+- Tekrarlayan coding akislari icin once uygun plugin komutu tercih edilir.
+- Plugin onerisi `.codex` kurallariyla celisirse `.codex` kazanir.
+
+Baslangic mapping:
+
+- Backend feature veya servis degisikligi: `backend-development`
+- Hata ayiklama ve belirsiz regression: `debugging-toolkit`
+- Test uretimi veya kapsam artisi: `unit-testing`
+- Cok yonlu review: `comprehensive-review`
+- Migration ve schema isi: `database-migrations`
+- Deploy oncesi kontrol: `deployment-validation`
+- Guvenlik taramasi: `security-scanning`
+- Orkestrasyon tuning ve task decomposition: `agent-orchestration`
+
 ## Codex Workflows
 
 - `.codex/workflows/codex-orchestration.md`: ana Codex orkestrasyon ve RTK
@@ -110,15 +144,35 @@ Codex, token tasarrufu icin RTK protokolunu uygular:
 1. Talebin kapsamini belirle.
 2. `.codex/workflows/codex-orchestration.md` uzerinden gorev tipi, ajan,
    model, sandbox ve dogrulama seviyesini sec.
-3. Gerekli `.codex/skills/*/SKILL.md` paketlerini yukle.
-4. Kod degisikligi yapmadan once hedef dosyalari ve beklenen etki alanini
+   Uygun installed plugin varsa ayni adimda once onu tercih et.
+3. Gorev dogrudan riskli degilse varsayilan recipe uygula:
+   kucuk islerde ana context veya `implementation_worker`, belirsiz veya
+   cok dosyali islerde once `scout`, hata ayiklamada `troubleshooter`,
+   tasarim/refactor kararlarinda `architect`.
+4. Spawn karari verirken minimum uzman sayisini kullan:
+   normal gorevde en fazla 2 paralel specialist, toplamda en fazla 4 rol.
+   Kucuk islerde 0-1 specialist tercih edilir.
+5. Tek bir write owner tut:
+   ayni anda yalnizca ana context, `implementation_worker`, veya
+   `troubleshooter` yazma sahibi olabilir.
+6. `scout` kesif icin, `db_investigator` schema/migration icin,
+   `test_strategist` genis test tasarimi icin, `test_verifier`
+   dogrulama icin, `security_reviewer` auth/secret/CI riskleri icin
+   spawn edilir.
+7. Kullanici commit/push/deploy/release istemedikce gate ajanlari
+   (`git_guardian`, `deploy_guardian`, `final_reviewer`, `rollback_planner`)
+   otomatik acilmaz.
+8. Gerekli `.codex/skills/*/SKILL.md` paketlerini yukle.
+   Plugin komutu kullanildiysa, buna ek olarak SilverPilot skill paketleriyle
+   yerel kural ve verification gate'lerini tamamla.
+9. Kod degisikligi yapmadan once hedef dosyalari ve beklenen etki alanini
    bildir.
-5. Implementasyonu kucuk, geri alinabilir ve testlenebilir tut.
-6. Degisiklikten sonra ilgili `.codex/scripts/verify-*.sh` veya hedefli test
+10. Implementasyonu kucuk, geri alinabilir ve testlenebilir tut.
+11. Degisiklikten sonra ilgili `.codex/scripts/verify-*.sh` veya hedefli test
    komutlariyla kanit uret.
-7. Oturumda acik release onayi varsa dogrulama gectikten sonra commit, push ve
+12. Oturumda acik release onayi varsa dogrulama gectikten sonra commit, push ve
    deploy zincirini duraksamadan tamamla.
-8. `git add`, `git commit`, `git push`, deploy, rollback ve production/staging
+13. `git add`, `git commit`, `git push`, deploy, rollback ve production/staging
    erisimleri icin acik kullanici onayi olmadan islem yapma.
 
 ## Legacy Boundary

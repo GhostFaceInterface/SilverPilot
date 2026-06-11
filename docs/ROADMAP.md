@@ -5,7 +5,8 @@
 > phase authority, or execution order. `docs/PHASE_PLAN.md` is the only active
 > execution artifact.
 
-This file is the canonical delivery roadmap for SilverPilot. It should describe what gets built, in what order, and which validation gates must pass before moving forward.
+This file preserves historical roadmap context, including superseded phase
+claims and exploratory ideas. It is intentionally non-canonical.
 
 ## Current Position
 
