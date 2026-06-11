@@ -1,68 +1,73 @@
-# SilverPilot Sağlamlaştırma ve Teşhis Planı
+# Implementation Plan: SilverPilot Sağlamlaştırma, OOP Modülerlik ve SaaS Mimari Geçişi
 
-  ## Özet
+> [!WARNING]
+> This file is an archive of the active stabilization effort. It is not a
+> canonical source for current SilverPilot phase status, implementation order,
+> or execution authority.
+>
+> Refer to `docs/PHASE_PLAN.md` for the live baseline.
 
-  - Canlı kanıt: signals=1040; baskın sorunlar HOLD/BLENDED_NEUTRAL=658 ve HOLD/DAILY_TREND_MISSING=249. Son 100 sinyal çoğunlukla DAILY_TREND_MISSING.
-  - Ana kök neden: 1d indicator input_bar_count canlı DB’de 7-8 seviyesinde, kod ise 50 bar istiyor. Sistem trade fırsatı kaçırmaktan çok “günlük trend datası hazır değil”
-    durumunda takılıyor.
+## 🛡️ Risk ve Bağlam Analizi
+- **Etkilenen Politikalar:** [docs/RISK_POLICY.md](file:///Users/boe747/SilverPilot/docs/RISK_POLICY.md) (Makas, Staleness, Volatilite, Kayıp Limitleri, Komisyon/Vergi Hesapları)
+- **Etkilenen Şemalar:** `signals`, `agent_memory_events`, `technical_indicators`, `raw_bank_prices`, `raw_news`, `paper_trades`
+- **Ana Hedef:** Projedeki anlık spam ve strateji eşleşme hatalarını çözmek, haber sentiment algoritmasındaki seyreltme hatasını gidermek, projenin tamamını genişletilebilir OOP (Abstract Base Classes) yapısına kavuşturmak ve hem indikatörlerde hem de stratejilerde finansal bilgisi olmayan kullanıcılar için "AUTO" (Piyasa Rejimine Göre Dinamik Karar Verici) modunu inşa etmek.
 
-  - İlk tercih edilen duruş: diagnostik mod, strategy_v2 default registry, backfill + strict gate. Paper BUY/SELL geçici olarak durur; karar/audit çalışır, tekrarlı HOLD
-    Telegram bastırılır.
+---
 
-  ## Key Changes
+## 🛠️ Fazlar ve Görev Listesi
 
-  - auto_trader akışı DecisionEnvelope üretmeli: requested_strategy, resolved_strategy, candidate_action, final_action, reason_code, readiness, risk_preflight, agent_inputs,
-    notification_policy, trade_id.
+### **Faz 1: Çekirdek Hata Giderme, Test ve Dökümantasyon Stabilizasyonu**
+- [ ] [PLAN.md](file:///Users/boe747/SilverPilot/PLAN.md) dosyasına docs tutarlılık kontrolü testini (`test_docs_consistency.py`) geçmesi için gerekli canonical warning bloğunu eklemek. (Ajan: `project-planner`)
+- [ ] [auto_trader.py](file:///Users/boe747/SilverPilot/apps/api/app/services/auto_trader.py) içerisindeki `settings.strategy_name` değerini dinamik olarak okuyup ilgili strateji metoduna yönlendiren router yapısını kurmak (sabit `strategy_v2` hardcode bağımlılığını sonlandırmak).
+- [ ] `send_telegram_notification` fonksiyonundaki `HOLD` sessiz mesaj gönderme mantığını; cooldown (6 saatte bir) veya sadece neden kodu (`reason_code`) değiştiğinde mesaj atacak şekilde revize etmek.
+- [ ] **COMEX Zaman Aşımı / Staleness Bypass Düzeltmesi:** Hafta sonu ve bakım saatlerinde `indicator_readiness.py`'nin ürettiği `stale` bayrağının strateji motorunu (`StrategyRunner`) kitlemesini engellemek için, COMEX kapalıyken freshness kontrolünü strateji seviyesinde de bypass edecek kuralı eklemek.
+- [ ] `test_blended_trader.py` içerisindeki blended consensus testlerinin strategy router düzeltildikten sonra başarıyla geçmesini sağlamak.
+- *DoD (Tamamlanma Tanımı):* `pytest tests/test_auto_trader.py tests/test_blended_trader.py tests/test_docs_consistency.py` komutlarının sıfır hata ile yeşil yanması.
 
-  - Yeni ayarlar:
-      - AUTO_TRADING_MODE=diagnostic|paper, ilk değer diagnostic.
-      - NOTIFICATION_POLICY_V2=true.
-      - HOLD_NOTIFICATION_COOLDOWN_MINUTES=360.
-      - DECISION_ENVELOPE_SHADOW=false çünkü envelope doğrudan ana audit formatı olacak.
+---
 
-  - Diagnostik modda BUY/SELL trade intent üretmez; yalnızca sinyal/audit yazar. HOLD Telegram sadece reason değişirse veya cooldown dolarsa gider.
-  - Strategy registry eklenecek: strategy_v2 default, eski rsi/sma_cross/bollinger/blended live’da ancak açık registry seçimiyle kullanılacak. Bilinmeyen strategy
-    BLOCKED_CONFIG_INVALID üretir.
+### **Faz 2: Haber Sentiment Matematiksel Düzeltmesi ve Çok Boyutlu Etki Analizi**
+- [ ] LLM (Hermes) promptuna haberin gümüş üzerindeki ilgililik derecesi (`relevance`) ile birlikte haberin şiddetini/büyüklüğünü belirten `impact_severity` (0.0 - 1.0) parametre analizini eklemek.
+- [ ] [hermes.py](file:///Users/boe747/SilverPilot/apps/api/app/agents/hermes.py) içerisindeki ağırlıklı sentiment formülünü, ilgisiz veya spekülatif haberlerin seyreltme yapmasını önleyecek şekilde "Ağırlıklı İlgi ve Şiddet Ortalaması" olarak güncellemek:
+  $$\text{final\_score} = \frac{\sum (\text{sentiment\_numeric} \times (1 - \text{speculation}) \times \text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}{\sum (\text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}$$
+- [ ] LLM (Hermes) promptunda gümüşü dolaylı etkileyen tüm faktörlerin (DXY, Altın/Emtia korelasyonları, faiz kararları, enflasyon verileri vb.) korelasyon ilişkisini tanımlayarak LLM'in doğru `relevance` ve `impact_severity` üretmesini sağlamak.
+- [ ] `test_hermes_agent.py` test suite'ini güncel formüle ve etki kurallarına göre revize etmek.
+- *DoD:* `pytest tests/test_hermes_agent.py` test suite'inin yeşil olması.
 
-  - 1d indicator problemi eşik düşürülerek çözülmeyecek. İdempotent backfill komutu üretilecek; raw/snapshot veriden 1d market bars ve indicators tamamlanacak, 50 bar kuralı
-    korunacak.
+---
 
-  ## DB ve Veri Sözleşmesi
+### **Faz 3: OOP Modülerlik ve Fiyat/Haber/Komisyon Sağlayıcı Katmanı (OOP / Architecture Refactor)**
+- [ ] Fiyat sağlayıcıları için soyut bir interface olan `BasePriceScraper` (Abstract Base Class - ABC) oluşturmak ve `fetch_price(db, asset) -> PriceSnapshot` kontratını tanımlamak. (Ajan: `backend-architect`)
+- [ ] Haber sağlayıcıları ve metin tabanlı veriler için soyut bir interface olan `BaseNewsCollector` (ABC) oluşturmak ve `collect(db) -> list[RawNews]` kontratını tanımlamak.
+- [ ] **Banka Komisyon ve Vergi Modeli (`BaseCostModel`):** Her bankanın/sağlayıcının makas (spread), vergi (BSMV %0.2) ve komisyon oranlarını hesaplayan soyut `BaseCostModel` (ABC) tanımlamak. `KuveytTurkCostModel` ve `ZiraatCostModel` sınıflarını buradan türetmek.
+- [ ] **Modüler Risk Kuralları (`BaseRiskGuard`):** Risk filtrelerini (Spread, Staleness, Volatilite vb.) modüler hale getirmek için `BaseRiskGuard` (ABC) tanımlamak ve mevcut kuralları birer kural sınıfı olarak soyutlamak.
+- [ ] **Modüler İndikatör Hesaplayıcılar (`BaseIndicator`):** İndikatör hesaplama fonksiyonlarını `BaseIndicator` (ABC) yapısına geçirmek.
+- [ ] Stratejiler için `BaseStrategy` soyut sınıfı oluşturmak ve `evaluate(db, context) -> StrategyDecision` kontratını zorunlu kılmak.
+- *DoD:* Refaktör sonrasında tüm ingestion ve trade execution testlerinin (`pytest tests/test_collectors.py tests/test_auto_trader.py`) hatasız geçmesi.
 
-  - İlk DB değişiklikleri expand-only olacak: kolon/tablo ekle, veri silme/drop yok.
-  - decision_audits veya mevcut signals.details_json içinde standard envelope saklanacak; kısa vadede tablo eklemek zorunlu değilse signals ile başlanacak.
-  - Unit contract netleştirilecek: XAG ve XAG_GRAM dönüşümü tek conversion policy üzerinden yapılacak; 31.1035 collector içinde hardcoded kalmayacak.
-  - close_usd_oz hemen rename edilmeyecek; uyumluluk için close_price, price_unit, quote_currency schema/property alanları eklenecek.
-  - Canlı DB için mutasyon öncesi read-only doğrulama zorunlu: alembic head, latest indicator counts, stale source counts, failed collector error summary.
+---
 
-  ## Uygulama Sırası
+### **Faz 4: AUTO Strateji ve AUTO İndikatör Motoru**
+- [ ] Piyasa rejimini (`get_market_regime`) 1 saatlik bar aralıklarıyla sorgulayarak dominant stratejiyi seçen `AutoRegimeStrategy` sınıfını (`BaseStrategy` türevi) yazmak.
+  - `ADX < 20` veya BB Bandwidth dar ise: Mean-reversion stratejilerini (RSI, Bollinger) çalıştırır.
+  - `ADX >= 25` ise: Trend-following stratejisini (SMA Cross, MACD) çalıştırır.
+- [ ] İndikatör hesaplamalarında, kullanıcının seçmediği durumda en doğru indikatör setini otomatik ağırlıklandıran "AUTO İndikatör Seçim Mantığı"nı karar mekanizmasına dahil etmek.
+- [ ] `test_auto_strategy.py` adında yeni bir test dosyası oluşturarak auto modunun test senaryolarını yazmak.
+- *DoD:* `pytest tests/test_auto_strategy.py` testlerinin başarıyla tamamlanması.
 
-  1. Diagnostik mod ve notification policy: HOLD spam durur, BUY/SELL execution kapanır, audit devam eder.
-  2. Decision envelope: her kararın nedeni ve hangi gate’te takıldığı görünür olur.
-  3. Indicator backfill: 1d bar/indicator geçmişi tamamlanır; DAILY_TREND_MISSING çözülür.
-  4. Strategy registry: config gerçekten canlı kararı belirler, strategy_v2 default kalır.
-  5. Risk preflight: trade olmasa bile stale data, ML veto, spread, source ve market-closed nedenleri audit edilir.
-  6. Unit/provider refactor: conversion policy ve source/provider normalization başlar.
-  7. SaaS hazırlığı: providers, strategy configs, notification preferences; users/accounts daha sonraki faz.
+---
 
-  ## Test Planı
+### **Faz 5: SaaS Veri Tabanı ve Çoklu Tenant Altyapısı**
+- [ ] Veri tabanında `providers` (banka sağlayıcıları ayarları), `tenant_portfolios` (kullanıcı hesapları ve banka eşleşmeleri) ve `strategy_parameters` (kullanıcının seçtiği indikatör parametreleri) tablolarını oluşturacak Alembic migrasyonunu yazmak.
+- [ ] `collectors/service.py` içinde hardcode olarak duran `31.1035` birim dönüşüm katsayısını dynamic veri tabanı conversion tablosuna taşımak.
+- *DoD:* Canlı PostgreSQL üzerinde Alembic migration'ın sorunsuz uygulanması ve `verify_execution_pipeline.py` smoke testinin başarılı olması.
 
-  - test_notification_policy_hold_dedupes
-  - test_diagnostic_mode_does_not_execute_buy_or_sell
-  - test_decision_envelope_records_readiness_reason
-  - test_live_strategy_uses_v2_registry_default
-  - test_unknown_strategy_blocks_without_trade
-  - test_indicator_backfill_creates_1d_minimum_history
-  - test_daily_trend_missing_resolves_after_backfill
-  - test_xag_to_gram_conversion_uses_policy
-  - Targeted run: cd apps/api && python -m pytest tests/test_auto_trader.py tests/test_indicator_readiness.py tests/test_indicators.py tests/test_trade_intents.py
+---
 
-  ## Acceptance Criteria
-
-  - Aynı HOLD reason’ı cooldown içinde Telegram mesajı üretmez.
-  - Diagnostik modda paper_trades artmaz; signals/audit artar.
-  - Backfill sonrası latest 1d indicator input_bar_count >= 50.
-  - DAILY_TREND_MISSING yeni sinyallerde baskın reason olmaktan çıkar.
-  - BUY/SELL sadece AUTO_TRADING_MODE=paper ve gerçek risk allow sonucuyla trade üretir.
-  - Hiçbir LLM/agent HOLD’u BUY’a yükseltmez; yalnızca veto/advisory etkisi vardır.
-  - Production DB migration/deploy öncesi ayrıca açık onay gerekir.
+## 📌 Netleşen Kararlar (Socratic Gate)
+- **AUTO Strateji Karar Sıklığı:** 1 saatlik bar aralıklarıyla rejim analizi yapılmasına karar verildi (Aşırı makas kaybını engellemek amacıyla günlük yerine saatlik barlar seçildi).
+- **Haber Korelasyon Ağırlıklandırması:** Altın, DXY ve faiz gibi makro haberlerin gümüş üzerindeki etki gücü, LLM promptuna eklenen `relevance` (ilgililik) ve `impact_severity` (şiddet) parametreleri üzerinden dinamik olarak ölçeklenecektir.
+- **Haber Modülerliği:** Metin tabanlı haber kaynakları `BaseNewsCollector` (ABC) soyut sınıfı altında toplanarak OOP mimarisine entegre edilecektir.
+- **Banka Kesintileri, Makas ve Vergiler:** Banka bazlı değişken komisyon ve vergileri yönetebilmek için soyut `BaseCostModel` mimarisi kurulacaktır.
+- **Risk ve İndikatör Modülerliği:** Gelecekte sisteme kolayca yeni risk kuralları ve indikatör tipleri eklenebilmesi amacıyla `BaseRiskGuard` ve `BaseIndicator` soyut sınıfları tanımlanacaktır.
+- **Bypass Çelişkisi Düzeltmesi:** Hafta sonları ve tatil günlerinde indikatör freshness kilitlerinin işlem yapmayı tamamen bloke etme hatası Faz 1'de çözülecektir.

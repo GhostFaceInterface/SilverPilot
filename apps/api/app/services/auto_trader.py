@@ -241,7 +241,7 @@ async def _run_auto_trading_impl(db: Session, settings):
     daily_context = timeframe_contexts["1d"]
     hourly_context = timeframe_contexts["1h"]
     execution_context = timeframe_contexts["5m"]
-    strategy_readiness_flags = evaluate_timeframe_guardrails(timeframe_contexts)
+    strategy_readiness_flags = evaluate_timeframe_guardrails(timeframe_contexts, ref_dt=datetime.now(UTC))
 
     latest_indicator = hourly_context.readiness.indicator
     execution_indicator = execution_context.readiness.indicator
@@ -276,45 +276,263 @@ async def _run_auto_trading_impl(db: Session, settings):
     if latest_event and latest_event.value_json:
         news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
 
-    # 4. Evaluate deterministic multi-timeframe strategy.
-    if latest_indicator is None or daily_context.readiness.indicator is None:
-        execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
-        strategy_decision = StrategyRunner.evaluate_strategy_v2(
-            daily_close=None,
-            daily_sma_20=None,
-            daily_sma_50=None,
-            entry_close=None,
-            entry_rsi_14=None,
-            entry_sma_20=None,
-            entry_sma_50=None,
-            entry_macd_histogram=None,
-            entry_bb_middle=None,
-            entry_atr_14=None,
-            has_open_position=has_open_position,
-            execution_ready=execution_ready,
-            readiness_block_flags=strategy_readiness_flags,
+    # 4. Evaluate strategy based on config routing.
+    active_strategy = settings.strategy_name or "strategy_v2"
+    action = "HOLD"
+    reason_code = "UNKNOWN"
+    confidence = Decimal("0.5000")
+    stop_loss_price = None
+    take_profit_price = None
+    expected_exit_price = None
+    details = {}
+
+    has_block_flag = False
+    block_reason = None
+    if "TIMEFRAME_SOURCE_MISMATCH" in strategy_readiness_flags:
+        block_reason = "TIMEFRAME_SOURCE_MISMATCH"
+        has_block_flag = True
+    elif "ENTRY_TIMEFRAME_STALE" in strategy_readiness_flags:
+        block_reason = "ENTRY_TIMEFRAME_STALE"
+        has_block_flag = True
+    elif "ENTRY_TIMEFRAME_UNUSABLE" in strategy_readiness_flags:
+        block_reason = "ENTRY_TIMEFRAME_UNUSABLE"
+        has_block_flag = True
+    elif "DAILY_TREND_MISSING" in strategy_readiness_flags:
+        block_reason = "DAILY_TREND_MISSING"
+        has_block_flag = True
+    elif "EXECUTION_TIMEFRAME_STALE" in strategy_readiness_flags:
+        block_reason = "EXECUTION_TIMEFRAME_STALE"
+        has_block_flag = True
+    elif "EXECUTION_TIMEFRAME_UNUSABLE" in strategy_readiness_flags:
+        block_reason = "EXECUTION_TIMEFRAME_UNUSABLE"
+        has_block_flag = True
+
+    if has_block_flag:
+        action = "HOLD"
+        reason_code = block_reason
+        if block_reason == "TIMEFRAME_SOURCE_MISMATCH":
+            confidence = Decimal("0.9900")
+        elif block_reason in ("ENTRY_TIMEFRAME_STALE", "ENTRY_TIMEFRAME_UNUSABLE"):
+            confidence = Decimal("0.9800")
+        elif block_reason == "DAILY_TREND_MISSING":
+            confidence = Decimal("0.9900")
+        else:
+            confidence = Decimal("0.9700")
+
+        details = {
+            "strategy_name": active_strategy,
+            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+            "agent_sentiment": news_sentiment,
+            "readiness_block_flags": strategy_readiness_flags,
+        }
+    elif active_strategy == "blended":
+        from app.services.regime import get_market_regime
+        from app.agents.orchestrator import run_blended_consensus_resolution
+
+        regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=hourly_context.readiness.timeframe)
+
+        close = latest_indicator.close_usd_oz if latest_indicator else None
+        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
+        sma_20 = latest_indicator.sma_20 if latest_indicator else None
+        sma_50 = latest_indicator.sma_50 if latest_indicator else None
+        prev_sma_20 = (
+            hourly_context.previous_indicator.sma_20
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
         )
-    else:
-        execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
-        strategy_decision = StrategyRunner.evaluate_strategy_v2(
-            daily_close=daily_context.readiness.indicator.close_usd_oz,
-            daily_sma_20=daily_context.readiness.indicator.sma_20,
-            daily_sma_50=daily_context.readiness.indicator.sma_50,
-            entry_close=latest_indicator.close_usd_oz,
-            entry_rsi_14=latest_indicator.rsi_14,
-            entry_sma_20=latest_indicator.sma_20,
-            entry_sma_50=latest_indicator.sma_50,
-            entry_macd_histogram=latest_indicator.macd_histogram,
-            entry_bb_middle=latest_indicator.bb_middle_20_2,
-            entry_atr_14=latest_indicator.atr_14,
+        prev_sma_50 = (
+            hourly_context.previous_indicator.sma_50
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
+        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
+
+        strategy_votes = StrategyRunner.evaluate_blended_strategies(
+            close=close,
+            rsi_14=rsi_14,
+            sma_20=sma_20,
+            sma_50=sma_50,
+            prev_sma_20=prev_sma_20,
+            prev_sma_50=prev_sma_50,
+            bb_lower=bb_lower,
+            bb_upper=bb_upper,
             has_open_position=has_open_position,
-            execution_ready=execution_ready,
-            readiness_block_flags=strategy_readiness_flags,
         )
 
-    action = strategy_decision.action
-    reason_code = strategy_decision.reason_code
-    logger.info("Strategy V2 evaluation: action=%s reason=%s.", action, reason_code)
+        consensus_event = await run_blended_consensus_resolution(
+            db=db,
+            regime_info=regime_info,
+            strategy_votes=strategy_votes,
+            latest_snapshot=latest_snapshot,
+            hermes_sentiment=latest_event.value_json if latest_event else None,
+        )
+
+        resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
+        confidence = Decimal(str(consensus_event.value_json.get("confidence", "0.5")))
+        resolution_markdown = consensus_event.value_json.get("resolution_markdown", "")
+
+        if resolved_stance == "BULLISH":
+            if not has_open_position:
+                action = "BUY"
+                reason_code = "BLENDED_BULLISH"
+            else:
+                action = "HOLD"
+                reason_code = "BLENDED_BULLISH_BUT_POSITION_OPEN"
+        elif resolved_stance == "BEARISH":
+            if has_open_position:
+                action = "SELL"
+                reason_code = "BLENDED_BEARISH"
+            else:
+                action = "HOLD"
+                reason_code = "BLENDED_BEARISH_BUT_NO_POSITION"
+        else:
+            action = "HOLD"
+            reason_code = "BLENDED_NEUTRAL"
+
+        atr_value = (
+            Decimal(str(latest_indicator.atr_14))
+            if (latest_indicator and latest_indicator.atr_14 is not None)
+            else None
+        )
+        close_value = (
+            Decimal(str(latest_indicator.close_usd_oz))
+            if (latest_indicator and latest_indicator.close_usd_oz is not None)
+            else None
+        )
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        details = {
+            "strategy_name": "blended",
+            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+            "agent_sentiment": news_sentiment,
+            "regime_info": regime_info,
+            "strategy_votes": strategy_votes,
+            "arbiter_decision": resolved_stance,
+            "arbiter_reason": resolution_markdown,
+            "stop_loss_price": float(stop_loss_price) if stop_loss_price is not None else None,
+            "take_profit_price": float(take_profit_price) if take_profit_price is not None else None,
+            "expected_exit_price": float(expected_exit_price) if expected_exit_price is not None else None,
+        }
+
+    elif active_strategy in ("rsi", "sma_cross", "bollinger"):
+        close = latest_indicator.close_usd_oz if latest_indicator else None
+        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
+        sma_20 = latest_indicator.sma_20 if latest_indicator else None
+        sma_50 = latest_indicator.sma_50 if latest_indicator else None
+        prev_sma_20 = (
+            hourly_context.previous_indicator.sma_20
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        prev_sma_50 = (
+            hourly_context.previous_indicator.sma_50
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
+        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
+
+        action, reason_code = StrategyRunner.evaluate_all_strategies(
+            close=close,
+            rsi_14=rsi_14,
+            sma_20=sma_20,
+            sma_50=sma_50,
+            prev_sma_20=prev_sma_20,
+            prev_sma_50=prev_sma_50,
+            bb_lower=bb_lower,
+            bb_upper=bb_upper,
+            has_open_position=has_open_position,
+            strategy_name=active_strategy,
+        )
+        confidence = Decimal("0.9000")
+
+        atr_value = (
+            Decimal(str(latest_indicator.atr_14))
+            if (latest_indicator and latest_indicator.atr_14 is not None)
+            else None
+        )
+        close_value = (
+            Decimal(str(latest_indicator.close_usd_oz))
+            if (latest_indicator and latest_indicator.close_usd_oz is not None)
+            else None
+        )
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        details = {
+            "strategy_name": active_strategy,
+            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+            "agent_sentiment": news_sentiment,
+            "stop_loss_price": float(stop_loss_price) if stop_loss_price is not None else None,
+            "take_profit_price": float(take_profit_price) if take_profit_price is not None else None,
+            "expected_exit_price": float(expected_exit_price) if expected_exit_price is not None else None,
+        }
+
+    else:
+        if latest_indicator is None or daily_context.readiness.indicator is None:
+            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+            strategy_decision = StrategyRunner.evaluate_strategy_v2(
+                daily_close=None,
+                daily_sma_20=None,
+                daily_sma_50=None,
+                entry_close=None,
+                entry_rsi_14=None,
+                entry_sma_20=None,
+                entry_sma_50=None,
+                entry_macd_histogram=None,
+                entry_bb_middle=None,
+                entry_atr_14=None,
+                has_open_position=has_open_position,
+                execution_ready=execution_ready,
+                readiness_block_flags=strategy_readiness_flags,
+            )
+        else:
+            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+            strategy_decision = StrategyRunner.evaluate_strategy_v2(
+                daily_close=daily_context.readiness.indicator.close_usd_oz,
+                daily_sma_20=daily_context.readiness.indicator.sma_20,
+                daily_sma_50=daily_context.readiness.indicator.sma_50,
+                entry_close=latest_indicator.close_usd_oz,
+                entry_rsi_14=latest_indicator.rsi_14,
+                entry_sma_20=latest_indicator.sma_20,
+                entry_sma_50=latest_indicator.sma_50,
+                entry_macd_histogram=latest_indicator.macd_histogram,
+                entry_bb_middle=latest_indicator.bb_middle_20_2,
+                entry_atr_14=latest_indicator.atr_14,
+                has_open_position=has_open_position,
+                execution_ready=execution_ready,
+                readiness_block_flags=strategy_readiness_flags,
+            )
+
+        action = strategy_decision.action
+        reason_code = strategy_decision.reason_code
+        confidence = strategy_decision.confidence
+        stop_loss_price = strategy_decision.stop_loss_price
+        take_profit_price = strategy_decision.take_profit_price
+        expected_exit_price = strategy_decision.expected_exit_price
+
+        details = {
+            "strategy_name": "strategy_v2",
+            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+            "agent_sentiment": news_sentiment,
+            **strategy_decision.to_signal_details(),
+        }
+
+    logger.info("Strategy %s evaluation: action=%s reason=%s.", active_strategy, action, reason_code)
 
     risk_decision_val = "APPROVED"
 
@@ -329,15 +547,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         action = filtered_action
         reason_code = filter_reason
 
-    # 5. Create Signal record
-    details = {
-        "strategy_name": "strategy_v2",
-        "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
-        "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
-        "agent_sentiment": news_sentiment,
-        "agent_filter_reason": filter_reason or None,
-        **strategy_decision.to_signal_details(),
-    }
+    details["agent_filter_reason"] = filter_reason or None
 
     signal = Signal(
         observed_at=latest_snapshot.observed_at,
@@ -361,11 +571,11 @@ async def _run_auto_trading_impl(db: Session, settings):
             portfolio_name="gram-paper",
             asset_symbol="XAG_GRAM",
             action="BUY",
-            confidence=strategy_decision.confidence,
+            confidence=confidence,
             reason_code=reason_code,
-            stop_loss_price=strategy_decision.stop_loss_price,
-            take_profit_price=strategy_decision.take_profit_price,
-            expected_exit_price=strategy_decision.expected_exit_price,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
             metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
         )
         original_commit = db.commit
@@ -390,7 +600,7 @@ async def _run_auto_trading_impl(db: Session, settings):
             portfolio_name="gram-paper",
             asset_symbol="XAG_GRAM",
             action="SELL",
-            confidence=strategy_decision.confidence,
+            confidence=confidence,
             reason_code=reason_code,
             metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
         )
@@ -420,7 +630,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         "fees": float(trade.fees) if trade else 0.0,
         "cash_balance": float(portfolio.cash_balance),
         "xag_balance": float(current_position.quantity),
-        "strategy_name": "strategy_v2",
+        "strategy_name": active_strategy,
         "indicators": {
             "rsi": float(latest_indicator.rsi_14)
             if (latest_indicator and latest_indicator.rsi_14 is not None)
@@ -447,12 +657,38 @@ async def _run_auto_trading_impl(db: Session, settings):
         else None,
     }
 
+    if active_strategy == "blended":
+        notification_data["regime_info"] = regime_info
+        notification_data["strategy_votes"] = strategy_votes
+        notification_data["arbiter_decision"] = resolved_stance
+        notification_data["arbiter_reason"] = resolution_markdown
+
+    should_notify = True
+    if action == "HOLD":
+        stmt_prev = select(Signal)
+        if signal.id is not None:
+            stmt_prev = stmt_prev.where(Signal.id != signal.id)
+        stmt_prev = stmt_prev.order_by(Signal.observed_at.desc(), Signal.id.desc()).limit(1)
+        prev_signal = db.execute(stmt_prev).scalar_one_or_none()
+
+        if prev_signal and prev_signal.action == "HOLD" and prev_signal.reason_code == reason_code:
+            t1 = prev_signal.observed_at
+            t2 = signal.observed_at
+            if t1.tzinfo is None:
+                t1 = t1.replace(tzinfo=UTC)
+            if t2.tzinfo is None:
+                t2 = t2.replace(tzinfo=UTC)
+            elapsed_time = (t2 - t1).total_seconds()
+            if elapsed_time < 6 * 3600:
+                should_notify = False
+
     # Commit transactions
     db.commit()
 
     # 8. Send Telegram message
     is_silent = notification_data["action"] == "HOLD"
-    await send_telegram_notification(notification_data, settings, disable_notification=is_silent)
+    if should_notify:
+        await send_telegram_notification(notification_data, settings, disable_notification=is_silent)
 
 
 def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
@@ -467,7 +703,14 @@ def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
     }
 
 
-def evaluate_timeframe_guardrails(timeframe_contexts: dict) -> list[str]:
+def evaluate_timeframe_guardrails(timeframe_contexts: dict, ref_dt: datetime | None = None) -> list[str]:
+    from app.risk.service import is_comex_market_closed
+
+    if ref_dt is None:
+        ref_dt = datetime.now(UTC)
+
+    comex_closed = is_comex_market_closed(ref_dt)
+
     flags: list[str] = []
     daily_readiness = timeframe_contexts["1d"].readiness
     hourly_readiness = timeframe_contexts["1h"].readiness
@@ -477,12 +720,14 @@ def evaluate_timeframe_guardrails(timeframe_contexts: dict) -> list[str]:
         flags.append("DAILY_TREND_MISSING")
 
     if hourly_readiness.status == "stale":
-        flags.append("ENTRY_TIMEFRAME_STALE")
+        if not comex_closed:
+            flags.append("ENTRY_TIMEFRAME_STALE")
     elif not hourly_readiness.usable or hourly_readiness.indicator is None:
         flags.append("ENTRY_TIMEFRAME_UNUSABLE")
 
     if execution_readiness.status == "stale":
-        flags.append("EXECUTION_TIMEFRAME_STALE")
+        if not comex_closed:
+            flags.append("EXECUTION_TIMEFRAME_STALE")
     elif not execution_readiness.usable or execution_readiness.indicator is None:
         flags.append("EXECUTION_TIMEFRAME_UNUSABLE")
 

@@ -283,7 +283,7 @@ async def test_auto_trading_blended_bullish_consensus():
                 "app.services.auto_trader.get_latest_indicator_context",
                 return_value=_ready_indicator_context(latest_indicator, prev_indicator),
             ),
-            patch("app.paper_trading.service.evaluate_paper_trade_risk", return_value=mock_risk),
+            patch("app.services.trade_intents.evaluate_paper_trade_risk", return_value=mock_risk),
             patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response),
             patch("app.services.telegram.Bot") as MockBot,
         ):

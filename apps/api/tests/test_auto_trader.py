@@ -119,7 +119,7 @@ async def test_auto_trading_disabled():
     engine, db, _, _, _, _ = _seed_runtime_state()
     settings = Settings(
         auto_trading_enabled=False,
-        strategy_name="rsi",
+        strategy_name="strategy_v2",
         telegram_bot_token="token",
         telegram_chat_id=1,
     )
@@ -137,7 +137,7 @@ async def test_auto_trading_uses_strategy_v2_and_trade_intent():
     engine, db, _, portfolio, _, indicators = _seed_runtime_state()
     settings = Settings(
         auto_trading_enabled=True,
-        strategy_name="rsi",
+        strategy_name="strategy_v2",
         telegram_bot_token="token",
         telegram_chat_id=1,
     )
