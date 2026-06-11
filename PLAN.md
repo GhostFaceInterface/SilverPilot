@@ -58,8 +58,8 @@
 ---
 
 ### **Faz 5: SaaS Veri Tabanı ve Çoklu Tenant Altyapısı**
-- [ ] Veri tabanında `providers` (banka sağlayıcıları ayarları), `tenant_portfolios` (kullanıcı hesapları ve banka eşleşmeleri) ve `strategy_parameters` (kullanıcının seçtiği indikatör parametreleri) tablolarını oluşturacak Alembic migrasyonunu yazmak.
-- [ ] `collectors/service.py` içinde hardcode olarak duran `31.1035` birim dönüşüm katsayısını dynamic veri tabanı conversion tablosuna taşımak.
+- [x] Veri tabanında `providers` (banka sağlayıcıları ayarları), `tenant_portfolios` (kullanıcı hesapları ve banka eşleşmeleri) ve `strategy_parameters` (kullanıcının seçtiği indikatör parametreleri) tablolarını oluşturacak Alembic migrasyonunu yazmak.
+- [x] `collectors/service.py` içinde hardcode olarak duran `31.1035` birim dönüşüm katsayısını dynamic veri tabanı conversion tablosuna taşımak.
 - *DoD:* Canlı PostgreSQL üzerinde Alembic migration'ın sorunsuz uygulanması ve `verify_execution_pipeline.py` smoke testinin başarılı olması.
 
 ---
