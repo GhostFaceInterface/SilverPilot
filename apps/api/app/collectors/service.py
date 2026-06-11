@@ -1465,12 +1465,16 @@ def _ratio(numerator: int, denominator: int) -> float:
 def get_conversion_rate(db: Session, from_symbol: str, to_symbol: str) -> Decimal:
     from sqlalchemy.orm import aliased
 
-    from_asset = aliased(Asset)
-    to_asset = aliased(Asset)
-    rate = db.execute(
-        select(AssetConversion.conversion_rate)
-        .join(from_asset, AssetConversion.from_asset_id == from_asset.id)
-        .join(to_asset, AssetConversion.to_asset_id == to_asset.id)
-        .where(from_asset.symbol == from_symbol, to_asset.symbol == to_symbol)
-    ).scalar_one_or_none()
-    return Decimal(str(rate)) if rate is not None else Decimal("31.1035")
+    try:
+        from_asset = aliased(Asset)
+        to_asset = aliased(Asset)
+        rate = db.execute(
+            select(AssetConversion.conversion_rate)
+            .join(from_asset, AssetConversion.from_asset_id == from_asset.id)
+            .join(to_asset, AssetConversion.to_asset_id == to_asset.id)
+            .where(from_asset.symbol == from_symbol, to_asset.symbol == to_symbol)
+        ).scalar_one_or_none()
+        return Decimal(str(rate)) if rate is not None else Decimal("31.1035")
+    except Exception as e:
+        logger.warning(f"Error fetching conversion rate from DB, falling back: {e}")
+        return Decimal("31.1035")

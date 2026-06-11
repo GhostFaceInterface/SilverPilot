@@ -249,3 +249,111 @@ async def test_auto_regime_strategy_trending_both_buy():
         assert decision.action == "BUY"
         assert decision.reason_code == "AUTO_REGIME_TRENDING_BUY"
         assert decision.buy_score == Decimal("1.0000")  # SMA BUY (0.6) + MACD BUY (0.4) = 1.0
+
+
+@pytest.mark.anyio
+async def test_auto_regime_strategy_missing_regime_info():
+    auto_strat = STRATEGY_REGISTRY["auto"]
+    db = MagicMock(spec=Session)
+
+    context = {
+        "close": Decimal("30.0"),
+        "rsi_14": Decimal("25.0"),
+        "bb_lower": Decimal("28.0"),
+        "bb_upper": Decimal("32.0"),
+        "has_open_position": False,
+        "atr_value": Decimal("0.5"),
+        "close_value": Decimal("30.0"),
+    }
+
+    with patch("app.services.regime.get_market_regime", return_value=None):
+        decision = await auto_strat.evaluate(db, context)
+        assert decision.action == "BUY"
+        assert decision.reason_code == "AUTO_REGIME_SIDEWAYS_BUY"
+        assert decision.trend_state == "SIDEWAYS"
+
+
+@pytest.mark.anyio
+async def test_auto_regime_strategy_indicators_none():
+    auto_strat = STRATEGY_REGISTRY["auto"]
+    db = MagicMock(spec=Session)
+
+    mock_regime = {
+        "regime": "SIDEWAYS",
+        "adx": None,
+        "bb_bandwidth": None,
+    }
+
+    context = {
+        "close": Decimal("30.0"),
+        "rsi_14": Decimal("25.0"),
+        "bb_lower": Decimal("28.0"),
+        "bb_upper": Decimal("32.0"),
+        "has_open_position": False,
+        "atr_value": Decimal("0.5"),
+        "close_value": Decimal("30.0"),
+    }
+
+    with patch("app.services.regime.get_market_regime", return_value=mock_regime):
+        decision = await auto_strat.evaluate(db, context)
+        assert decision.action == "BUY"
+        assert decision.reason_code == "AUTO_REGIME_SIDEWAYS_BUY"
+
+
+@pytest.mark.anyio
+async def test_auto_regime_strategy_adx_boundaries():
+    auto_strat = STRATEGY_REGISTRY["auto"]
+    db = MagicMock(spec=Session)
+
+    context = {
+        "close": Decimal("30.0"),
+        "rsi_14": Decimal("25.0"),
+        "bb_lower": Decimal("28.0"),
+        "bb_upper": Decimal("32.0"),
+        "sma_20": Decimal("31.0"),
+        "sma_50": Decimal("30.0"),
+        "prev_sma_20": Decimal("29.0"),
+        "prev_sma_50": Decimal("30.0"),
+        "macd_line": Decimal("0.5"),
+        "macd_signal": Decimal("0.2"),
+        "prev_macd_line": Decimal("0.1"),
+        "prev_macd_signal": Decimal("0.2"),
+        "has_open_position": False,
+        "atr_value": Decimal("0.5"),
+        "close_value": Decimal("30.0"),
+    }
+
+    with patch(
+        "app.services.regime.get_market_regime", return_value={"regime": "SIDEWAYS", "adx": 24.9, "bb_bandwidth": 0.020}
+    ):
+        decision = await auto_strat.evaluate(db, context)
+        assert decision.action == "BUY"
+        assert decision.reason_code == "AUTO_REGIME_SIDEWAYS_BUY"
+
+    with patch(
+        "app.services.regime.get_market_regime", return_value={"regime": "TRENDING", "adx": 25.0, "bb_bandwidth": 0.020}
+    ):
+        decision = await auto_strat.evaluate(db, context)
+        assert decision.action == "BUY"
+        assert decision.reason_code == "AUTO_REGIME_TRENDING_BUY"
+
+
+@pytest.mark.anyio
+async def test_macd_strategy_various_nones():
+    macd_strat = STRATEGY_REGISTRY["macd"]
+    db = MagicMock(spec=Session)
+
+    base_context = {
+        "macd_line": Decimal("0.5"),
+        "macd_signal": Decimal("0.2"),
+        "prev_macd_line": Decimal("0.1"),
+        "prev_macd_signal": Decimal("0.2"),
+        "has_open_position": False,
+    }
+
+    for key in ["macd_line", "macd_signal", "prev_macd_line", "prev_macd_signal"]:
+        context = dict(base_context)
+        context[key] = None
+        decision = await macd_strat.evaluate(db, context)
+        assert decision.action == "HOLD"
+        assert decision.reason_code == "MACD_INSUFFICIENT_DATA"

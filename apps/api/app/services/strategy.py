@@ -991,8 +991,10 @@ class AutoRegimeStrategy(BaseStrategy):
             }
 
         regime_info.get("regime", "SIDEWAYS")
-        adx = regime_info.get("adx", 0.0)
-        bb_bandwidth = regime_info.get("bb_bandwidth", 0.0)
+        adx_val = regime_info.get("adx")
+        adx = float(adx_val) if adx_val is not None else 0.0
+        bb_val = regime_info.get("bb_bandwidth")
+        bb_bandwidth = float(bb_val) if bb_val is not None else 0.0
         has_open_position = context.get("has_open_position", False)
 
         # Sideways/Mean-reversion
@@ -1047,7 +1049,12 @@ class AutoRegimeStrategy(BaseStrategy):
         hourly_context = context.get("hourly_context")
         timeframe = hourly_context.readiness.timeframe if hourly_context else "1h"
 
-        regime_info = get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe)
+        regime_info_raw = get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe)
+        regime_info = regime_info_raw or {
+            "regime": "SIDEWAYS",
+            "adx": 0.0,
+            "bb_bandwidth": 0.0,
+        }
 
         # Make a copy of context to prevent modifying caller's context dict
         local_context = dict(context)
@@ -1056,8 +1063,10 @@ class AutoRegimeStrategy(BaseStrategy):
         action, reason = self.evaluate_sync(local_context)
 
         has_open_position = local_context.get("has_open_position", False)
-        adx = regime_info.get("adx", 0.0)
-        bb_bandwidth = regime_info.get("bb_bandwidth", 0.0)
+        adx_val = regime_info.get("adx")
+        adx = float(adx_val) if adx_val is not None else 0.0
+        bb_val = regime_info.get("bb_bandwidth")
+        bb_bandwidth = float(bb_val) if bb_val is not None else 0.0
 
         buy_score = Decimal("0.0000")
         sell_score = Decimal("0.0000")

@@ -153,3 +153,21 @@ def test_seed_development_data_saas_tables(monkeypatch):
     finally:
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
+
+
+def test_get_conversion_rate_db_error_fallback():
+    from unittest.mock import MagicMock
+
+    db_mock = MagicMock()
+    db_mock.execute.side_effect = Exception("DB Connection Timeout")
+    rate = get_conversion_rate(db_mock, "XAG", "XAG_GRAM")
+    assert rate == Decimal("31.1035")
+
+
+def test_get_conversion_rate_returns_null_fallback():
+    from unittest.mock import MagicMock
+
+    db_mock = MagicMock()
+    db_mock.execute.return_value.scalar_one_or_none.return_value = None
+    rate = get_conversion_rate(db_mock, "XAG", "XAG_GRAM")
+    assert rate == Decimal("31.1035")
