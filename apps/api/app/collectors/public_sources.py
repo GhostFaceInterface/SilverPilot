@@ -26,7 +26,8 @@ from app.collectors.service import (
     record_failed_run,
 )
 from app.core.config import Settings, get_settings
-from app.models import Asset, CollectorRun, PriceSnapshot, RawFxRate
+from app.models import Asset, CollectorRun, PriceSnapshot, RawFxRate, RawNews
+from app.services.base import BasePriceScraper, BaseNewsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -1873,3 +1874,35 @@ def collect_rss_news(
         details_json={"parser_version": GENERIC_RSS_PARSER_VERSION, "urls_tried": urls},
     )
     return run, 0
+
+
+class KuveytPriceScraper(BasePriceScraper):
+    def fetch_price(self, db: Session, asset: str) -> PriceSnapshot:
+        _, _, snapshot = collect_kuveyt_public_silver(db)
+        if not snapshot:
+            raise ValueError(f"Failed to fetch Kuveyt price snapshot for {asset}")
+        return snapshot
+
+
+class YahooPriceScraper(BasePriceScraper):
+    def fetch_price(self, db: Session, asset: str) -> PriceSnapshot:
+        _, _, snapshot = collect_global_xag_usd(db)
+        if not snapshot:
+            raise ValueError(f"Failed to fetch Yahoo/Global price snapshot for {asset}")
+        return snapshot
+
+
+class YahooNewsCollector(BaseNewsCollector):
+    def collect(self, db: Session) -> list[RawNews]:
+        return []
+
+
+class FedNewsCollector(BaseNewsCollector):
+    def collect(self, db: Session) -> list[RawNews]:
+        run, inserted = collect_fed_rss(db)
+        if inserted > 0:
+            from sqlalchemy import select
+
+            stmt = select(RawNews).where(RawNews.collector_run_id == run.id)
+            return list(db.scalars(stmt).all())
+        return []

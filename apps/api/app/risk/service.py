@@ -11,6 +11,7 @@ from app.collectors.service import collector_health
 from app.core.config import get_settings
 from app.models import Asset, MLInferenceAudit, PaperTrade, Portfolio, RawGlobalPrice, RiskDecision
 from app.schemas.paper_trading import PaperTradeRequest
+from app.services.base import BaseRiskGuard
 
 CONFIDENCE = Decimal("1.0000")
 PERCENT_QUANT = Decimal("0.000001")
@@ -106,6 +107,93 @@ class RiskStatusError(Exception):
     pass
 
 
+class SpreadRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        request = context["request"]
+        settings = get_settings()
+        return _spread_block(db, request=request, max_spread_percent=settings.risk_max_spread_percent)
+
+
+class StalenessRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        now = context.get("now")
+        settings = get_settings()
+        return _execution_data_block(db, stale_after_minutes=settings.risk_data_stale_after_minutes, now=now)
+
+
+class LossLimitRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        portfolio = context["portfolio"]
+        asset = context["asset"]
+        settings = get_settings()
+        return _loss_limit_block(
+            db,
+            portfolio_id=portfolio.id,
+            asset_id=asset.id,
+            max_daily_loss_usd=settings.risk_max_daily_loss_usd,
+            max_weekly_loss_usd=settings.risk_max_weekly_loss_usd,
+        )
+
+
+class VolatilityRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        asset = context["asset"]
+        settings = get_settings()
+        return _volatility_block(
+            db,
+            asset_id=asset.id,
+            max_24h_percent=settings.risk_max_24h_volatility_percent,
+            max_7d_percent=settings.risk_max_7d_volatility_percent,
+        )
+
+
+class FomoRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        request = context["request"]
+        asset = context["asset"]
+        settings = get_settings()
+        return _fomo_block(
+            db,
+            request=request,
+            asset_id=asset.id,
+            lookback_minutes=settings.risk_fomo_lookback_minutes,
+            max_rise_percent=settings.risk_fomo_rise_percent,
+        )
+
+
+class ExpectedGainRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        request = context["request"]
+        amounts = context["amounts"]
+        settings = get_settings()
+        return _expected_gain_block(
+            db,
+            request=request,
+            amounts=amounts,
+            min_expected_net_gain_percent=settings.risk_min_expected_net_gain_percent,
+        )
+
+
+class MlModelRiskGuard(BaseRiskGuard):
+    def evaluate_risk(self, db: Session, context: dict) -> RiskDecision | None:
+        request = context["request"]
+        asset = context["asset"]
+        ml_decision, ml_advisory_details = _ml_model_review(db, request=request, asset_id=asset.id)
+        context["ml_advisory"] = ml_advisory_details
+        return ml_decision
+
+
+RISK_GUARDS = [
+    SpreadRiskGuard(),
+    StalenessRiskGuard(),
+    LossLimitRiskGuard(),
+    VolatilityRiskGuard(),
+    FomoRiskGuard(),
+    ExpectedGainRiskGuard(),
+    MlModelRiskGuard(),
+]
+
+
 def evaluate_paper_trade_risk(
     db: Session,
     *,
@@ -137,55 +225,21 @@ def evaluate_paper_trade_risk(
             details={"requested_action": request.action},
         )
 
-    spread_decision = _spread_block(db, request=request, max_spread_percent=settings.risk_max_spread_percent)
-    if spread_decision is not None:
-        return spread_decision
+    context = {
+        "request": request,
+        "portfolio": portfolio,
+        "asset": asset,
+        "position": position,
+        "amounts": amounts,
+        "now": now,
+        "ml_advisory": None,
+    }
 
-    data_decision = _execution_data_block(db, stale_after_minutes=settings.risk_data_stale_after_minutes, now=now)
-    if data_decision is not None:
-        return data_decision
-
-    loss_decision = _loss_limit_block(
-        db,
-        portfolio_id=portfolio.id,
-        asset_id=asset.id,
-        max_daily_loss_usd=settings.risk_max_daily_loss_usd,
-        max_weekly_loss_usd=settings.risk_max_weekly_loss_usd,
-    )
-    if loss_decision is not None:
-        return loss_decision
-
-    volatility_decision = _volatility_block(
-        db,
-        asset_id=asset.id,
-        max_24h_percent=settings.risk_max_24h_volatility_percent,
-        max_7d_percent=settings.risk_max_7d_volatility_percent,
-    )
-    if volatility_decision is not None:
-        return volatility_decision
-
-    fomo_decision = _fomo_block(
-        db,
-        request=request,
-        asset_id=asset.id,
-        lookback_minutes=settings.risk_fomo_lookback_minutes,
-        max_rise_percent=settings.risk_fomo_rise_percent,
-    )
-    if fomo_decision is not None:
-        return fomo_decision
-
-    expected_gain_decision = _expected_gain_block(
-        db,
-        request=request,
-        amounts=amounts,
-        min_expected_net_gain_percent=settings.risk_min_expected_net_gain_percent,
-    )
-    if expected_gain_decision is not None:
-        return expected_gain_decision
-
-    ml_decision, ml_advisory_details = _ml_model_review(db, request=request, asset_id=asset.id)
-    if ml_decision is not None:
-        return ml_decision
+    # Run each guard in turn
+    for guard in RISK_GUARDS:
+        decision = guard.evaluate_risk(db, context)
+        if decision is not None:
+            return decision
 
     if request.action == "paper_buy" and portfolio.cash_balance < amounts.net_amount:
         return _decision(
@@ -229,7 +283,7 @@ def evaluate_paper_trade_risk(
             "fomo_rise_percent": str(settings.risk_fomo_rise_percent),
             "max_daily_loss_usd": str(settings.risk_max_daily_loss_usd),
             "max_weekly_loss_usd": str(settings.risk_max_weekly_loss_usd),
-            "ml_advisory": ml_advisory_details,
+            "ml_advisory": context.get("ml_advisory"),
         },
     )
 

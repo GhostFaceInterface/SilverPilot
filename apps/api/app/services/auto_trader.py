@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Asset, Portfolio, Signal, AgentMemoryEvent
-from app.services.strategy import StrategyRunner
+from app.services.strategy import StrategyRunner, STRATEGY_REGISTRY
 from app.paper_trading.service import calculate_position
 from app.services.indicator_readiness import get_latest_indicator_context
 from app.services.trade_intents import TradeIntent, execute_trade_intent
@@ -326,196 +326,62 @@ async def _run_auto_trading_impl(db: Session, settings):
             "agent_sentiment": news_sentiment,
             "readiness_block_flags": strategy_readiness_flags,
         }
-    elif active_strategy == "blended":
-        from app.services.regime import get_market_regime
-        from app.agents.orchestrator import run_blended_consensus_resolution
-
-        regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=hourly_context.readiness.timeframe)
-
-        close = latest_indicator.close_usd_oz if latest_indicator else None
-        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
-        sma_20 = latest_indicator.sma_20 if latest_indicator else None
-        sma_50 = latest_indicator.sma_50 if latest_indicator else None
-        prev_sma_20 = (
-            hourly_context.previous_indicator.sma_20
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        prev_sma_50 = (
-            hourly_context.previous_indicator.sma_50
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
-        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
-
-        strategy_votes = StrategyRunner.evaluate_blended_strategies(
-            close=close,
-            rsi_14=rsi_14,
-            sma_20=sma_20,
-            sma_50=sma_50,
-            prev_sma_20=prev_sma_20,
-            prev_sma_50=prev_sma_50,
-            bb_lower=bb_lower,
-            bb_upper=bb_upper,
-            has_open_position=has_open_position,
-        )
-
-        consensus_event = await run_blended_consensus_resolution(
-            db=db,
-            regime_info=regime_info,
-            strategy_votes=strategy_votes,
-            latest_snapshot=latest_snapshot,
-            hermes_sentiment=latest_event.value_json if latest_event else None,
-        )
-
-        resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
-        confidence = Decimal(str(consensus_event.value_json.get("confidence", "0.5")))
-        resolution_markdown = consensus_event.value_json.get("resolution_markdown", "")
-
-        if resolved_stance == "BULLISH":
-            if not has_open_position:
-                action = "BUY"
-                reason_code = "BLENDED_BULLISH"
-            else:
-                action = "HOLD"
-                reason_code = "BLENDED_BULLISH_BUT_POSITION_OPEN"
-        elif resolved_stance == "BEARISH":
-            if has_open_position:
-                action = "SELL"
-                reason_code = "BLENDED_BEARISH"
-            else:
-                action = "HOLD"
-                reason_code = "BLENDED_BEARISH_BUT_NO_POSITION"
-        else:
-            action = "HOLD"
-            reason_code = "BLENDED_NEUTRAL"
-
-        atr_value = (
-            Decimal(str(latest_indicator.atr_14))
-            if (latest_indicator and latest_indicator.atr_14 is not None)
-            else None
-        )
-        close_value = (
-            Decimal(str(latest_indicator.close_usd_oz))
-            if (latest_indicator and latest_indicator.close_usd_oz is not None)
-            else None
-        )
-        if atr_value is not None and close_value is not None:
-            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
-            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
-            stop_loss_price = close_value - risk_unit
-            take_profit_price = close_value + reward_unit
-            expected_exit_price = take_profit_price
-
-        details = {
-            "strategy_name": "blended",
-            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
-            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
-            "agent_sentiment": news_sentiment,
-            "regime_info": regime_info,
-            "strategy_votes": strategy_votes,
-            "arbiter_decision": resolved_stance,
-            "arbiter_reason": resolution_markdown,
-            "stop_loss_price": float(stop_loss_price) if stop_loss_price is not None else None,
-            "take_profit_price": float(take_profit_price) if take_profit_price is not None else None,
-            "expected_exit_price": float(expected_exit_price) if expected_exit_price is not None else None,
-        }
-
-    elif active_strategy in ("rsi", "sma_cross", "bollinger"):
-        close = latest_indicator.close_usd_oz if latest_indicator else None
-        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
-        sma_20 = latest_indicator.sma_20 if latest_indicator else None
-        sma_50 = latest_indicator.sma_50 if latest_indicator else None
-        prev_sma_20 = (
-            hourly_context.previous_indicator.sma_20
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        prev_sma_50 = (
-            hourly_context.previous_indicator.sma_50
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
-        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
-
-        action, reason_code = StrategyRunner.evaluate_all_strategies(
-            close=close,
-            rsi_14=rsi_14,
-            sma_20=sma_20,
-            sma_50=sma_50,
-            prev_sma_20=prev_sma_20,
-            prev_sma_50=prev_sma_50,
-            bb_lower=bb_lower,
-            bb_upper=bb_upper,
-            has_open_position=has_open_position,
-            strategy_name=active_strategy,
-        )
-        confidence = Decimal("0.9000")
-
-        atr_value = (
-            Decimal(str(latest_indicator.atr_14))
-            if (latest_indicator and latest_indicator.atr_14 is not None)
-            else None
-        )
-        close_value = (
-            Decimal(str(latest_indicator.close_usd_oz))
-            if (latest_indicator and latest_indicator.close_usd_oz is not None)
-            else None
-        )
-        if atr_value is not None and close_value is not None:
-            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
-            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
-            stop_loss_price = close_value - risk_unit
-            take_profit_price = close_value + reward_unit
-            expected_exit_price = take_profit_price
-
-        details = {
-            "strategy_name": active_strategy,
-            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
-            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
-            "agent_sentiment": news_sentiment,
-            "stop_loss_price": float(stop_loss_price) if stop_loss_price is not None else None,
-            "take_profit_price": float(take_profit_price) if take_profit_price is not None else None,
-            "expected_exit_price": float(expected_exit_price) if expected_exit_price is not None else None,
-        }
-
     else:
-        if latest_indicator is None or daily_context.readiness.indicator is None:
-            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
-            strategy_decision = StrategyRunner.evaluate_strategy_v2(
-                daily_close=None,
-                daily_sma_20=None,
-                daily_sma_50=None,
-                entry_close=None,
-                entry_rsi_14=None,
-                entry_sma_20=None,
-                entry_sma_50=None,
-                entry_macd_histogram=None,
-                entry_bb_middle=None,
-                entry_atr_14=None,
-                has_open_position=has_open_position,
-                execution_ready=execution_ready,
-                readiness_block_flags=strategy_readiness_flags,
-            )
-        else:
-            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
-            strategy_decision = StrategyRunner.evaluate_strategy_v2(
-                daily_close=daily_context.readiness.indicator.close_usd_oz,
-                daily_sma_20=daily_context.readiness.indicator.sma_20,
-                daily_sma_50=daily_context.readiness.indicator.sma_50,
-                entry_close=latest_indicator.close_usd_oz,
-                entry_rsi_14=latest_indicator.rsi_14,
-                entry_sma_20=latest_indicator.sma_20,
-                entry_sma_50=latest_indicator.sma_50,
-                entry_macd_histogram=latest_indicator.macd_histogram,
-                entry_bb_middle=latest_indicator.bb_middle_20_2,
-                entry_atr_14=latest_indicator.atr_14,
-                has_open_position=has_open_position,
-                execution_ready=execution_ready,
-                readiness_block_flags=strategy_readiness_flags,
-            )
+        # Resolve strategy from STRATEGY_REGISTRY
+        strategy = STRATEGY_REGISTRY.get(active_strategy)
+        if not strategy:
+            raise ValueError(f"Strategy {active_strategy} not registered in STRATEGY_REGISTRY")
+
+        close = latest_indicator.close_usd_oz if latest_indicator else None
+        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
+        sma_20 = latest_indicator.sma_20 if latest_indicator else None
+        sma_50 = latest_indicator.sma_50 if latest_indicator else None
+        prev_sma_20 = (
+            hourly_context.previous_indicator.sma_20
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        prev_sma_50 = (
+            hourly_context.previous_indicator.sma_50
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
+        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
+
+        atr_value = (
+            Decimal(str(latest_indicator.atr_14))
+            if (latest_indicator and latest_indicator.atr_14 is not None)
+            else None
+        )
+        close_value = (
+            Decimal(str(latest_indicator.close_usd_oz))
+            if (latest_indicator and latest_indicator.close_usd_oz is not None)
+            else None
+        )
+
+        context = {
+            "close": close,
+            "rsi_14": rsi_14,
+            "sma_20": sma_20,
+            "sma_50": sma_50,
+            "prev_sma_20": prev_sma_20,
+            "prev_sma_50": prev_sma_50,
+            "bb_lower": bb_lower,
+            "bb_upper": bb_upper,
+            "atr_value": atr_value,
+            "close_value": close_value,
+            "has_open_position": has_open_position,
+            "asset": asset,
+            "hourly_context": hourly_context,
+            "daily_context": daily_context,
+            "latest_indicator": latest_indicator,
+            "latest_snapshot": latest_snapshot,
+            "latest_event": latest_event,
+            "readiness_block_flags": strategy_readiness_flags,
+        }
+
+        strategy_decision = await strategy.evaluate(db, context)
 
         action = strategy_decision.action
         reason_code = strategy_decision.reason_code
@@ -525,12 +391,14 @@ async def _run_auto_trading_impl(db: Session, settings):
         expected_exit_price = strategy_decision.expected_exit_price
 
         details = {
-            "strategy_name": "strategy_v2",
+            "strategy_name": active_strategy,
             "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
             "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
             "agent_sentiment": news_sentiment,
             **strategy_decision.to_signal_details(),
         }
+        if strategy_decision.exit_metadata:
+            details.update(strategy_decision.exit_metadata)
 
     logger.info("Strategy %s evaluation: action=%s reason=%s.", active_strategy, action, reason_code)
 
@@ -658,10 +526,11 @@ async def _run_auto_trading_impl(db: Session, settings):
     }
 
     if active_strategy == "blended":
-        notification_data["regime_info"] = regime_info
-        notification_data["strategy_votes"] = strategy_votes
-        notification_data["arbiter_decision"] = resolved_stance
-        notification_data["arbiter_reason"] = resolution_markdown
+        meta = strategy_decision.exit_metadata or {}
+        notification_data["regime_info"] = meta.get("regime_info")
+        notification_data["strategy_votes"] = meta.get("strategy_votes")
+        notification_data["arbiter_decision"] = meta.get("arbiter_decision")
+        notification_data["arbiter_reason"] = meta.get("arbiter_reason")
 
     should_notify = True
     if action == "HOLD":

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, TYPE_CHECKING
 from sqlalchemy.orm import Session
+from app.services.base import BaseStrategy
 
 if TYPE_CHECKING:
     from app.models.entities import AgentMemoryEvent
@@ -208,27 +209,22 @@ class StrategyRunner:
         """
         Routes calculation to the selected strategy.
         """
-        if strategy_name == "rsi":
-            return cls.evaluate_rsi_strategy(rsi_14, has_open_position)
-        elif strategy_name == "sma_cross":
-            return cls.evaluate_sma_cross_strategy(sma_20, sma_50, prev_sma_20, prev_sma_50, has_open_position)
-        elif strategy_name == "bollinger":
-            return cls.evaluate_bb_strategy(close, bb_lower, bb_upper, has_open_position)
-        elif strategy_name == "blended":
-            # For back-compatibility or simple non-agentic evaluation, return the majority action
-            votes = cls.evaluate_blended_strategies(
-                close, rsi_14, sma_20, sma_50, prev_sma_20, prev_sma_50, bb_lower, bb_upper, has_open_position
-            )
-            actions = [votes["rsi"]["action"], votes["bollinger"]["action"], votes["sma_cross"]["action"]]
-            buy_count = actions.count("BUY")
-            sell_count = actions.count("SELL")
-            if buy_count > sell_count and buy_count >= 1:
-                return "BUY", "BLENDED_MAJORITY"
-            elif sell_count > buy_count and sell_count >= 1:
-                return "SELL", "BLENDED_MAJORITY"
-            return "HOLD", "BLENDED_NEUTRAL"
-        else:
+        strategy = STRATEGY_REGISTRY.get(strategy_name)
+        if not strategy:
             return "HOLD", "UNKNOWN_STRATEGY"
+
+        context = {
+            "close": close,
+            "rsi_14": rsi_14,
+            "sma_20": sma_20,
+            "sma_50": sma_50,
+            "prev_sma_20": prev_sma_20,
+            "prev_sma_50": prev_sma_50,
+            "bb_lower": bb_lower,
+            "bb_upper": bb_upper,
+            "has_open_position": has_open_position,
+        }
+        return strategy.evaluate_sync(context)
 
     @classmethod
     def classify_trend(
@@ -554,3 +550,354 @@ async def trigger_risk_critique_hook(db: Session, signal_id: int) -> "AgentMemor
     from app.agents.risk import run_signal_critique
 
     return await run_signal_critique(db, signal_id=signal_id)
+
+
+class RsiStrategy(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        return StrategyRunner.evaluate_rsi_strategy(context.get("rsi_14"), context.get("has_open_position", False))
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        action, reason = self.evaluate_sync(context)
+
+        atr_value = context.get("atr_value")
+        close_value = context.get("close_value")
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        return StrategyDecision(
+            action=action,
+            reason_code=reason,
+            confidence=Decimal("0.9000"),
+            trend_state="NEUTRAL",
+            entry_state="READY",
+            execution_state="READY",
+            buy_score=Decimal("0.0000"),
+            sell_score=Decimal("0.0000"),
+            component_scores={},
+            readiness_block_flags=context.get("readiness_block_flags", []),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata={},
+        )
+
+
+class SmaCrossStrategy(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        return StrategyRunner.evaluate_sma_cross_strategy(
+            context.get("sma_20"),
+            context.get("sma_50"),
+            context.get("prev_sma_20"),
+            context.get("prev_sma_50"),
+            context.get("has_open_position", False),
+        )
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        action, reason = self.evaluate_sync(context)
+
+        atr_value = context.get("atr_value")
+        close_value = context.get("close_value")
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        return StrategyDecision(
+            action=action,
+            reason_code=reason,
+            confidence=Decimal("0.9000"),
+            trend_state="NEUTRAL",
+            entry_state="READY",
+            execution_state="READY",
+            buy_score=Decimal("0.0000"),
+            sell_score=Decimal("0.0000"),
+            component_scores={},
+            readiness_block_flags=context.get("readiness_block_flags", []),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata={},
+        )
+
+
+class BollingerStrategy(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        return StrategyRunner.evaluate_bb_strategy(
+            context.get("close"),
+            context.get("bb_lower"),
+            context.get("bb_upper"),
+            context.get("has_open_position", False),
+        )
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        action, reason = self.evaluate_sync(context)
+
+        atr_value = context.get("atr_value")
+        close_value = context.get("close_value")
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        return StrategyDecision(
+            action=action,
+            reason_code=reason,
+            confidence=Decimal("0.9000"),
+            trend_state="NEUTRAL",
+            entry_state="READY",
+            execution_state="READY",
+            buy_score=Decimal("0.0000"),
+            sell_score=Decimal("0.0000"),
+            component_scores={},
+            readiness_block_flags=context.get("readiness_block_flags", []),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata={},
+        )
+
+
+class BlendedStrategy(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        votes = StrategyRunner.evaluate_blended_strategies(
+            context.get("close"),
+            context.get("rsi_14"),
+            context.get("sma_20"),
+            context.get("sma_50"),
+            context.get("prev_sma_20"),
+            context.get("prev_sma_50"),
+            context.get("bb_lower"),
+            context.get("bb_upper"),
+            context.get("has_open_position", False),
+        )
+        actions = [votes["rsi"]["action"], votes["bollinger"]["action"], votes["sma_cross"]["action"]]
+        buy_count = actions.count("BUY")
+        sell_count = actions.count("SELL")
+        if buy_count > sell_count and buy_count >= 1:
+            return "BUY", "BLENDED_MAJORITY"
+        elif sell_count > buy_count and sell_count >= 1:
+            return "SELL", "BLENDED_MAJORITY"
+        return "HOLD", "BLENDED_NEUTRAL"
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        from app.services.regime import get_market_regime
+        from app.agents.orchestrator import run_blended_consensus_resolution
+
+        asset = context["asset"]
+        hourly_context = context["hourly_context"]
+        latest_indicator = context.get("latest_indicator")
+        has_open_position = context.get("has_open_position", False)
+        latest_snapshot = context.get("latest_snapshot")
+        latest_event = context.get("latest_event")
+
+        regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=hourly_context.readiness.timeframe)
+
+        close = latest_indicator.close_usd_oz if latest_indicator else None
+        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
+        sma_20 = latest_indicator.sma_20 if latest_indicator else None
+        sma_50 = latest_indicator.sma_50 if latest_indicator else None
+        prev_sma_20 = (
+            hourly_context.previous_indicator.sma_20
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        prev_sma_50 = (
+            hourly_context.previous_indicator.sma_50
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
+        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
+
+        strategy_votes = StrategyRunner.evaluate_blended_strategies(
+            close=close,
+            rsi_14=rsi_14,
+            sma_20=sma_20,
+            sma_50=sma_50,
+            prev_sma_20=prev_sma_20,
+            prev_sma_50=prev_sma_50,
+            bb_lower=bb_lower,
+            bb_upper=bb_upper,
+            has_open_position=has_open_position,
+        )
+
+        consensus_event = await run_blended_consensus_resolution(
+            db=db,
+            regime_info=regime_info,
+            strategy_votes=strategy_votes,
+            latest_snapshot=latest_snapshot,
+            hermes_sentiment=latest_event.value_json if latest_event else None,
+        )
+
+        resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
+        confidence = Decimal(str(consensus_event.value_json.get("confidence", "0.5")))
+        resolution_markdown = consensus_event.value_json.get("resolution_markdown", "")
+
+        if resolved_stance == "BULLISH":
+            if not has_open_position:
+                action = "BUY"
+                reason_code = "BLENDED_BULLISH"
+            else:
+                action = "HOLD"
+                reason_code = "BLENDED_BULLISH_BUT_POSITION_OPEN"
+        elif resolved_stance == "BEARISH":
+            if has_open_position:
+                action = "SELL"
+                reason_code = "BLENDED_BEARISH"
+            else:
+                action = "HOLD"
+                reason_code = "BLENDED_BEARISH_BUT_NO_POSITION"
+        else:
+            action = "HOLD"
+            reason_code = "BLENDED_NEUTRAL"
+
+        atr_value = context.get("atr_value")
+        close_value = context.get("close_value")
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        exit_metadata = {
+            "mode": "blended_consensus",
+            "reason": resolution_markdown,
+            "resolved_stance": resolved_stance,
+            "consensus_event_id": consensus_event.id,
+            "regime_info": regime_info,
+            "strategy_votes": strategy_votes,
+            "arbiter_decision": resolved_stance,
+            "arbiter_reason": resolution_markdown,
+        }
+
+        return StrategyDecision(
+            action=action,
+            reason_code=reason_code,
+            confidence=confidence,
+            trend_state="NEUTRAL",
+            entry_state="READY",
+            execution_state="READY",
+            buy_score=Decimal("0.0000"),
+            sell_score=Decimal("0.0000"),
+            component_scores={},
+            readiness_block_flags=context.get("readiness_block_flags", []),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata=exit_metadata,
+        )
+
+
+class StrategyV2(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        daily_context = context.get("daily_context")
+        latest_indicator = context.get("latest_indicator")
+        has_open_position = context.get("has_open_position", False)
+        strategy_readiness_flags = context.get("readiness_block_flags", [])
+
+        if latest_indicator is None or daily_context is None or daily_context.readiness.indicator is None:
+            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+            dec = StrategyRunner.evaluate_strategy_v2(
+                daily_close=None,
+                daily_sma_20=None,
+                daily_sma_50=None,
+                entry_close=None,
+                entry_rsi_14=None,
+                entry_sma_20=None,
+                entry_sma_50=None,
+                entry_macd_histogram=None,
+                entry_bb_middle=None,
+                entry_atr_14=None,
+                has_open_position=has_open_position,
+                execution_ready=execution_ready,
+                readiness_block_flags=strategy_readiness_flags,
+            )
+        else:
+            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+            dec = StrategyRunner.evaluate_strategy_v2(
+                daily_close=daily_context.readiness.indicator.close_usd_oz,
+                daily_sma_20=daily_context.readiness.indicator.sma_20,
+                daily_sma_50=daily_context.readiness.indicator.sma_50,
+                entry_close=latest_indicator.close_usd_oz,
+                entry_rsi_14=latest_indicator.rsi_14,
+                entry_sma_20=latest_indicator.sma_20,
+                entry_sma_50=latest_indicator.sma_50,
+                entry_macd_histogram=latest_indicator.macd_histogram,
+                entry_bb_middle=latest_indicator.bb_middle_20_2,
+                entry_atr_14=latest_indicator.atr_14,
+                has_open_position=has_open_position,
+                execution_ready=execution_ready,
+                readiness_block_flags=strategy_readiness_flags,
+            )
+        return dec.action, dec.reason_code
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        daily_context = context["daily_context"]
+        latest_indicator = context.get("latest_indicator")
+        has_open_position = context.get("has_open_position", False)
+        strategy_readiness_flags = context.get("readiness_block_flags", [])
+
+        if latest_indicator is None or daily_context.readiness.indicator is None:
+            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+            return StrategyRunner.evaluate_strategy_v2(
+                daily_close=None,
+                daily_sma_20=None,
+                daily_sma_50=None,
+                entry_close=None,
+                entry_rsi_14=None,
+                entry_sma_20=None,
+                entry_sma_50=None,
+                entry_macd_histogram=None,
+                entry_bb_middle=None,
+                entry_atr_14=None,
+                has_open_position=has_open_position,
+                execution_ready=execution_ready,
+                readiness_block_flags=strategy_readiness_flags,
+            )
+        else:
+            execution_ready = "EXECUTION_TIMEFRAME_STALE" not in strategy_readiness_flags
+            return StrategyRunner.evaluate_strategy_v2(
+                daily_close=daily_context.readiness.indicator.close_usd_oz,
+                daily_sma_20=daily_context.readiness.indicator.sma_20,
+                daily_sma_50=daily_context.readiness.indicator.sma_50,
+                entry_close=latest_indicator.close_usd_oz,
+                entry_rsi_14=latest_indicator.rsi_14,
+                entry_sma_20=latest_indicator.sma_20,
+                entry_sma_50=latest_indicator.sma_50,
+                entry_macd_histogram=latest_indicator.macd_histogram,
+                entry_bb_middle=latest_indicator.bb_middle_20_2,
+                entry_atr_14=latest_indicator.atr_14,
+                has_open_position=has_open_position,
+                execution_ready=execution_ready,
+                readiness_block_flags=strategy_readiness_flags,
+            )
+
+
+STRATEGY_REGISTRY: dict[str, BaseStrategy] = {
+    "rsi": RsiStrategy(),
+    "sma_cross": SmaCrossStrategy(),
+    "bollinger": BollingerStrategy(),
+    "blended": BlendedStrategy(),
+    "strategy_v2": StrategyV2(),
+}

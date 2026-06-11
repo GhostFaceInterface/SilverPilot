@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, RawFxRate, RiskDecision
 from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
+from app.services.cost_models import COST_MODEL_REGISTRY
 
 MONEY_QUANT = Decimal("0.000001")
 
@@ -64,16 +65,29 @@ def _execute_paper_trade(
 
     asset = _get_asset(db, request.asset_symbol)
 
-    # --- Option C: Auto-inject %0.2 BSMV/Kambiyo tax for XAG_GRAM paper buy ---
-    if request.action == "paper_buy" and asset.symbol == "XAG_GRAM":
-        price = request.buy_price
+    # --- Auto-inject fees and taxes using the active cost model ---
+    if asset.symbol == "XAG_GRAM":
+        price = request.buy_price if request.action == "paper_buy" else request.sell_price
+        is_buy = request.action == "paper_buy"
+        cost_model_key = "kuveyt_turk"
+        if "ziraat" in request.portfolio_name.lower():
+            cost_model_key = "ziraat"
+        cost_model = COST_MODEL_REGISTRY[cost_model_key]
+
         if request.quantity is not None:
-            gross = request.quantity * price
-            request.taxes = _money(gross * Decimal("0.002"))
-        elif request.cash_amount is not None:
-            spendable = request.cash_amount - request.fees
-            gross = spendable / Decimal("1.002")
-            request.taxes = _money(gross * Decimal("0.002"))
+            qty = request.quantity
+            if request.fees == 0:
+                request.fees = _money(cost_model.calculate_fees(qty, price, is_buy))
+            if request.taxes == 0:
+                request.taxes = _money(cost_model.calculate_taxes(qty, price, is_buy))
+        elif request.cash_amount is not None and is_buy:
+            if request.fees == 0 and request.taxes == 0:
+                cost_ratio = cost_model.calculate_cost(Decimal("1.0"), Decimal("1.0"))
+                factor = Decimal("1.0") + cost_ratio
+                gross = request.cash_amount / factor
+                qty = gross / price
+                request.fees = _money(cost_model.calculate_fees(qty, price, is_buy))
+                request.taxes = _money(cost_model.calculate_taxes(qty, price, is_buy))
 
     current_position = calculate_position(db, portfolio.id, asset.id)
 
