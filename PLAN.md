@@ -17,11 +17,11 @@
 ## 🛠️ Fazlar ve Görev Listesi
 
 ### **Faz 1: Çekirdek Hata Giderme, Test ve Dökümantasyon Stabilizasyonu**
-- [ ] [PLAN.md](file:///Users/boe747/SilverPilot/PLAN.md) dosyasına docs tutarlılık kontrolü testini (`test_docs_consistency.py`) geçmesi için gerekli canonical warning bloğunu eklemek. (Ajan: `project-planner`)
-- [ ] [auto_trader.py](file:///Users/boe747/SilverPilot/apps/api/app/services/auto_trader.py) içerisindeki `settings.strategy_name` değerini dinamik olarak okuyup ilgili strateji metoduna yönlendiren router yapısını kurmak (sabit `strategy_v2` hardcode bağımlılığını sonlandırmak).
-- [ ] `send_telegram_notification` fonksiyonundaki `HOLD` sessiz mesaj gönderme mantığını; cooldown (6 saatte bir) veya sadece neden kodu (`reason_code`) değiştiğinde mesaj atacak şekilde revize etmek.
-- [ ] **COMEX Zaman Aşımı / Staleness Bypass Düzeltmesi:** Hafta sonu ve bakım saatlerinde `indicator_readiness.py`'nin ürettiği `stale` bayrağının strateji motorunu (`StrategyRunner`) kitlemesini engellemek için, COMEX kapalıyken freshness kontrolünü strateji seviyesinde de bypass edecek kuralı eklemek.
-- [ ] `test_blended_trader.py` içerisindeki blended consensus testlerinin strategy router düzeltildikten sonra başarıyla geçmesini sağlamak.
+- [x] [PLAN.md](file:///Users/boe747/SilverPilot/PLAN.md) dosyasına docs tutarlılık kontrolü testini (`test_docs_consistency.py`) geçmesi için gerekli canonical warning bloğunu eklemek. (Ajan: `project-planner`)
+- [x] [auto_trader.py](file:///Users/boe747/SilverPilot/apps/api/app/services/auto_trader.py) içerisindeki `settings.strategy_name` değerini dinamik olarak okuyup ilgili strateji metoduna yönlendiren router yapısını kurmak (sabit `strategy_v2` hardcode bağımlılığını sonlandırmak).
+- [x] `send_telegram_notification` fonksiyonundaki `HOLD` sessiz mesaj gönderme mantığını; cooldown (6 saatte bir) veya sadece neden kodu (`reason_code`) değiştiğinde mesaj atacak şekilde revize etmek.
+- [x] **COMEX Zaman Aşımı / Staleness Bypass Düzeltmesi:** Hafta sonu ve bakım saatlerinde `indicator_readiness.py`'nin ürettiği `stale` bayrağının strateji motorunu (`StrategyRunner`) kitlemesini engellemek için, COMEX kapalıyken freshness kontrolünü strateji seviyesinde de bypass edecek kuralı eklemek.
+- [x] `test_blended_trader.py` içerisindeki blended consensus testlerinin strategy router düzeltildikten sonra başarıyla geçmesini sağlamak.
 - *DoD (Tamamlanma Tanımı):* `pytest tests/test_auto_trader.py tests/test_blended_trader.py tests/test_docs_consistency.py` komutlarının sıfır hata ile yeşil yanması.
 
 ---
