@@ -10,7 +10,15 @@ if TYPE_CHECKING:
 
 
 StrategyType = Literal[
-    "rsi", "sma_cross", "bollinger", "rsi_with_agents", "sma_cross_with_agents", "bollinger_with_agents", "blended"
+    "rsi",
+    "sma_cross",
+    "bollinger",
+    "rsi_with_agents",
+    "sma_cross_with_agents",
+    "bollinger_with_agents",
+    "blended",
+    "macd",
+    "auto",
 ]
 
 CONFIDENCE_QUANT = Decimal("0.0001")
@@ -205,6 +213,11 @@ class StrategyRunner:
         bb_upper: Decimal | float | None,
         has_open_position: bool,
         strategy_name: StrategyType,
+        macd_line: Decimal | float | None = None,
+        macd_signal: Decimal | float | None = None,
+        prev_macd_line: Decimal | float | None = None,
+        prev_macd_signal: Decimal | float | None = None,
+        regime_info: dict | None = None,
     ) -> tuple[str, str]:
         """
         Routes calculation to the selected strategy.
@@ -222,6 +235,11 @@ class StrategyRunner:
             "prev_sma_50": prev_sma_50,
             "bb_lower": bb_lower,
             "bb_upper": bb_upper,
+            "macd_line": macd_line,
+            "macd_signal": macd_signal,
+            "prev_macd_line": prev_macd_line,
+            "prev_macd_signal": prev_macd_signal,
+            "regime_info": regime_info,
             "has_open_position": has_open_position,
         }
         return strategy.evaluate_sync(context)
@@ -497,6 +515,49 @@ class StrategyRunner:
             expected_exit_price=expected_exit_price,
             exit_metadata={"mode": "stand_aside", "reason": "score_below_threshold"},
         )
+
+    @classmethod
+    def evaluate_macd_strategy(
+        cls,
+        macd_line: Decimal | float | None,
+        macd_signal: Decimal | float | None,
+        prev_macd_line: Decimal | float | None,
+        prev_macd_signal: Decimal | float | None,
+        has_open_position: bool,
+    ) -> tuple[str, str]:
+        """
+        MACD Crossover Strategy:
+        - Buy (Golden Cross): current macd_line > current macd_signal AND previous macd_line <= previous macd_signal
+        - Sell (Death Cross): current macd_line < current macd_signal AND previous macd_line >= previous macd_signal
+        """
+        if (
+            cls._is_invalid(macd_line)
+            or cls._is_invalid(macd_signal)
+            or cls._is_invalid(prev_macd_line)
+            or cls._is_invalid(prev_macd_signal)
+        ):
+            return "HOLD", "MACD_INSUFFICIENT_DATA"
+
+        cur_line = float(macd_line)
+        cur_signal = float(macd_signal)
+        prev_line = float(prev_macd_line)
+        prev_signal = float(prev_macd_signal)
+
+        # Golden Cross
+        if cur_line > cur_signal and prev_line <= prev_signal:
+            if not has_open_position:
+                return "BUY", "MACD_GOLDEN_CROSS"
+            else:
+                return "HOLD", "MACD_GOLDEN_CROSS_BUT_POSITION_OPEN"
+
+        # Death Cross
+        if cur_line < cur_signal and prev_line >= prev_signal:
+            if has_open_position:
+                return "SELL", "MACD_DEATH_CROSS"
+            else:
+                return "HOLD", "MACD_DEATH_CROSS_BUT_NO_POSITION"
+
+        return "HOLD", "MACD_NO_CROSSOVER"
 
     @classmethod
     def apply_agent_filters(
@@ -894,10 +955,248 @@ class StrategyV2(BaseStrategy):
             )
 
 
+class MacdStrategy(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        return StrategyRunner.evaluate_macd_strategy(
+            context.get("macd_line"),
+            context.get("macd_signal"),
+            context.get("prev_macd_line"),
+            context.get("prev_macd_signal"),
+            context.get("has_open_position", False),
+        )
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        action, reason = self.evaluate_sync(context)
+
+        atr_value = context.get("atr_value")
+        close_value = context.get("close_value")
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        return StrategyDecision(
+            action=action,
+            reason_code=reason,
+            confidence=Decimal("0.9000"),
+            trend_state="NEUTRAL",
+            entry_state="READY",
+            execution_state="READY",
+            buy_score=Decimal("0.0000"),
+            sell_score=Decimal("0.0000"),
+            component_scores={},
+            readiness_block_flags=context.get("readiness_block_flags", []),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata={},
+        )
+
+
+class AutoRegimeStrategy(BaseStrategy):
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        regime_info = context.get("regime_info")
+        if not regime_info:
+            regime_info = {
+                "regime": "SIDEWAYS",
+                "adx": 0.0,
+                "bb_bandwidth": 0.0,
+            }
+
+        regime_info.get("regime", "SIDEWAYS")
+        adx = regime_info.get("adx", 0.0)
+        bb_bandwidth = regime_info.get("bb_bandwidth", 0.0)
+        has_open_position = context.get("has_open_position", False)
+
+        # Sideways/Mean-reversion
+        if adx < 25.0 or bb_bandwidth < 0.015:
+            rsi_action, rsi_reason = StrategyRunner.evaluate_rsi_strategy(context.get("rsi_14"), has_open_position)
+            bb_action, bb_reason = StrategyRunner.evaluate_bb_strategy(
+                context.get("close"),
+                context.get("bb_lower"),
+                context.get("bb_upper"),
+                has_open_position,
+            )
+
+            buy_score = 0.0
+            sell_score = 0.0
+            if rsi_action == "BUY":
+                buy_score += 0.6
+            elif rsi_action == "SELL":
+                sell_score += 0.6
+
+            if bb_action == "BUY":
+                buy_score += 0.4
+            elif bb_action == "SELL":
+                sell_score += 0.4
+
+            if buy_score > 0.5 and buy_score > sell_score:
+                return "BUY", "AUTO_REGIME_SIDEWAYS_BUY"
+            elif sell_score > 0.5 and sell_score > buy_score:
+                return "SELL", "AUTO_REGIME_SIDEWAYS_SELL"
+            else:
+                return "HOLD", "AUTO_REGIME_SIDEWAYS_HOLD"
+
+        else:  # Trending
+            sma_action, sma_reason = StrategyRunner.evaluate_sma_cross_strategy(
+                context.get("sma_20"),
+                context.get("sma_50"),
+                context.get("prev_sma_20"),
+                context.get("prev_sma_50"),
+                has_open_position,
+            )
+            macd_action, macd_reason = StrategyRunner.evaluate_macd_strategy(
+                context.get("macd_line"),
+                context.get("macd_signal"),
+                context.get("prev_macd_line"),
+                context.get("prev_macd_signal"),
+                has_open_position,
+            )
+
+            buy_score = 0.0
+            sell_score = 0.0
+            if sma_action == "BUY":
+                buy_score += 0.6
+            elif sma_action == "SELL":
+                sell_score += 0.6
+
+            if macd_action == "BUY":
+                buy_score += 0.4
+            elif macd_action == "SELL":
+                sell_score += 0.4
+
+            if buy_score > 0.5 and buy_score > sell_score:
+                return "BUY", "AUTO_REGIME_TRENDING_BUY"
+            elif sell_score > 0.5 and sell_score > buy_score:
+                return "SELL", "AUTO_REGIME_TRENDING_SELL"
+            else:
+                return "HOLD", "AUTO_REGIME_TRENDING_HOLD"
+
+    async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
+        from app.services.regime import get_market_regime
+
+        asset = context.get("asset")
+        asset_symbol = asset.symbol if asset else "XAG_GRAM"
+
+        hourly_context = context.get("hourly_context")
+        timeframe = hourly_context.readiness.timeframe if hourly_context else "1h"
+
+        regime_info = get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe)
+
+        # Make a copy of context to prevent modifying caller's context dict
+        local_context = dict(context)
+        local_context["regime_info"] = regime_info
+
+        action, reason = self.evaluate_sync(local_context)
+
+        has_open_position = local_context.get("has_open_position", False)
+        adx = regime_info.get("adx", 0.0)
+        bb_bandwidth = regime_info.get("bb_bandwidth", 0.0)
+
+        buy_score = Decimal("0.0000")
+        sell_score = Decimal("0.0000")
+        component_scores = {}
+
+        if adx < 25.0 or bb_bandwidth < 0.015:
+            rsi_action, rsi_reason = StrategyRunner.evaluate_rsi_strategy(
+                local_context.get("rsi_14"), has_open_position
+            )
+            bb_action, bb_reason = StrategyRunner.evaluate_bb_strategy(
+                local_context.get("close"),
+                local_context.get("bb_lower"),
+                local_context.get("bb_upper"),
+                has_open_position,
+            )
+
+            component_scores["rsi"] = {"action": rsi_action, "reason": rsi_reason}
+            component_scores["bollinger"] = {"action": bb_action, "reason": bb_reason}
+
+            if rsi_action == "BUY":
+                buy_score += Decimal("0.6000")
+            elif rsi_action == "SELL":
+                sell_score += Decimal("0.6000")
+
+            if bb_action == "BUY":
+                buy_score += Decimal("0.4000")
+            elif bb_action == "SELL":
+                sell_score += Decimal("0.4000")
+        else:
+            sma_action, sma_reason = StrategyRunner.evaluate_sma_cross_strategy(
+                local_context.get("sma_20"),
+                local_context.get("sma_50"),
+                local_context.get("prev_sma_20"),
+                local_context.get("prev_sma_50"),
+                has_open_position,
+            )
+            macd_action, macd_reason = StrategyRunner.evaluate_macd_strategy(
+                local_context.get("macd_line"),
+                local_context.get("macd_signal"),
+                local_context.get("prev_macd_line"),
+                local_context.get("prev_macd_signal"),
+                has_open_position,
+            )
+
+            component_scores["sma_cross"] = {"action": sma_action, "reason": sma_reason}
+            component_scores["macd"] = {"action": macd_action, "reason": macd_reason}
+
+            if sma_action == "BUY":
+                buy_score += Decimal("0.6000")
+            elif sma_action == "SELL":
+                sell_score += Decimal("0.6000")
+
+            if macd_action == "BUY":
+                buy_score += Decimal("0.4000")
+            elif macd_action == "SELL":
+                sell_score += Decimal("0.4000")
+
+        atr_value = local_context.get("atr_value")
+        close_value = local_context.get("close_value")
+        stop_loss_price = None
+        take_profit_price = None
+        expected_exit_price = None
+        if atr_value is not None and close_value is not None:
+            risk_unit = max(atr_value * Decimal("1.5"), close_value * Decimal("0.01"))
+            reward_unit = max(atr_value * Decimal("2.5"), close_value * Decimal("0.015"))
+            stop_loss_price = close_value - risk_unit
+            take_profit_price = close_value + reward_unit
+            expected_exit_price = take_profit_price
+
+        exit_metadata = {
+            "mode": "auto_regime",
+            "regime": regime_info.get("regime", "SIDEWAYS"),
+            "adx": adx,
+            "bb_bandwidth": bb_bandwidth,
+        }
+
+        return StrategyDecision(
+            action=action,
+            reason_code=reason,
+            confidence=Decimal("0.9000"),
+            trend_state=regime_info.get("regime", "SIDEWAYS"),
+            entry_state="READY",
+            execution_state="READY",
+            buy_score=buy_score,
+            sell_score=sell_score,
+            component_scores=component_scores,
+            readiness_block_flags=local_context.get("readiness_block_flags", []),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            expected_exit_price=expected_exit_price,
+            exit_metadata=exit_metadata,
+        )
+
+
 STRATEGY_REGISTRY: dict[str, BaseStrategy] = {
     "rsi": RsiStrategy(),
     "sma_cross": SmaCrossStrategy(),
     "bollinger": BollingerStrategy(),
     "blended": BlendedStrategy(),
     "strategy_v2": StrategyV2(),
+    "macd": MacdStrategy(),
+    "auto": AutoRegimeStrategy(),
 }

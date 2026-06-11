@@ -349,6 +349,19 @@ async def _run_auto_trading_impl(db: Session, settings):
         bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
         bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
 
+        macd_line = latest_indicator.macd_line if latest_indicator else None
+        macd_signal = latest_indicator.macd_signal if latest_indicator else None
+        prev_macd_line = (
+            hourly_context.previous_indicator.macd_line
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+        prev_macd_signal = (
+            hourly_context.previous_indicator.macd_signal
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        )
+
         atr_value = (
             Decimal(str(latest_indicator.atr_14))
             if (latest_indicator and latest_indicator.atr_14 is not None)
@@ -369,6 +382,10 @@ async def _run_auto_trading_impl(db: Session, settings):
             "prev_sma_50": prev_sma_50,
             "bb_lower": bb_lower,
             "bb_upper": bb_upper,
+            "macd_line": macd_line,
+            "macd_signal": macd_signal,
+            "prev_macd_line": prev_macd_line,
+            "prev_macd_signal": prev_macd_signal,
             "atr_value": atr_value,
             "close_value": close_value,
             "has_open_position": has_open_position,
