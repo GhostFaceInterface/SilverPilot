@@ -1,7 +1,7 @@
 ---
 type: project
 created: 2026-05-18
-updated: 2026-06-03
+updated: 2026-06-11
 ---
 
 
@@ -125,3 +125,8 @@ updated: 2026-06-03
   - Ağır Muhakeme/Mimari/Risk/Final İnceleme (`architect`, `security-reviewer`, `final-reviewer`): `gpt-5.5-pro`
 - **Veritabanı Erişim Politikası:** İşlemler varsayılan olarak salt-okunur (read-only) yürüyecektir. Kritik kurtarma durumlarında veritabanı üzerinde değişiklik yapılması gerektiğinde, bu değişiklikler sadece kullanıcının açık onayı ile gerçekleştirilebilir.
 - **Ortak Geliştirici Hafızası:** Codex ve Antigravity sistemleri, dosya sapması (drift) ve uyuşmazlıkları önlemek için hafıza katmanı olarak ortaklaşa `.agent/memory/` dizinini (Single Source of Truth) kullanacaktır.
+
+## 20. Dynamic Strategy Routing & Timeframe Staleness Bypass (June 2026)
+- **Dynamic Strategy Routing:** Replaced the hardcoded V2 strategy execution in `auto_trader.py` with a dynamic router based on `settings.strategy_name`. It supports simple indicator strategies (`rsi`, `sma_cross`, `bollinger`) and multi-agent blended consensus (using LLM arbiter).
+- **Strategy-Level Staleness Bypass:** Integrated `is_comex_market_closed` into `evaluate_timeframe_guardrails` to prevent entry and execution timeframe staleness flags from freezing the strategy runner when the COMEX market is closed.
+- **Telegram Notification Deduplication:** Implemented cooldown and change detection rules in `_run_auto_trading_impl`. Subsequent `HOLD` notifications are suppressed unless the `reason_code` changes, or a 6-hour window has elapsed.

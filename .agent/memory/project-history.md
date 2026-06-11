@@ -1,7 +1,7 @@
 ---
 type: reference
 created: 2026-05-18
-updated: 2026-06-04
+updated: 2026-06-11
 ---
 
 
@@ -46,6 +46,7 @@ updated: 2026-06-04
 - **Phase 21 (Phase B, C, D: Supreme Arbiter Integration & Consolidation - June 2026):** Consolidated `news-agent` into `hermes-agent` and decommissioned the legacy simple news agent across ML inference (`inference.py`), backtests (`backtest_engine.py`), datasets builder (`build_dataset.py`), operations auditor (`auditor.py`), and Streamlit dashboard (`streamlit_app.py`). Integrated `hermes-agent` weighted sentiment payload directly into the Supreme Consensus Arbiter LLM prompt (with 20-30% weight in sideways regimes and 10-20% in trending regimes). Implemented a bidirectional news sentiment filter (vetoing BUY on bearish news, and boosting HOLD to BUY on strongly bullish news $\ge 0.40$). Optimized the on-demand scraper triggers in `hermes.py` to prevent redundant fetches by verifying database freshness. Added complete E2E unit tests (asserting HOLD->BUY conversions, risk rejections, and timezone-aware on-demand scrapers), successfully passing all 222 test suites, and deployed all updates to the production VPS via the automated deployment orchestrator.
 - **Phase 22 (Codex Isolated Workspace Setup - June 2026):** Designed, created, and verified a completely isolated Codex workspace under `.codex/` directory. Added a customized `config.toml`, a comprehensive operational `README.md`, 9 specialized Codex subagents configs mapped to appropriate model reasoning profiles (`gpt-5.4-mini`, `gpt-5.5`, and `gpt-5.5-pro`), 3 playbook workflows, 6 re-usable skills manuals (FastAPI, Alembic, Streamlit, Docker, Risk rules), 2 prompt templates, 4 memory-state markdown documents, and a safe psycopg2/SQLAlchemy database introspection CLI script (`readonly-db-check.py`) that strictly checks and confirms mutations. Verified correct compile syntax and CLI parameters. Passed git pre-commit format/lint and pushed to production.
 - **Phase 23 (Live Runtime Repair & Agent Memory Index - June 2026):** Fixed production `/signals/latest` schema drift after the `Signal` refactor, restored ML live USD/TRY feature extraction against the canonical `tcmb-today-xml` source, added Alembic revision `9c7d4a6f2b10` for `ix_agent_memory_events_composite`, and sanitized Telegram/httpx logging to avoid token-bearing URL leaks. Verified 228/228 local tests, GitHub Actions run `26946861541` success, VPS `HEAD=1e71997`, Alembic `9c7d4a6f2b10`, index present, `/signals/latest` 200, and no recent `api.telegram.org/bot` URL logs.
+- **Phase 24 (Stabilization Phase 1 - June 2026):** Resolved the hardcoded `strategy_v2` limitation in `auto_trader.py` by implementing dynamic routing based on `settings.strategy_name` (supporting `blended`, simple indicators, and `strategy_v2`). Hardened timeframe checks to bypass indicator freshness locks when the COMEX market is closed. Implemented a 6-hour cooldown and reason-code change detection gate to suppress duplicate Telegram HOLD notification spam. Verified all 259 backend tests green.
 
 
 
