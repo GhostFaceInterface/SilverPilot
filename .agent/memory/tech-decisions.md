@@ -148,3 +148,16 @@ updated: 2026-06-11
 - **Strateji Oylama & Seçim Kuralları:** ADX < 25.0 veya Bollinger Bandwidth < 0.015 (Sideways/Mean-reversion) durumlarında RSI ve Bollinger stratejileri koşturulup oylanır; ADX >= 25.0 (Trending) durumunda ise SMA Crossover ve MACD Crossover trend takipçi stratejileri oylanır.
 - **AUTO İndikatör Ağırlıklandırma:** Sideways rejimde RSI kararına 0.6, Bollinger kararına 0.4 ağırlık verilirken; Trending rejimde SMA Cross kararına 0.6, MACD kararına 0.4 ağırlık verilerek nihai alım/satım sinyal gücü hesaplanır.
 - **`MacdStrategy`:** Standart MACD crossover kesişimlerini takip eden modüler `MacdStrategy` sınıfı `BaseStrategy` türevi olarak yazılıp strateji kayıt defterine (`STRATEGY_REGISTRY`) eklendi.
+
+## 24. SaaS Database Schema & Dynamic Unit Conversions (June 2026)
+- **SaaS Multi-Tenant Schema:** Added declarative SQLAlchemy models `Provider` (banking config), `TenantPortfolio` (multi-tenant tenant mapping), `StrategyParameter` (custom indicator configurations), and `AssetConversion` (unit conversions) inside `entities.py`. Applied Alembic migrations and added dynamic seeding inside `seed.py` for Kuveyt Türk, Ziraat, and default XAG conversion rate (`31.1035`).
+- **Dynamic Conversion Rates:** Refactored collectors and price scraping pipelines to use `get_conversion_rate(db, "XAG", "XAG_GRAM")` to query conversion coefficients dynamically from the database, eliminating the legacy hardcoded `31.1035` constants.
+
+## 25. Recovery & Hardening: Branch Hell Resolution and Git Cleanup (June 2026)
+- **Git Worktree Pruning:** Pruned and removed the locked subagent git worktrees under the `.gemini/antigravity/brain/` workspace paths.
+- **Git Branch Purge:** Deleted all obsolete local and remote subagent git branches starting with `subagent-` (such as `subagent-Backend-Architect-Phase-4-*`, `subagent-Backend-Architect-Phase-5-*`, `subagent-Code-Archaeologist-Refactor-*`) from the local repository and origin remote, reducing branch clutter and resolving structural locks.
+
+## 26. Codebase If-Else Logic Elimination & Test Hardening (June 2026)
+- **Conditionals Refactoring:** Cleaned up nested, redundant, or hardcoded `if-else` blocks in `hermes.py`, `strategy.py`, `collectors/service.py`, and other modified files. Replaced them with clean dictionary mappings (`dict.get`), ternary operations, and early returns.
+- **Graceful Error Handling & Fallbacks:** Refactored `get_conversion_rate` to wrap database queries in a try-except block, dynamically catching database connection timeouts or operational exceptions and falling back to `31.1035`. Updated `AutoRegimeStrategy` to handle `None` values for indicator parameters safely, preventing runtime TypeErrors.
+- **Edge-Case Test Suites:** Expanded `test_auto_strategy.py` and `test_saas_and_conversions.py` to assert correct behavior in boundary states (missing/null regime details, ADX threshold boundaries, database query errors/timeouts).
