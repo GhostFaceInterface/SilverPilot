@@ -85,15 +85,9 @@ class StrategyRunner:
         rsi = float(rsi_14)
 
         if rsi < 30:
-            if not has_open_position:
-                return "BUY", "RSI_OVERSOLD"
-            else:
-                return "HOLD", "RSI_OVERSOLD_BUT_POSITION_OPEN"
-        elif rsi > 70:
-            if has_open_position:
-                return "SELL", "RSI_OVERBOUGHT"
-            else:
-                return "HOLD", "RSI_OVERBOUGHT_BUT_NO_POSITION"
+            return ("BUY", "RSI_OVERSOLD") if not has_open_position else ("HOLD", "RSI_OVERSOLD_BUT_POSITION_OPEN")
+        if rsi > 70:
+            return ("SELL", "RSI_OVERBOUGHT") if has_open_position else ("HOLD", "RSI_OVERBOUGHT_BUT_NO_POSITION")
 
         return "HOLD", "RSI_NEUTRAL"
 
@@ -126,17 +120,13 @@ class StrategyRunner:
 
         # Golden Cross
         if cur20 > cur50 and prev20 <= prev50:
-            if not has_open_position:
-                return "BUY", "SMA_GOLDEN_CROSS"
-            else:
-                return "HOLD", "SMA_GOLDEN_CROSS_BUT_POSITION_OPEN"
+            return (
+                ("BUY", "SMA_GOLDEN_CROSS") if not has_open_position else ("HOLD", "SMA_GOLDEN_CROSS_BUT_POSITION_OPEN")
+            )
 
         # Death Cross
         if cur20 < cur50 and prev20 >= prev50:
-            if has_open_position:
-                return "SELL", "SMA_DEATH_CROSS"
-            else:
-                return "HOLD", "SMA_DEATH_CROSS_BUT_NO_POSITION"
+            return ("SELL", "SMA_DEATH_CROSS") if has_open_position else ("HOLD", "SMA_DEATH_CROSS_BUT_NO_POSITION")
 
         return "HOLD", "SMA_NO_CROSSOVER"
 
@@ -161,15 +151,9 @@ class StrategyRunner:
         upper = float(bb_upper)
 
         if c <= lower:
-            if not has_open_position:
-                return "BUY", "BB_LOWER_TOUCH"
-            else:
-                return "HOLD", "BB_LOWER_TOUCH_BUT_POSITION_OPEN"
-        elif c >= upper:
-            if has_open_position:
-                return "SELL", "BB_UPPER_TOUCH"
-            else:
-                return "HOLD", "BB_UPPER_TOUCH_BUT_NO_POSITION"
+            return ("BUY", "BB_LOWER_TOUCH") if not has_open_position else ("HOLD", "BB_LOWER_TOUCH_BUT_POSITION_OPEN")
+        if c >= upper:
+            return ("SELL", "BB_UPPER_TOUCH") if has_open_position else ("HOLD", "BB_UPPER_TOUCH_BUT_NO_POSITION")
 
         return "HOLD", "BB_NEUTRAL"
 
@@ -545,17 +529,15 @@ class StrategyRunner:
 
         # Golden Cross
         if cur_line > cur_signal and prev_line <= prev_signal:
-            if not has_open_position:
-                return "BUY", "MACD_GOLDEN_CROSS"
-            else:
-                return "HOLD", "MACD_GOLDEN_CROSS_BUT_POSITION_OPEN"
+            return (
+                ("BUY", "MACD_GOLDEN_CROSS")
+                if not has_open_position
+                else ("HOLD", "MACD_GOLDEN_CROSS_BUT_POSITION_OPEN")
+            )
 
         # Death Cross
         if cur_line < cur_signal and prev_line >= prev_signal:
-            if has_open_position:
-                return "SELL", "MACD_DEATH_CROSS"
-            else:
-                return "HOLD", "MACD_DEATH_CROSS_BUT_NO_POSITION"
+            return ("SELL", "MACD_DEATH_CROSS") if has_open_position else ("HOLD", "MACD_DEATH_CROSS_BUT_NO_POSITION")
 
         return "HOLD", "MACD_NO_CROSSOVER"
 
@@ -1014,7 +996,8 @@ class AutoRegimeStrategy(BaseStrategy):
         has_open_position = context.get("has_open_position", False)
 
         # Sideways/Mean-reversion
-        if adx < 25.0 or bb_bandwidth < 0.015:
+        is_sideways = adx < 25.0 or bb_bandwidth < 0.015
+        if is_sideways:
             rsi_action, rsi_reason = StrategyRunner.evaluate_rsi_strategy(context.get("rsi_14"), has_open_position)
             bb_action, bb_reason = StrategyRunner.evaluate_bb_strategy(
                 context.get("close"),
@@ -1022,25 +1005,14 @@ class AutoRegimeStrategy(BaseStrategy):
                 context.get("bb_upper"),
                 has_open_position,
             )
-
-            buy_score = 0.0
-            sell_score = 0.0
-            if rsi_action == "BUY":
-                buy_score += 0.6
-            elif rsi_action == "SELL":
-                sell_score += 0.6
-
-            if bb_action == "BUY":
-                buy_score += 0.4
-            elif bb_action == "SELL":
-                sell_score += 0.4
+            buy_score = 0.6 * (rsi_action == "BUY") + 0.4 * (bb_action == "BUY")
+            sell_score = 0.6 * (rsi_action == "SELL") + 0.4 * (bb_action == "SELL")
 
             if buy_score > 0.5 and buy_score > sell_score:
                 return "BUY", "AUTO_REGIME_SIDEWAYS_BUY"
-            elif sell_score > 0.5 and sell_score > buy_score:
+            if sell_score > 0.5 and sell_score > buy_score:
                 return "SELL", "AUTO_REGIME_SIDEWAYS_SELL"
-            else:
-                return "HOLD", "AUTO_REGIME_SIDEWAYS_HOLD"
+            return "HOLD", "AUTO_REGIME_SIDEWAYS_HOLD"
 
         else:  # Trending
             sma_action, sma_reason = StrategyRunner.evaluate_sma_cross_strategy(
@@ -1057,25 +1029,14 @@ class AutoRegimeStrategy(BaseStrategy):
                 context.get("prev_macd_signal"),
                 has_open_position,
             )
-
-            buy_score = 0.0
-            sell_score = 0.0
-            if sma_action == "BUY":
-                buy_score += 0.6
-            elif sma_action == "SELL":
-                sell_score += 0.6
-
-            if macd_action == "BUY":
-                buy_score += 0.4
-            elif macd_action == "SELL":
-                sell_score += 0.4
+            buy_score = 0.6 * (sma_action == "BUY") + 0.4 * (macd_action == "BUY")
+            sell_score = 0.6 * (sma_action == "SELL") + 0.4 * (macd_action == "SELL")
 
             if buy_score > 0.5 and buy_score > sell_score:
                 return "BUY", "AUTO_REGIME_TRENDING_BUY"
-            elif sell_score > 0.5 and sell_score > buy_score:
+            if sell_score > 0.5 and sell_score > buy_score:
                 return "SELL", "AUTO_REGIME_TRENDING_SELL"
-            else:
-                return "HOLD", "AUTO_REGIME_TRENDING_HOLD"
+            return "HOLD", "AUTO_REGIME_TRENDING_HOLD"
 
     async def evaluate(self, db: Session, context: dict) -> StrategyDecision:
         from app.services.regime import get_market_regime
@@ -1102,7 +1063,8 @@ class AutoRegimeStrategy(BaseStrategy):
         sell_score = Decimal("0.0000")
         component_scores = {}
 
-        if adx < 25.0 or bb_bandwidth < 0.015:
+        is_sideways = adx < 25.0 or bb_bandwidth < 0.015
+        if is_sideways:
             rsi_action, rsi_reason = StrategyRunner.evaluate_rsi_strategy(
                 local_context.get("rsi_14"), has_open_position
             )
@@ -1116,15 +1078,8 @@ class AutoRegimeStrategy(BaseStrategy):
             component_scores["rsi"] = {"action": rsi_action, "reason": rsi_reason}
             component_scores["bollinger"] = {"action": bb_action, "reason": bb_reason}
 
-            if rsi_action == "BUY":
-                buy_score += Decimal("0.6000")
-            elif rsi_action == "SELL":
-                sell_score += Decimal("0.6000")
-
-            if bb_action == "BUY":
-                buy_score += Decimal("0.4000")
-            elif bb_action == "SELL":
-                sell_score += Decimal("0.4000")
+            buy_score = Decimal("0.6") * (rsi_action == "BUY") + Decimal("0.4") * (bb_action == "BUY")
+            sell_score = Decimal("0.6") * (rsi_action == "SELL") + Decimal("0.4") * (bb_action == "SELL")
         else:
             sma_action, sma_reason = StrategyRunner.evaluate_sma_cross_strategy(
                 local_context.get("sma_20"),
@@ -1144,15 +1099,8 @@ class AutoRegimeStrategy(BaseStrategy):
             component_scores["sma_cross"] = {"action": sma_action, "reason": sma_reason}
             component_scores["macd"] = {"action": macd_action, "reason": macd_reason}
 
-            if sma_action == "BUY":
-                buy_score += Decimal("0.6000")
-            elif sma_action == "SELL":
-                sell_score += Decimal("0.6000")
-
-            if macd_action == "BUY":
-                buy_score += Decimal("0.4000")
-            elif macd_action == "SELL":
-                sell_score += Decimal("0.4000")
+            buy_score = Decimal("0.6") * (sma_action == "BUY") + Decimal("0.4") * (macd_action == "BUY")
+            sell_score = Decimal("0.6") * (sma_action == "SELL") + Decimal("0.4") * (macd_action == "SELL")
 
         atr_value = local_context.get("atr_value")
         close_value = local_context.get("close_value")

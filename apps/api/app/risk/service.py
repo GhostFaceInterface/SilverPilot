@@ -31,17 +31,7 @@ def is_comex_weekend(dt: datetime) -> bool:
     weekday = et_dt.weekday()  # 0 = Monday, ..., 4 = Friday, 5 = Saturday, 6 = Sunday
     hour = et_dt.hour
 
-    # Friday after 17:00 ET
-    if weekday == 4 and hour >= 17:
-        return True
-    # Saturday (all day)
-    if weekday == 5:
-        return True
-    # Sunday before 18:00 ET
-    if weekday == 6 and hour < 18:
-        return True
-
-    return False
+    return (weekday == 4 and hour >= 17) or (weekday == 5) or (weekday == 6 and hour < 18)
 
 
 def is_comex_maintenance(dt: datetime) -> bool:
@@ -57,11 +47,7 @@ def is_comex_maintenance(dt: datetime) -> bool:
     weekday = et_dt.weekday()
     hour = et_dt.hour
 
-    # Mon-Thu daily maintenance
-    if weekday in {0, 1, 2, 3} and hour == 17:
-        return True
-
-    return False
+    return weekday in {0, 1, 2, 3} and hour == 17
 
 
 def is_comex_market_closed(dt: datetime) -> bool:

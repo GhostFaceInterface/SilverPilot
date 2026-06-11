@@ -196,18 +196,16 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         raw_content = response.get("content", "").strip()
 
         # Clean markdown block wrapping if LLM included them
-        if raw_content.startswith("```"):
-            lines = raw_content.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            raw_content = "\n".join(lines).strip()
-
-        if "```json" in raw_content:
-            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_content:
-            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+        for prefix in ("```json", "```"):
+            if prefix in raw_content:
+                raw_content = raw_content.split(prefix, 1)[1].split("```", 1)[0].strip()
+                break
+        else:
+            if raw_content.startswith("```"):
+                lines = raw_content.splitlines()
+                start = 1 if lines[0].startswith("```") else 0
+                end = -1 if lines and lines[-1].strip() == "```" else len(lines)
+                raw_content = "\n".join(lines[start:end]).strip()
 
         try:
             parsed_list = json.loads(raw_content)
@@ -249,22 +247,20 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
             source_name = news_items[0].source  # fallback safely
 
         source_lower = source_name.lower() if source_name else ""
-        if any(s in source_lower for s in ["kitco", "fxstreet", "reuters", "fed", "federal"]):
-            source_weight = float(settings.weight_global_authority)
-        elif any(s in source_lower for s in ["gcm", "bloomberght", "bloomberg"]):
-            source_weight = float(settings.weight_local_expert)
-        elif "investing" in source_lower:
-            source_weight = float(settings.weight_local_forum)
-        else:
-            source_weight = float(settings.weight_global_authority)
+        source_weight_keywords = (
+            (["kitco", "fxstreet", "reuters", "fed", "federal"], settings.weight_global_authority),
+            (["gcm", "bloomberght", "bloomberg"], settings.weight_local_expert),
+            (["investing"], settings.weight_local_forum),
+        )
+        source_weight = float(
+            next(
+                (weight for keywords, weight in source_weight_keywords if any(kw in source_lower for kw in keywords)),
+                settings.weight_global_authority,
+            )
+        )
 
         sentiment_label = str(parsed.get("sentiment", "NEUTRAL")).upper()
-        if sentiment_label == "BULLISH":
-            sentiment_numeric = 1.0
-        elif sentiment_label == "BEARISH":
-            sentiment_numeric = -1.0
-        else:
-            sentiment_numeric = 0.0
+        sentiment_numeric = {"BULLISH": 1.0, "BEARISH": -1.0}.get(sentiment_label, 0.0)
 
         try:
             relevance = float(parsed.get("relevance", 0.5))

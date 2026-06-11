@@ -43,33 +43,28 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
     # Check action to construct message
     action_str = ""
     status_emoji = ""
+    ACTION_MAP = {
+        "paper_buy": ("ALIM (BUY)", "🟢"),
+        "paper_sell": ("SATIM (SELL)", "🔴"),
+        "blocked": ("ENGELLENDİ (BLOCKED)", "⚠️"),
+        "HOLD": ("BEKLE (HOLD)", "⚪️"),
+    }
     action = trade_data["action"]
-    if action == "paper_buy":
-        action_str = "ALIM (BUY)"
-        status_emoji = "🟢"
-    elif action == "paper_sell":
-        action_str = "SATIM (SELL)"
-        status_emoji = "🔴"
-    elif action == "blocked":
-        action_str = "ENGELLENDİ (BLOCKED)"
-        status_emoji = "⚠️"
-    elif action == "HOLD":
-        action_str = "BEKLE (HOLD)"
-        status_emoji = "⚪️"
-    else:
-        # Unknown action
+    if action not in ACTION_MAP:
         return
+    action_str, status_emoji = ACTION_MAP[action]
 
     is_blended = trade_data.get("strategy_name") == "blended"
 
     if is_blended:
         regime_info = trade_data.get("regime_info", {})
         regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
+        REGIME_MAP = {
+            "TRENDING_UP": "Güçlü Yükseliş Trendi (TRENDING UP)",
+            "TRENDING_DOWN": "Güçlü Düşüş Trendi (TRENDING DOWN)",
+        }
         regime = regime_info.get("regime", "SIDEWAYS")
-        if regime == "TRENDING_UP":
-            regime_label = "Güçlü Yükseliş Trendi (TRENDING UP)"
-        elif regime == "TRENDING_DOWN":
-            regime_label = "Güçlü Düşüş Trendi (TRENDING DOWN)"
+        regime_label = REGIME_MAP.get(regime, "Yatay Sakin Piyasa (SIDEWAYS)")
 
         votes = trade_data.get("strategy_votes", {})
 
@@ -145,12 +140,12 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         regime_info = trade_data.get("regime_info", {})
         regime_details = ""
         if regime_info:
+            REGIME_MAP = {
+                "TRENDING_UP": "Güçlü Yükseliş Trendi (TRENDING UP)",
+                "TRENDING_DOWN": "Güçlü Düşüş Trendi (TRENDING DOWN)",
+            }
             regime = regime_info.get("regime", "SIDEWAYS")
-            regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
-            if regime == "TRENDING_UP":
-                regime_label = "Güçlü Yükseliş Trendi (TRENDING UP)"
-            elif regime == "TRENDING_DOWN":
-                regime_label = "Güçlü Düşüş Trendi (TRENDING DOWN)"
+            regime_label = REGIME_MAP.get(regime, "Yatay Sakin Piyasa (SIDEWAYS)")
             regime_details = f"📈 <b>Piyasa Rejimi:</b> {regime_label}\n"
 
         msg = (
@@ -288,36 +283,27 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     has_block_flag = False
     block_reason = None
-    if "TIMEFRAME_SOURCE_MISMATCH" in strategy_readiness_flags:
-        block_reason = "TIMEFRAME_SOURCE_MISMATCH"
-        has_block_flag = True
-    elif "ENTRY_TIMEFRAME_STALE" in strategy_readiness_flags:
-        block_reason = "ENTRY_TIMEFRAME_STALE"
-        has_block_flag = True
-    elif "ENTRY_TIMEFRAME_UNUSABLE" in strategy_readiness_flags:
-        block_reason = "ENTRY_TIMEFRAME_UNUSABLE"
-        has_block_flag = True
-    elif "DAILY_TREND_MISSING" in strategy_readiness_flags:
-        block_reason = "DAILY_TREND_MISSING"
-        has_block_flag = True
-    elif "EXECUTION_TIMEFRAME_STALE" in strategy_readiness_flags:
-        block_reason = "EXECUTION_TIMEFRAME_STALE"
-        has_block_flag = True
-    elif "EXECUTION_TIMEFRAME_UNUSABLE" in strategy_readiness_flags:
-        block_reason = "EXECUTION_TIMEFRAME_UNUSABLE"
-        has_block_flag = True
+    prioritized_block_flags = [
+        "TIMEFRAME_SOURCE_MISMATCH",
+        "ENTRY_TIMEFRAME_STALE",
+        "ENTRY_TIMEFRAME_UNUSABLE",
+        "DAILY_TREND_MISSING",
+        "EXECUTION_TIMEFRAME_STALE",
+        "EXECUTION_TIMEFRAME_UNUSABLE",
+    ]
+    block_reason = next((flag for flag in prioritized_block_flags if flag in strategy_readiness_flags), None)
+    has_block_flag = block_reason is not None
 
     if has_block_flag:
         action = "HOLD"
         reason_code = block_reason
-        if block_reason == "TIMEFRAME_SOURCE_MISMATCH":
-            confidence = Decimal("0.9900")
-        elif block_reason in ("ENTRY_TIMEFRAME_STALE", "ENTRY_TIMEFRAME_UNUSABLE"):
-            confidence = Decimal("0.9800")
-        elif block_reason == "DAILY_TREND_MISSING":
-            confidence = Decimal("0.9900")
-        else:
-            confidence = Decimal("0.9700")
+        confidence_map = {
+            "TIMEFRAME_SOURCE_MISMATCH": Decimal("0.9900"),
+            "ENTRY_TIMEFRAME_STALE": Decimal("0.9800"),
+            "ENTRY_TIMEFRAME_UNUSABLE": Decimal("0.9800"),
+            "DAILY_TREND_MISSING": Decimal("0.9900"),
+        }
+        confidence = confidence_map.get(block_reason, Decimal("0.9700"))
 
         details = {
             "strategy_name": active_strategy,
@@ -605,15 +591,13 @@ def evaluate_timeframe_guardrails(timeframe_contexts: dict, ref_dt: datetime | N
     if not daily_readiness.usable or daily_readiness.indicator is None:
         flags.append("DAILY_TREND_MISSING")
 
-    if hourly_readiness.status == "stale":
-        if not comex_closed:
-            flags.append("ENTRY_TIMEFRAME_STALE")
+    if hourly_readiness.status == "stale" and not comex_closed:
+        flags.append("ENTRY_TIMEFRAME_STALE")
     elif not hourly_readiness.usable or hourly_readiness.indicator is None:
         flags.append("ENTRY_TIMEFRAME_UNUSABLE")
 
-    if execution_readiness.status == "stale":
-        if not comex_closed:
-            flags.append("EXECUTION_TIMEFRAME_STALE")
+    if execution_readiness.status == "stale" and not comex_closed:
+        flags.append("EXECUTION_TIMEFRAME_STALE")
     elif not execution_readiness.usable or execution_readiness.indicator is None:
         flags.append("EXECUTION_TIMEFRAME_UNUSABLE")
 

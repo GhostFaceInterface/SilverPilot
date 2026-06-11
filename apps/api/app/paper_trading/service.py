@@ -147,10 +147,9 @@ def _execute_paper_trade(
     )
     db.add(trade)
 
-    if risk_decision.decision == "allow" and request.action == "paper_buy":
-        portfolio.cash_balance = _money(portfolio.cash_balance - net_amount)
-    elif risk_decision.decision == "allow" and request.action == "paper_sell":
-        portfolio.cash_balance = _money(portfolio.cash_balance + net_amount)
+    if risk_decision.decision == "allow" and request.action in ("paper_buy", "paper_sell"):
+        sign = -1 if request.action == "paper_buy" else 1
+        portfolio.cash_balance = _money(portfolio.cash_balance + sign * net_amount)
 
     db.flush()
 
@@ -339,12 +338,8 @@ def _calculate_cost_breakdown(
     sell_price = _money(request.sell_price)
     mid_price = _money((buy_price + sell_price) / Decimal("2")) if buy_price and sell_price else Decimal("0")
     midpoint_amount = _money(quantity * mid_price) if mid_price > 0 else gross_amount
-    if request.action == "paper_buy":
-        spread_impact = _money(gross_amount - midpoint_amount)
-    elif request.action == "paper_sell":
-        spread_impact = _money(midpoint_amount - gross_amount)
-    else:
-        spread_impact = Decimal("0")
+    sign = 1 if request.action == "paper_buy" else (-1 if request.action == "paper_sell" else 0)
+    spread_impact = _money(sign * (gross_amount - midpoint_amount))
     return TradeCostBreakdown(
         gross_amount=gross_amount,
         fees=_money(request.fees),

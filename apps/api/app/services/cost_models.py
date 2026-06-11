@@ -12,9 +12,7 @@ class KuveytTurkCostModel(BaseCostModel):
         return Decimal("0.0")
 
     def calculate_taxes(self, amount: Decimal, price: Decimal, is_buy: bool) -> Decimal:
-        if is_buy:
-            return (amount * price * Decimal("0.002")).quantize(Decimal("0.0001"))
-        return Decimal("0.0")
+        return (amount * price * Decimal("0.002")).quantize(Decimal("0.0001")) if is_buy else Decimal("0.0")
 
 
 class ZiraatCostModel(BaseCostModel):
@@ -27,10 +25,7 @@ class ZiraatCostModel(BaseCostModel):
         return (amount * price * Decimal("0.001")).quantize(Decimal("0.0001"))
 
     def calculate_taxes(self, amount: Decimal, price: Decimal, is_buy: bool) -> Decimal:
-        if is_buy:
-            # 0.2% Kambiyo tax on buys
-            return (amount * price * Decimal("0.002")).quantize(Decimal("0.0001"))
-        return Decimal("0.0")
+        return (amount * price * Decimal("0.002")).quantize(Decimal("0.0001")) if is_buy else Decimal("0.0")
 
 
 COST_MODEL_REGISTRY = {
