@@ -130,3 +130,9 @@ updated: 2026-06-11
 - **Dynamic Strategy Routing:** Replaced the hardcoded V2 strategy execution in `auto_trader.py` with a dynamic router based on `settings.strategy_name`. It supports simple indicator strategies (`rsi`, `sma_cross`, `bollinger`) and multi-agent blended consensus (using LLM arbiter).
 - **Strategy-Level Staleness Bypass:** Integrated `is_comex_market_closed` into `evaluate_timeframe_guardrails` to prevent entry and execution timeframe staleness flags from freezing the strategy runner when the COMEX market is closed.
 - **Telegram Notification Deduplication:** Implemented cooldown and change detection rules in `_run_auto_trading_impl`. Subsequent `HOLD` notifications are suppressed unless the `reason_code` changes, or a 6-hour window has elapsed.
+
+## 21. News Sentiment Multi-Aspect Formula & Severity Scaling (June 2026)
+- **Impact Severity Integration:** Added `impact_severity` (0.0 to 1.0) into the Hermes agent's LLM prompt, defining macro-financial correlation rules (DXY negative correlation, Gold positive correlation, Fed rate decisions/inflation data high sensitivity).
+- **Weighted Relevance & Severity Average:** Replaced the previous linear source weight sum with a new formula dividing the sum of weighted sentiment scores (scaled by speculation risk, relevance, and impact severity) by the sum of relevance, severity, and source weights:
+  $$\text{final\_score} = \frac{\sum (\text{sentiment\_numeric} \times (1 - \text{speculation}) \times \text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}{\sum (\text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}$$
+  Ensured a safe `0.0` fallback in the event of a zero-denominator.

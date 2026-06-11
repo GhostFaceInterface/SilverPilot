@@ -27,11 +27,11 @@
 ---
 
 ### **Faz 2: Haber Sentiment Matematiksel Düzeltmesi ve Çok Boyutlu Etki Analizi**
-- [ ] LLM (Hermes) promptuna haberin gümüş üzerindeki ilgililik derecesi (`relevance`) ile birlikte haberin şiddetini/büyüklüğünü belirten `impact_severity` (0.0 - 1.0) parametre analizini eklemek.
-- [ ] [hermes.py](file:///Users/boe747/SilverPilot/apps/api/app/agents/hermes.py) içerisindeki ağırlıklı sentiment formülünü, ilgisiz veya spekülatif haberlerin seyreltme yapmasını önleyecek şekilde "Ağırlıklı İlgi ve Şiddet Ortalaması" olarak güncellemek:
+- [x] LLM (Hermes) promptuna haberin gümüş üzerindeki ilgililik derecesi (`relevance`) ile birlikte haberin şiddetini/büyüklüğünü belirten `impact_severity` (0.0 - 1.0) parametre analizini eklemek.
+- [x] [hermes.py](file:///Users/boe747/SilverPilot/apps/api/app/agents/hermes.py) içerisindeki ağırlıklı sentiment formülünü, ilgisiz veya spekülatif haberlerin seyreltme yapmasını önleyecek şekilde "Ağırlıklı İlgi ve Şiddet Ortalaması" olarak güncellemek:
   $$\text{final\_score} = \frac{\sum (\text{sentiment\_numeric} \times (1 - \text{speculation}) \times \text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}{\sum (\text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}$$
-- [ ] LLM (Hermes) promptunda gümüşü dolaylı etkileyen tüm faktörlerin (DXY, Altın/Emtia korelasyonları, faiz kararları, enflasyon verileri vb.) korelasyon ilişkisini tanımlayarak LLM'in doğru `relevance` ve `impact_severity` üretmesini sağlamak.
-- [ ] `test_hermes_agent.py` test suite'ini güncel formüle ve etki kurallarına göre revize etmek.
+- [x] LLM (Hermes) promptunda gümüşü dolaylı etkileyen tüm faktörlerin (DXY, Altın/Emtia korelasyonları, faiz kararları, enflasyon verileri vb.) korelasyon ilişkisini tanımlayarak LLM'in doğru `relevance` ve `impact_severity` üretmesini sağlamak.
+- [x] `test_hermes_agent.py` test suite'ini güncel formüle ve etki kurallarına göre revize etmek.
 - *DoD:* `pytest tests/test_hermes_agent.py` test suite'inin yeşil olması.
 
 ---
