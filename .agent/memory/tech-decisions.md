@@ -142,3 +142,9 @@ updated: 2026-06-11
 - **Polymorphic Strategy Routing:** Strategy classes (`RsiStrategy`, `SmaCrossStrategy`, `BollingerStrategy`, `BlendedStrategy`, `StrategyV2`) derive from `BaseStrategy` and register dynamically in `STRATEGY_REGISTRY`. Routing is handled through `STRATEGY_REGISTRY.get(...)`, completely removing hardcoded router branches in `auto_trader.py`.
 - **Dynamic Cost Models:** Implemented `ZiraatCostModel` and `KuveytTurkCostModel` (derived from `BaseCostModel`) inside `app/services/cost_models.py` to dynamically apply spreads, commissions, and taxes.
 - **Risk Guard Loop Abstraction:** Refactored individual risk checks (Spread, Staleness, Volatility, FOMO, ExpectedGain, MLReview, LossLimit) to derive from `BaseRiskGuard`. Risk checks now execute dynamically by iterating over a unified guards list, eliminating the large nested conditional chains inside `evaluate_paper_trade_risk`.
+
+## 23. AUTO Strateji ve Rejim-Duyarlı İndikatör Ağırlıklandırma (June 2026)
+- **`AutoRegimeStrategy`:** Piyasa rejimini (`get_market_regime`) ADX ve Bollinger Bandwidth metriklerini kullanarak analiz eden ve dinamik yön belirleyen ana strateji sınıfı entegre edildi.
+- **Strateji Oylama & Seçim Kuralları:** ADX < 25.0 veya Bollinger Bandwidth < 0.015 (Sideways/Mean-reversion) durumlarında RSI ve Bollinger stratejileri koşturulup oylanır; ADX >= 25.0 (Trending) durumunda ise SMA Crossover ve MACD Crossover trend takipçi stratejileri oylanır.
+- **AUTO İndikatör Ağırlıklandırma:** Sideways rejimde RSI kararına 0.6, Bollinger kararına 0.4 ağırlık verilirken; Trending rejimde SMA Cross kararına 0.6, MACD kararına 0.4 ağırlık verilerek nihai alım/satım sinyal gücü hesaplanır.
+- **`MacdStrategy`:** Standart MACD crossover kesişimlerini takip eden modüler `MacdStrategy` sınıfı `BaseStrategy` türevi olarak yazılıp strateji kayıt defterine (`STRATEGY_REGISTRY`) eklendi.

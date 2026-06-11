@@ -48,11 +48,11 @@
 ---
 
 ### **Faz 4: AUTO Strateji ve AUTO İndikatör Motoru**
-- [ ] Piyasa rejimini (`get_market_regime`) 1 saatlik bar aralıklarıyla sorgulayarak dominant stratejiyi seçen `AutoRegimeStrategy` sınıfını (`BaseStrategy` türevi) yazmak.
+- [x] Piyasa rejimini (`get_market_regime`) 1 saatlik bar aralıklarıyla sorgulayarak dominant stratejiyi seçen `AutoRegimeStrategy` sınıfını (`BaseStrategy` türevi) yazmak.
   - `ADX < 20` veya BB Bandwidth dar ise: Mean-reversion stratejilerini (RSI, Bollinger) çalıştırır.
   - `ADX >= 25` ise: Trend-following stratejisini (SMA Cross, MACD) çalıştırır.
-- [ ] İndikatör hesaplamalarında, kullanıcının seçmediği durumda en doğru indikatör setini otomatik ağırlıklandıran "AUTO İndikatör Seçim Mantığı"nı karar mekanizmasına dahil etmek.
-- [ ] `test_auto_strategy.py` adında yeni bir test dosyası oluşturarak auto modunun test senaryolarını yazmak.
+- [x] İndikatör hesaplamalarında, kullanıcının seçmediği durumda en doğru indikatör setini otomatik ağırlıklandıran "AUTO İndikatör Seçim Mantığı"nı karar mekanizmasına dahil etmek.
+- [x] `test_auto_strategy.py` adında yeni bir test dosyası oluşturarak auto modunun test senaryolarını yazmak.
 - *DoD:* `pytest tests/test_auto_strategy.py` testlerinin başarıyla tamamlanması.
 
 ---
