@@ -136,3 +136,9 @@ updated: 2026-06-11
 - **Weighted Relevance & Severity Average:** Replaced the previous linear source weight sum with a new formula dividing the sum of weighted sentiment scores (scaled by speculation risk, relevance, and impact severity) by the sum of relevance, severity, and source weights:
   $$\text{final\_score} = \frac{\sum (\text{sentiment\_numeric} \times (1 - \text{speculation}) \times \text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}{\sum (\text{relevance} \times \text{impact\_severity} \times \text{source\_weight})}$$
   Ensured a safe `0.0` fallback in the event of a zero-denominator.
+
+## 22. Polymorphic OOP Abstractions & Cleaner Logic (June 2026)
+- **Abstract Base Classes (ABCs):** Created `BasePriceScraper`, `BaseNewsCollector`, `BaseCostModel`, `BaseRiskGuard`, `BaseIndicator`, and `BaseStrategy` inside `app/services/base.py` to establish formal contracts, eliminating multi-branch if-else cascades.
+- **Polymorphic Strategy Routing:** Strategy classes (`RsiStrategy`, `SmaCrossStrategy`, `BollingerStrategy`, `BlendedStrategy`, `StrategyV2`) derive from `BaseStrategy` and register dynamically in `STRATEGY_REGISTRY`. Routing is handled through `STRATEGY_REGISTRY.get(...)`, completely removing hardcoded router branches in `auto_trader.py`.
+- **Dynamic Cost Models:** Implemented `ZiraatCostModel` and `KuveytTurkCostModel` (derived from `BaseCostModel`) inside `app/services/cost_models.py` to dynamically apply spreads, commissions, and taxes.
+- **Risk Guard Loop Abstraction:** Refactored individual risk checks (Spread, Staleness, Volatility, FOMO, ExpectedGain, MLReview, LossLimit) to derive from `BaseRiskGuard`. Risk checks now execute dynamically by iterating over a unified guards list, eliminating the large nested conditional chains inside `evaluate_paper_trade_risk`.

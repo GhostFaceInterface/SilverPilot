@@ -37,12 +37,12 @@
 ---
 
 ### **Faz 3: OOP Modülerlik ve Fiyat/Haber/Komisyon Sağlayıcı Katmanı (OOP / Architecture Refactor)**
-- [ ] Fiyat sağlayıcıları için soyut bir interface olan `BasePriceScraper` (Abstract Base Class - ABC) oluşturmak ve `fetch_price(db, asset) -> PriceSnapshot` kontratını tanımlamak. (Ajan: `backend-architect`)
-- [ ] Haber sağlayıcıları ve metin tabanlı veriler için soyut bir interface olan `BaseNewsCollector` (ABC) oluşturmak ve `collect(db) -> list[RawNews]` kontratını tanımlamak.
-- [ ] **Banka Komisyon ve Vergi Modeli (`BaseCostModel`):** Her bankanın/sağlayıcının makas (spread), vergi (BSMV %0.2) ve komisyon oranlarını hesaplayan soyut `BaseCostModel` (ABC) tanımlamak. `KuveytTurkCostModel` ve `ZiraatCostModel` sınıflarını buradan türetmek.
-- [ ] **Modüler Risk Kuralları (`BaseRiskGuard`):** Risk filtrelerini (Spread, Staleness, Volatilite vb.) modüler hale getirmek için `BaseRiskGuard` (ABC) tanımlamak ve mevcut kuralları birer kural sınıfı olarak soyutlamak.
-- [ ] **Modüler İndikatör Hesaplayıcılar (`BaseIndicator`):** İndikatör hesaplama fonksiyonlarını `BaseIndicator` (ABC) yapısına geçirmek.
-- [ ] Stratejiler için `BaseStrategy` soyut sınıfı oluşturmak ve `evaluate(db, context) -> StrategyDecision` kontratını zorunlu kılmak.
+- [x] Fiyat sağlayıcıları için soyut bir interface olan `BasePriceScraper` (Abstract Base Class - ABC) oluşturmak ve `fetch_price(db, asset) -> PriceSnapshot` kontratını tanımlamak. (Ajan: `backend-architect`)
+- [x] Haber sağlayıcıları ve metin tabanlı veriler için soyut bir interface olan `BaseNewsCollector` (ABC) oluşturmak ve `collect(db) -> list[RawNews]` kontratını tanımlamak.
+- [x] **Banka Komisyon ve Vergi Modeli (`BaseCostModel`):** Her bankanın/sağlayıcının makas (spread), vergi (BSMV %0.2) ve komisyon oranlarını hesaplayan soyut `BaseCostModel` (ABC) tanımlamak. `KuveytTurkCostModel` ve `ZiraatCostModel` sınıflarını buradan türetmek.
+- [x] **Modüler Risk Kuralları (`BaseRiskGuard`):** Risk filtrelerini (Spread, Staleness, Volatilite vb.) modüler hale getirmek için `BaseRiskGuard` (ABC) tanımlamak ve mevcut kuralları birer kural sınıfı olarak soyutlamak.
+- [x] **Modüler İndikatör Hesaplayıcılar (`BaseIndicator`):** İndikatör hesaplama fonksiyonlarını `BaseIndicator` (ABC) yapısına geçirmek.
+- [x] Stratejiler için `BaseStrategy` soyut sınıfı oluşturmak ve `evaluate(db, context) -> StrategyDecision` kontratını zorunlu kılmak.
 - *DoD:* Refaktör sonrasında tüm ingestion ve trade execution testlerinin (`pytest tests/test_collectors.py tests/test_auto_trader.py`) hatasız geçmesi.
 
 ---
