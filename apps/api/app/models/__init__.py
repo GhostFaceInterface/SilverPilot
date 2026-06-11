@@ -21,6 +21,10 @@ from app.models.entities import (
     MarketBar,
     AgentMemoryEvent,
     HistoricalAgentCache,
+    Provider,
+    TenantPortfolio,
+    StrategyParameter,
+    AssetConversion,
 )
 
 __all__ = [
@@ -46,4 +50,8 @@ __all__ = [
     "MarketBar",
     "AgentMemoryEvent",
     "HistoricalAgentCache",
+    "Provider",
+    "TenantPortfolio",
+    "StrategyParameter",
+    "AssetConversion",
 ]

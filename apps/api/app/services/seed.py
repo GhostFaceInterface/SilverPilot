@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.core.db import SessionLocal
-from app.models import Asset, Portfolio
+from app.models import Asset, Portfolio, Provider, AssetConversion
 
 
 from sqlalchemy import text
@@ -76,6 +76,34 @@ def seed_development_data() -> None:
                     is_real_money=False,
                 )
             )
+            db.flush()
+
+        # 4. Seed default providers (kuveyt_turk, ziraat)
+        existing_providers = {
+            p.name for p in db.query(Provider).filter(Provider.name.in_(["kuveyt_turk", "ziraat"])).all()
+        }
+        ("kuveyt_turk" not in existing_providers) and db.add(
+            Provider(name="kuveyt_turk", display_name="Kuveyt Turk", is_active=True, config_json={})
+        )
+        ("ziraat" not in existing_providers) and db.add(
+            Provider(name="ziraat", display_name="Ziraat Bank", is_active=True, config_json={})
+        )
+        db.flush()
+
+        # 5. Seed standard XAG to XAG_GRAM conversion rate (31.1035)
+        xag = db.query(Asset).filter(Asset.symbol == "XAG").one_or_none()
+        xag_gram = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one_or_none()
+
+        has_conversion = (xag is not None and xag_gram is not None) and (
+            db.query(AssetConversion)
+            .filter(AssetConversion.from_asset_id == xag.id, AssetConversion.to_asset_id == xag_gram.id)
+            .first()
+            is not None
+        )
+
+        (xag is not None and xag_gram is not None and not has_conversion) and db.add(
+            AssetConversion(from_asset_id=xag.id, to_asset_id=xag_gram.id, conversion_rate=Decimal("31.1035"))
+        )
 
         db.commit()
     finally:

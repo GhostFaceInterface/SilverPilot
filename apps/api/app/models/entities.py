@@ -434,6 +434,57 @@ class HistoricalAgentCache(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Provider(Base):
+    __tablename__ = "providers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(128))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class TenantPortfolio(Base):
+    __tablename__ = "tenant_portfolios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id", ondelete="CASCADE"), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    portfolio: Mapped["Portfolio"] = relationship()
+    provider: Mapped["Provider"] = relationship()
+
+
+class StrategyParameter(Base):
+    __tablename__ = "strategy_parameters"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "strategy_name", "parameter_key", name="uq_strategy_parameters_tenant_strategy_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    strategy_name: Mapped[str] = mapped_column(String(128), index=True)
+    parameter_key: Mapped[str] = mapped_column(String(128), index=True)
+    parameter_value: Mapped[str] = mapped_column(Text)
+
+
+class AssetConversion(Base):
+    __tablename__ = "asset_conversions"
+    __table_args__ = (UniqueConstraint("from_asset_id", "to_asset_id", name="uq_asset_conversions_from_to"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), index=True)
+    to_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), index=True)
+    conversion_rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+
+    from_asset: Mapped["Asset"] = relationship(foreign_keys=[from_asset_id])
+    to_asset: Mapped["Asset"] = relationship(foreign_keys=[to_asset_id])
+
+
 Index(
     "ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at
 )

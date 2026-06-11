@@ -21,6 +21,7 @@ from app.models import (
     RawGlobalPrice,
     RawNews,
     TechnicalIndicator,
+    AssetConversion,
 )
 from app.schemas.collectors import ManualPriceIngestRequest
 from app.services.indicators import calculate_indicators
@@ -228,7 +229,7 @@ def ingest_global_price(
     if asset.symbol == "XAG":
         gram_asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
         if gram_asset:
-            conversion_rate = Decimal("31.1035")
+            conversion_rate = get_conversion_rate(db, "XAG", "XAG_GRAM")
             gram_buy = _price(buy_price / conversion_rate)
             gram_sell = _price(sell_price / conversion_rate)
             gram_mid = _price(mid_price / conversion_rate)
@@ -595,7 +596,7 @@ def ingest_bank_price(
     if asset_symbol == "XAG":
         gram_asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
         if gram_asset:
-            conversion_rate = Decimal("31.1035")
+            conversion_rate = get_conversion_rate(db, "XAG", "XAG_GRAM")
             gram_snap_buy = _price(snap_buy / conversion_rate)
             gram_snap_sell = _price(snap_sell / conversion_rate)
             gram_snap_mid = _price(mid_price / conversion_rate)
@@ -1459,3 +1460,17 @@ def _ratio(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0
     return round(numerator / denominator, 6)
+
+
+def get_conversion_rate(db: Session, from_symbol: str, to_symbol: str) -> Decimal:
+    from sqlalchemy.orm import aliased
+
+    from_asset = aliased(Asset)
+    to_asset = aliased(Asset)
+    rate = db.execute(
+        select(AssetConversion.conversion_rate)
+        .join(from_asset, AssetConversion.from_asset_id == from_asset.id)
+        .join(to_asset, AssetConversion.to_asset_id == to_asset.id)
+        .where(from_asset.symbol == from_symbol, to_asset.symbol == to_symbol)
+    ).scalar_one_or_none()
+    return Decimal(str(rate)) if rate is not None else Decimal("31.1035")

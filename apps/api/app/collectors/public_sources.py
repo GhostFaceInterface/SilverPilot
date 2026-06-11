@@ -23,6 +23,7 @@ from app.collectors.service import (
     ingest_global_price,
     ingest_news_items,
     payload_hash,
+    get_conversion_rate,
     record_failed_run,
 )
 from app.core.config import Settings, get_settings
@@ -234,7 +235,7 @@ def collect_kuveyt_public_silver(
 
         yahoo_mid = None
         if latest_yahoo is not None:
-            yahoo_mid = latest_yahoo.mid_price / Decimal("31.1035")
+            yahoo_mid = latest_yahoo.mid_price / get_conversion_rate(db, "XAG", "XAG_GRAM")
         else:
             try:
                 provider = YahooXagUsdProvider()
@@ -243,7 +244,7 @@ def collect_kuveyt_public_silver(
                     yahoo_mid = (parsed_yahoo.bid + parsed_yahoo.ask) / Decimal("2")
                 else:
                     yahoo_mid = parsed_yahoo.price
-                yahoo_mid = yahoo_mid / Decimal("31.1035")
+                yahoo_mid = yahoo_mid / get_conversion_rate(db, "XAG", "XAG_GRAM")
             except Exception as e:
                 logger.warning(f"Failed to fetch Yahoo SI=F for cross-control: {e}")
 
@@ -311,7 +312,7 @@ def collect_kuveyt_public_silver(
             error_msg = str(exc)
             provider = YahooXagUsdProvider()
             parsed_yahoo = provider.fetch(settings=settings, fetched_at=fetched_at, client=client)
-            yahoo_price = parsed_yahoo.price / Decimal("31.1035")
+            yahoo_price = parsed_yahoo.price / get_conversion_rate(db, "XAG", "XAG_GRAM")
 
             degraded_payload = {
                 "error_reason": error_msg,
