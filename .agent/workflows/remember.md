@@ -4,7 +4,10 @@ description: Structured memory synchronization and learning persistence. Trigger
 
 # /remember - Memory Sync & Learning Persistence
 
-$ARGUMENTS
+## Arguments
+- `memory_category` (required): The category of memory being synced (`feedback`, `tech_decisions`, `conventions`, `history`, `preferences`).
+- `key_learning` (required): Direct, action-oriented rule or decision to be persisted.
+- `context` (optional): Brief description of why this learning/decision is needed.
 
 ---
 
@@ -43,6 +46,7 @@ When `/remember` is triggered:
    - Make it **action-oriented**, **clear**, and **concise**.
    - Always state the **Date**, the **Problem/Context**, and the **Decision/Action**.
    - Keep it short to conserve context tokens in future runs.
+
 
 3. **Append or Update the Target Memory File**
    - Read the file using target line intervals if large, locate the logical section, and insert the structured entry.

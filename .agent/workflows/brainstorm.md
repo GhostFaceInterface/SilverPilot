@@ -4,9 +4,11 @@ description: Structured brainstorming for projects and features. Explores multip
 
 # /brainstorm - Structured Idea Exploration
 
-$ARGUMENTS
+## Arguments
+- `topic` (required): The topic or architecture decision to brainstorm.
 
 ---
+
 
 ## Purpose
 

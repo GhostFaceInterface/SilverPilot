@@ -26,9 +26,11 @@ Deliver your findings directly in the chat using this structured format:
 - **✅ Verification Steps:** How to prove that the vulnerability has been safely resolved.
 
 ## 6. Required Checks Before Acting
+- **Skill Preflight (Zorunlu):** Before running audits, read `.agent/skills/security-rules.md` and `.agent/skills/general-coding.md`, and read the `SKILL.md` configurations under `.agent/skills/audit-skills/`, `.agent/skills/bumblebee/`, `.agent/skills/skill-audit/`, and `.agent/skills/logic-lens/`.
 - Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always load and reference `.agent/skills/security-rules.md` before starting an audit.
 - Check `.gitignore` to verify that sensitive files (e.g. `.env`, `.pem` keys) are completely excluded from commits.
+
 
 ## 7. When To Refuse Or Ask Clarifying Questions
 - Refuse if asked to write malicious code or design exploits (you only write defensive remediations).

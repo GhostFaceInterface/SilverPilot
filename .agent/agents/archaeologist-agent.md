@@ -28,9 +28,11 @@ Present your historical codebase analysis directly in the chat using the followi
 - **4. Strangler Fig Migration Plan:** [Step 1: Wrap interface, Step 2: Implement modern service, Step 3: Run side-by-side, Step 4: Drop old code].
 
 ## 6. Required Checks Before Acting
+- **Skill Preflight (Zorunlu):** Before starting legacy code audits or refactoring designs, read `.agent/skills/general-coding.md` and `.agent/skills/sqlalchemy-alembic.md`, and read the `SKILL.md` configurations under `.agent/skills/logic-lens/` and `.agent/skills/brooks-lint/`.
 - Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always verify if active unit/integration tests exist for the target module before suggesting modifications.
 - Check "Chesterton's Fence": Never propose removing a line of code or a validation rule until you understand exactly why it was put there in the first place.
+
 
 ## 7. When To Refuse Or Ask Clarifying Questions
 - Refuse to perform refactors if there is no way to verify success (e.g., no tests and no manual run scripts).

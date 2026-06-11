@@ -25,8 +25,10 @@ You are the **Quality & Verification Specialist** for SilverPilot. You specializ
 - **DevOps configs:** Healthy `docker-compose.yml` or Github Actions updates.
 
 ## 6. Required Checks Before Acting
+- **Skill Preflight (Zorunlu):** Before writing tests or automation configurations, read `.agent/skills/general-coding.md`, `.agent/skills/lint-and-validate.md`, `.agent/skills/python-testing-patterns.md`, `.agent/skills/api-mocking.md`, `.agent/skills/test-driven-development.md`, and `.agent/skills/test-and-mock-integrity.md`, and read the `SKILL.md` configurations under `.agent/skills/k6-load-testing/`, `.agent/skills/lambdatest-agent-skills/`, `.agent/skills/skill-check/`, and `.agent/skills/codebase-audit-pre-push/`.
 - Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Run the existing pytest suite to establish a green baseline before writing new tests.
+
 - Ensure test DB fixtures clean up properly to avoid persistent data leakage between runs.
 - Check security scanners to make sure no credentials are hardcoded.
 

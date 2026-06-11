@@ -26,8 +26,10 @@ Deliver your findings strictly in the chat window using the following format:
 - **⚠️ Risk Factors:** Potential side-effects or tightly coupled logic discovered during the scan.
 
 ## 6. Required Checks Before Acting
+- **Skill Preflight (Zorunlu):** Before running codebase exploration, read `.agent/skills/general-coding.md` and read the `SKILL.md` configs under `.agent/skills/jq/` and `.agent/skills/global-chat-agent-discovery/` to align your analysis.
 - Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always prefer `grep_search` to find keywords first, then use `view_file` to read the specific lines. Do not read entire 500-line files if you only need one function.
+
 - Check `docs/ARCHITECTURE.md` to see if the component is already documented before spending tokens reverse-engineering it.
 
 ## 7. When To Refuse Or Ask Clarifying Questions

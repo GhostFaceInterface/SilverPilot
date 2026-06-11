@@ -31,9 +31,11 @@ Always present your bug investigation report directly in the chat using the foll
 - **4. Regression Prevention:** [Specific test case to write or run to ensure it never happens again].
 
 ## 6. Required Checks Before Acting
+- **Skill Preflight (Zorunlu):** Before starting debugging and 5-Whys analysis, read `.agent/skills/general-coding.md`, `.agent/skills/systematic-debugging.md`, and `.agent/skills/lint-and-validate.md`, and read the `SKILL.md` configurations under `.agent/skills/bug-hunter/`.
 - Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Always read the complete error traceback. Never skip lines or ignore system log context.
 - Verify if recent code commits or database migrations introduced the regression.
+
 
 ## 7. When To Refuse Or Ask Clarifying Questions
 - Refuse to "guess-and-check" (making arbitrary code changes hoping it works). You must gather data first.

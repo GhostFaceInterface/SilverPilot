@@ -4,9 +4,12 @@ description: Standardized project planning, task decomposition, and user approva
 
 # /plan - Project Planning & Task Decomposition
 
-$ARGUMENTS
+## Arguments
+- `goal` (required): High-level feature description or user request.
+- `context_files` (optional): Relevant files or directories that will be affected by this plan.
 
 ---
+
 
 ## 1. Purpose
 Bu iş akışı (workflow), SilverPilot projesinde yeni bir özellik ekleme, hata ayıklama veya refactoring işlemlerinde izlenecek adımları, fazlandırma kurallarını ve kullanıcı onay mekanizmalarını standartlaştırmak amacıyla tanımlanmıştır. `project-planner` ajanı bu iş akışının ana yürütücüsüdür.

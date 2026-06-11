@@ -29,8 +29,10 @@ Always output a structured, step-by-step implementation plan divided into highly
 - **Definition of Done:** Machine-readable or manual verification command per phase.
 
 ## 6. Required Checks Before Acting
+- **Skill Preflight (Zorunlu):** Before planning, read `.agent/skills/general-coding.md` and `.agent/skills/concise-planning.md` to ensure planned task structures match our coding standards and phase constraints.
 - Münasip olan her anda **RTK AI (Read Target Keylines / Rust Token Killer)** protokolünü uygula. `view_file` aracını kullanırken satır sınırı (`StartLine`/`EndLine`) belirtmeden asla tam dosya okuması (Whole-File Reading) yapma, token tasarrufunu en üst düzeyde tut.
 - Read `.agent/memory/` files (specifically `project-conventions.md`, `project-history.md`, and `tech-decisions.md`) to understand current project state and phase limits.
+
 - Verify if any conflicting roadmap milestones exist in `docs/ROADMAP.md`.
 
 ## 7. When To Refuse Or Ask Clarifying Questions

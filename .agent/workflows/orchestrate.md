@@ -4,9 +4,13 @@ description: Multi-agent execution pipeline. Coordinates specialized subagents, 
 
 # /orchestrate - Multi-Agent Orchestration Workflow
 
-$ARGUMENTS
+## Arguments
+- `task_type` (required): The category of the task (`feature`, `bugfix`, `refactoring`, `security`).
+- `goal` (required): Clear description of what the orchestration must accomplish.
+- `context_files` (optional): List of target files that are relevant to this task.
 
 ---
+
 
 ## 1. Purpose
 Defines the sequential multi-agent execution pipeline when a large, complex, or multi-file feature is requested in the SilverPilot project. Coordinates specialised AI Coding Agents and local Antigravity Subagents to ensure minimal risk, token/cost optimization, and high implementation consistency.
@@ -32,19 +36,20 @@ Defines the sequential multi-agent execution pipeline when a large, complex, or 
 graph TD
     A[User Request] -->|Flash Model| B[project-planner]
     B -->|Generates PLAN.md| C{Coding Stage}
-    C -->|Backend Dev| D[backend-architect-subagent]
-    C -->|Data Collectors/Pipelines| E[data-engineer-subagent]
-    D & E -->|Pro Model: Code Written| F[quality-engineer-subagent]
-    F -->|Pro Model: Tests & Verification Plans Ready| G[safety-gatekeeper-subagent]
+    C -->|Backend Dev| D[backend-architect]
+    C -->|Data Collectors/Pipelines| E[data-engineer]
+    D & E -->|Pro Model: Code Written| F[quality-engineer]
+    F -->|Pro Model: Tests & Verification Plans Ready| G[safety-gatekeeper]
     G -->|Pro Model: Deep Paranoid Code & Test Review| H{Verdict APPROVED?}
     H -->|No: Rejected| C
-    H -->|Yes: Approved| I[quality-subagent: Pytest Execution]
+    H -->|Yes: Approved| I[quality-engineer: Pytest Execution]
     I -->|Flash Model: Verifications & Run Tests| K{All Tests Pass?}
     K -->|No: Fail| C
     K -->|Yes: Pass| L[Auto Commit & Push]
     L --> M[Memory Sync: /remember]
     M --> J[Final Orchestration Report]
 ```
+
 
 ### Orchestration Sequences by Task Type (Göreve Özel Orkestrasyon Sıraları)
 
@@ -70,11 +75,13 @@ Amacı OWASP 2025 açıklarını tespit etmek ve kapatmaktır:
 
 ### A. Local Subagent Delegation Policy
 Antigravity supports spawning specialized subagents via `define_subagent` and `invoke_subagent`. To optimize context limits and keep conversations high-signal:
-1. **Scouting & Research:** Delegate large codebase searches and API analyses to a read-only `scout-subagent`. Enforce the usage of `@global-chat-agent-discovery` and `@jq` for parsing schemas.
-2. **Code Implementation:** For multi-file changes, spawn an isolated `backend-architect-subagent` or `data-engineer-subagent` using the `branch` or `share` workspace mode. This prevents intermediate compilation logs and temporary codes from bloating the main chat.
-3. **Quality & Test Design:** Spawn a `quality-subagent` to write clean, AAA pattern test files. Utilize `@python-testing-patterns.md`, `@api-mocking.md`, `@test-driven-development.md`, and `@lambdatest-agent-skills` or `@k6-load-testing` where load/E2E test automation is necessary.
-4. **Safety & Code Review:** Spawn a `safety-gatekeeper-subagent` (running Gemini 3.5 Pro) to review the written code changes and test cases *statically* before any execution. Enforce strict static rules utilizing `@test-and-mock-integrity.md` (tavizsiz mock ve bütünlük denetimi), `@logic-lens` (formal verification reasoning), `@brooks-lint` (coupling analysis), and `@codebase-audit-pre-push`.
-5. **Quality & Test Execution:** Run the `pytest` test suites and environment smoke tests in a green, isolated terminal session, validated by `@squirrel` for a perfect delivery pipeline.
+1. **Scouting & Research:** Delegate large codebase searches and API analyses to a read-only `scout-agent`. Enforce the usage of `.agent/skills/global-chat-agent-discovery/` and `.agent/skills/jq/` for parsing schemas.
+2. **Code Implementation:** For multi-file changes, spawn an isolated `backend-architect` or `data-engineer` using the `branch` or `share` workspace mode. This prevents intermediate compilation logs and temporary codes from bloating the main chat.
+3. **Quality & Test Design:** Spawn a `quality-engineer` to write clean, AAA pattern test files. Utilize `.agent/skills/python-testing-patterns.md`, `.agent/skills/api-mocking.md`, `.agent/skills/test-driven-development.md`, and `.agent/skills/lambdatest-agent-skills/` or `.agent/skills/k6-load-testing/` where load/E2E test automation is necessary.
+4. **Safety & Code Review:** Spawn a `safety-gatekeeper` (running Gemini 3.5 Pro) to review the written code changes and test cases *statically* before any execution. Enforce strict static rules utilizing `.agent/skills/test-and-mock-integrity.md` (tavizsiz mock ve bütünlük denetimi), `.agent/skills/logic-lens/`, `.agent/skills/brooks-lint/`, and `.agent/skills/codebase-audit-pre-push/`.
+5. **Quality & Test Execution:** Run the `pytest` test suites and environment smoke tests in a green, isolated terminal session, validated by `.agent/skills/squirrel/` for a perfect delivery pipeline.
+
+
 
 ### B. Model Cascading Playbook (Flash vs Pro)
 To maximize token economy and quality, route tasks to the optimal model tiers:
@@ -111,9 +118,9 @@ To save user overhead and ensure a streamlined delivery cycle, git tasks are aut
 
 ## 5. Checklist
 - [ ] Has `project-planner` generated or updated a valid plan?
-- [ ] Were heavy research/search tasks de-escalated to a dedicated `scout-subagent`?
+- [ ] Were heavy research/search tasks de-escalated to a dedicated `scout-agent`?
 - [ ] Did the agent prompt the user to switch to Gemini 3.5 Pro before writing critical production code?
-- [ ] Have proposed code changes and test cases been reviewed and **Approved** by a `safety-gatekeeper-subagent` using the Gemini 3.5 Pro model?
+- [ ] Have proposed code changes and test cases been reviewed and **Approved** by a `safety-gatekeeper` using the Gemini 3.5 Pro model?
 - [ ] Did the agent prompt the user to switch back to Gemini 3.5 Flash before running tests or writing documentation?
 - [ ] Have all pytest tests passed under the subagent's execution check?
 - [ ] **[Git Automation]** Are all successful changes committed via Conventional Commits and pushed automatically to the remote repository?
@@ -124,11 +131,13 @@ To save user overhead and ensure a streamlined delivery cycle, git tasks are aut
 ## 6. Example Guidance
 When a user requests a major feature like "Simulated portfolio risk warning when volatility exceeds 5%":
 1. **Plan (Flash):** Use Gemini 3.5 Flash. Trigger `project-planner` to create a plan.
-2. **Scout (Flash):** Spawn a `scout-subagent` to locate existing risk thresholds and sample feeds.
-3. **Execute Code (Pro):** Ask the user to switch to Gemini 3.5 Pro. Spawn `data-engineer-subagent` and `backend-architect-subagent` to write volatility calculation logic and endpoints.
-4. **Execute Tests (Pro):** Spawn `quality-subagent` to write robust, realistic test suites with mock cash limits.
-5. **Safety Gate (Pro):** Spawn `safety-gatekeeper-subagent` to statically inspect code and tests under paranoid scenarios. Issue the final `APPROVED` verdict.
-6. **Verify & Test (Flash):** Ask the user to switch back to Gemini 3.5 Flash. Spawn `quality-subagent` to run `pytest` and verify zero-regression.
+2. **Scout (Flash):** Spawn a `scout-agent` to locate existing risk thresholds and sample feeds.
+3. **Execute Code (Pro):** Ask the user to switch to Gemini 3.5 Pro. Spawn `data-engineer` and `backend-architect` to write volatility calculation logic and endpoints.
+4. **Execute Tests (Pro):** Spawn `quality-engineer` to write robust, realistic test suites with mock cash limits.
+5. **Safety Gate (Pro):** Spawn `safety-gatekeeper` to statically inspect code and tests under paranoid scenarios. Issue the final `APPROVED` verdict.
+6. **Verify & Test (Flash):** Ask the user to switch back to Gemini 3.5 Flash. Spawn `quality-engineer` to run `pytest` and verify zero-regression.
 7. **Commit & Push (Flash):** Stage the changed code and test files (`git add ...`), commit with `feat: add volatility-based portfolio risk checks`, and immediately run `git push`.
 8. **Memory Sync (Flash):** Trigger the `/remember` workflow to save learnings and completed phase details in Geliştirme Belleği (`.agent/memory/`).
 9. **Report (Flash):** Compile and deliver a concise orchestration summary.
+
+
