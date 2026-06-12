@@ -507,6 +507,55 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     from app.agents.orchestrator import run_blended_consensus_resolution
     from app.paper_trading.service import calculate_position
     from app.services.indicator_readiness import get_latest_indicator_context
+    from app.services.auto_trader import (
+        build_timeframe_indicator_summary,
+        evaluate_timeframe_guardrails,
+        format_readiness_block_report,
+        get_strategy_timeframe_contexts,
+        summarize_timeframe_inputs,
+    )
+
+    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
+    if not asset:
+        return "❌ Gümüş (XAG_GRAM) varlığı bulunamadı."
+
+    timeframe_contexts = get_strategy_timeframe_contexts(db, asset.symbol)
+    readiness_block_flags = evaluate_timeframe_guardrails(timeframe_contexts)
+    if readiness_block_flags:
+        snapshot = None
+        for timeframe in ("5m", "1h", "1d"):
+            indicator = timeframe_contexts[timeframe].readiness.indicator
+            if indicator is None:
+                continue
+            snapshot = indicator.price_snapshot
+            if snapshot is None and indicator.price_snapshot_id is not None:
+                snapshot = db.execute(
+                    select(PriceSnapshot).where(PriceSnapshot.id == indicator.price_snapshot_id)
+                ).scalar_one_or_none()
+            if snapshot is not None:
+                break
+
+        position_quantity = Decimal("0")
+        cash_balance = Decimal("0")
+        if portfolio is not None:
+            position = calculate_position(db, portfolio.id, asset.id)
+            position_quantity = position.quantity
+            cash_balance = portfolio.cash_balance
+
+        return format_readiness_block_report(
+            {
+                "action": "HOLD",
+                "price": float(snapshot.mid_price) if snapshot is not None else 0.0,
+                "cash_balance": float(cash_balance),
+                "xag_balance": float(position_quantity),
+                "reason_code": readiness_block_flags[0],
+                "readiness_block_flags": readiness_block_flags,
+                "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+                "timeframe_indicators": build_timeframe_indicator_summary(timeframe_contexts),
+                "notification_kind": "readiness_block",
+            }
+        )
 
     # Run collectors synchronously to refresh snapshots and indicators
     try:
@@ -518,9 +567,6 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
         collect_global_xag_usd(db, settings=settings)
     except Exception as e:
         logger.warning("On-demand collect_global_xag_usd failed; error_type=%s.", type(e).__name__)
-
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
 
     indicator_context = get_latest_indicator_context(db, asset_symbol=asset.symbol)
     readiness = indicator_context.readiness

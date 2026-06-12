@@ -333,6 +333,18 @@ async def test_blended_readiness_block_does_not_require_strategy_metadata():
         assert db.execute(select(PaperTrade)).scalars().all() == []
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()
+        message_text = bot.send_message.call_args.kwargs["text"]
+        assert "SilverPilot İşlem Blok Raporu" in message_text
+        assert "Günlük trend verisi hazır değil" in message_text
+        assert "1d trend" in message_text
+        assert "1h giriş" in message_text
+        assert "5m uygulama" in message_text
+        assert "Bilgi Amaçlı Teknik Değerler" in message_text
+        assert "30.0000" in message_text
+        assert "30.2000" in message_text
+        assert "Strateji Oylaması" not in message_text
+        assert "Yüce Hakem" not in message_text
+        assert "📝 <b>Gerekçe:" not in message_text
 
     db.close()
     Base.metadata.drop_all(bind=engine)

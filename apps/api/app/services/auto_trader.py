@@ -27,6 +27,23 @@ ACTION_SELL = "SELL"
 ACTION_HOLD = "HOLD"
 BLOCKED_CONFIG_INVALID = "BLOCKED_CONFIG_INVALID"
 BLOCKED_REASON_CODES = {BLOCKED_CONFIG_INVALID}
+READINESS_BLOCK_REASONS = {
+    "DAILY_TREND_MISSING",
+    "ENTRY_TIMEFRAME_STALE",
+    "ENTRY_TIMEFRAME_UNUSABLE",
+    "EXECUTION_TIMEFRAME_STALE",
+    "EXECUTION_TIMEFRAME_UNUSABLE",
+    "TIMEFRAME_SOURCE_MISMATCH",
+}
+
+READINESS_REASON_LABELS = {
+    "DAILY_TREND_MISSING": "Günlük trend verisi hazır değil",
+    "ENTRY_TIMEFRAME_STALE": "Saatlik giriş verisi güncel değil",
+    "ENTRY_TIMEFRAME_UNUSABLE": "Saatlik giriş verisi kullanılamıyor",
+    "EXECUTION_TIMEFRAME_STALE": "5 dakikalık uygulama verisi güncel değil",
+    "EXECUTION_TIMEFRAME_UNUSABLE": "5 dakikalık uygulama verisi kullanılamıyor",
+    "TIMEFRAME_SOURCE_MISMATCH": "Zaman dilimi veri kaynakları uyumsuz",
+}
 
 
 @dataclass(frozen=True)
@@ -106,6 +123,86 @@ def escape_html_response(text: str) -> str:
     return escaped
 
 
+def _format_optional_float(value, *, precision: int = 4) -> str:
+    if value is None:
+        return "n/a"
+    try:
+        return f"{float(value):,.{precision}f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def build_timeframe_indicator_summary(timeframe_contexts: dict) -> dict:
+    summary = {}
+    for timeframe, context in timeframe_contexts.items():
+        indicator = context.readiness.indicator
+        if indicator is None:
+            continue
+        summary[timeframe] = {
+            "close": float(indicator.close_usd_oz) if indicator.close_usd_oz is not None else None,
+            "rsi": float(indicator.rsi_14) if indicator.rsi_14 is not None else None,
+            "sma_20": float(indicator.sma_20) if indicator.sma_20 is not None else None,
+            "sma_50": float(indicator.sma_50) if indicator.sma_50 is not None else None,
+            "bb_upper": float(indicator.bb_upper_20_2) if indicator.bb_upper_20_2 is not None else None,
+            "bb_lower": float(indicator.bb_lower_20_2) if indicator.bb_lower_20_2 is not None else None,
+        }
+    return summary
+
+
+def format_readiness_block_report(trade_data: dict) -> str:
+    reason_code = trade_data.get("reason_code") or _select_block_reason(trade_data.get("readiness_block_flags") or [])
+    reason_label = READINESS_REASON_LABELS.get(reason_code, reason_code or "Readiness blok nedeni bilinmiyor")
+    timeframe_inputs = trade_data.get("timeframe_inputs") or {}
+    timeframe_indicators = trade_data.get("timeframe_indicators") or {}
+
+    timeframe_lines = []
+    timeframe_labels = {"1d": "1d trend", "1h": "1h giriş", "5m": "5m uygulama"}
+    for timeframe in ("1d", "1h", "5m"):
+        info = timeframe_inputs.get(timeframe) or {}
+        status = info.get("status") or "unknown"
+        usable = "hazır" if info.get("usable") else "hazır değil"
+        source = info.get("source") or "n/a"
+        age = info.get("age_minutes")
+        age_text = f"{age} dk" if age is not None else "n/a"
+        reason_codes = info.get("reason_codes") or []
+        reasons = ", ".join(reason_codes) if reason_codes else "Yok"
+        timeframe_lines.append(
+            f"• <b>{timeframe_labels[timeframe]}:</b> {html.escape(status)} / {usable} | "
+            f"kaynak: <code>{html.escape(str(source))}</code> | yaş: {html.escape(str(age_text))} | "
+            f"nedenler: <code>{html.escape(reasons)}</code>"
+        )
+
+    indicator_lines = []
+    for timeframe in ("1h", "5m"):
+        values = timeframe_indicators.get(timeframe)
+        if not values:
+            continue
+        indicator_lines.append(
+            f"• <b>{timeframe}:</b> kapanış {_format_optional_float(values.get('close'))} USD/gram, "
+            f"RSI {_format_optional_float(values.get('rsi'), precision=2)}, "
+            f"SMA20/50 {_format_optional_float(values.get('sma_20'))} / {_format_optional_float(values.get('sma_50'))}, "
+            f"BB U/L {_format_optional_float(values.get('bb_upper'))} / {_format_optional_float(values.get('bb_lower'))}"
+        )
+    if not indicator_lines:
+        indicator_lines.append("• Kullanılabilir 1h/5m teknik değer bulunamadı.")
+
+    msg = (
+        "⚠️ <b>SilverPilot İşlem Blok Raporu</b>\n\n"
+        f"🥈 <b>Gümüş (XAG_GRAM):</b> {trade_data['price']:,.4f} USD/gram\n"
+        f"🔒 <b>Ana Gerekçe:</b> {html.escape(reason_label)}\n"
+        f"🔍 <b>Neden Kodu:</b> <code>{html.escape(str(reason_code or 'UNKNOWN'))}</code>\n\n"
+        "<b>Readiness Durumu:</b>\n"
+        f"{chr(10).join(timeframe_lines)}\n\n"
+        "<b>Bilgi Amaçlı Teknik Değerler:</b>\n"
+        f"{chr(10).join(indicator_lines)}\n\n"
+        f"🔄 <b>İşlem Durumu:</b> ⚪️ BEKLE (HOLD)\n"
+        f"💵 <b>Nakit Bakiyesi:</b> {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
+    )
+    if "xag_balance" in trade_data:
+        msg += f"🥈 <b>Gümüş Portföyü:</b> {trade_data['xag_balance']:,.4f} XAG_GRAM\n"
+    return msg
+
+
 async def send_telegram_notification(trade_data: dict, settings, disable_notification: bool = False):
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
         logger.warning("Telegram configuration missing. Notification skipped.")
@@ -127,9 +224,16 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         return
     action_str, status_emoji = ACTION_MAP[action]
 
-    is_blended = trade_data.get("strategy_name") == "blended"
+    is_readiness_block = trade_data.get("notification_kind") == "readiness_block"
+    is_blended = (
+        trade_data.get("strategy_name") == "blended"
+        and bool(trade_data.get("strategy_votes"))
+        and bool(trade_data.get("arbiter_decision"))
+    )
 
-    if is_blended:
+    if is_readiness_block:
+        msg = format_readiness_block_report(trade_data)
+    elif is_blended:
         regime_info = trade_data.get("regime_info") or {}
         regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
         REGIME_MAP = {
@@ -309,6 +413,7 @@ def _base_strategy_details(context: DecisionContext) -> dict:
         "strategy_name": context.active_strategy,
         "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
         "timeframe_inputs": summarize_timeframe_inputs(context.timeframe_contexts),
+        "timeframe_indicators": build_timeframe_indicator_summary(context.timeframe_contexts),
         "agent_sentiment": context.news_sentiment,
         "readiness_block_flags": context.readiness_block_flags,
     }
@@ -705,9 +810,22 @@ async def _run_auto_trading_impl(db: Session, settings):
         }
         if (trade and trade.risk_decision)
         else None,
+        "reason_code": reason_code,
+        "readiness_block_flags": strategy_readiness_flags,
+        "timeframe_inputs": details.get("timeframe_inputs") or summarize_timeframe_inputs(timeframe_contexts),
+        "timeframe_indicators": details.get("timeframe_indicators")
+        or build_timeframe_indicator_summary(timeframe_contexts),
+        "notification_kind": "readiness_block"
+        if reason_code in READINESS_BLOCK_REASONS or strategy_readiness_flags
+        else "trade_report",
     }
 
-    if active_strategy == "blended":
+    if (
+        active_strategy == "blended"
+        and resolution.exit_metadata
+        and resolution.exit_metadata.get("strategy_votes")
+        and resolution.exit_metadata.get("arbiter_decision")
+    ):
         meta = resolution.exit_metadata or {}
         notification_data["regime_info"] = meta.get("regime_info")
         notification_data["strategy_votes"] = meta.get("strategy_votes")

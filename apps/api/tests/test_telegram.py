@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import datetime
 from unittest.mock import AsyncMock, patch, MagicMock
 from decimal import Decimal
@@ -10,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db import Base, get_db
 from app.main import create_app
 from app.core.config import get_settings, Settings
-from app.models import Asset, Portfolio, PriceSnapshot, AgentMemoryEvent, PaperTrade
+from app.models import Asset, Portfolio, PriceSnapshot, AgentMemoryEvent, PaperTrade, TechnicalIndicator
 from app.agents.telegram_bot import handle_telegram_command, process_telegram_update
 
 
@@ -520,6 +521,14 @@ def test_telegram_canli_report_html_safety_merciless():
             "app.services.indicator_readiness.get_latest_indicator_context",
             return_value=IndicatorContext(readiness=readiness, previous_indicator=None),
         ),
+        patch(
+            "app.services.auto_trader.get_strategy_timeframe_contexts",
+            return_value={
+                "1d": IndicatorContext(readiness=readiness, previous_indicator=None),
+                "1h": IndicatorContext(readiness=readiness, previous_indicator=None),
+                "5m": IndicatorContext(readiness=readiness, previous_indicator=None),
+            },
+        ),
         patch("app.agents.orchestrator.run_blended_consensus_resolution", new_callable=AsyncMock) as mock_consensus,
     ):
         mock_consensus.return_value = mock_consensus_event
@@ -549,6 +558,131 @@ def test_telegram_canli_report_html_safety_merciless():
             assert "is &lt; 30" in report
             assert "<b>BUY</b>" in report
             assert "<b>bb_lower</b>" in report
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+
+
+def test_telegram_canli_readiness_block_skips_collectors_and_arbiter():
+    from app.agents.telegram_bot import run_canli_analysis_report
+    from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+
+    asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+    db.add(asset)
+    db.flush()
+
+    portfolio = Portfolio(
+        name="gram-paper",
+        base_currency="USD",
+        initial_cash=Decimal("2500.00"),
+        cash_balance=Decimal("2500.00"),
+        is_real_money=False,
+    )
+    db.add(portfolio)
+    db.flush()
+
+    indicators = {}
+    for timeframe, price in (("1h", Decimal("30.00")), ("5m", Decimal("30.20"))):
+        snapshot = PriceSnapshot(
+            asset_id=asset.id,
+            source="yahoo-si-f",
+            buy_price=price + Decimal("0.05"),
+            sell_price=price - Decimal("0.05"),
+            mid_price=price,
+            currency="USD",
+            spread_absolute=Decimal("0.10"),
+            spread_percent=Decimal("0.33"),
+            observed_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        db.add(snapshot)
+        db.flush()
+        indicator = TechnicalIndicator(
+            price_snapshot_id=snapshot.id,
+            bar_timestamp=datetime.datetime.now(datetime.timezone.utc),
+            timeframe=timeframe,
+            calculation_version="technical-indicators-v2",
+            input_bar_count=100,
+            quality_status="ok",
+            close_usd_oz=price,
+            rsi_14=Decimal("50.00"),
+            bb_upper_20_2=price + Decimal("1.00"),
+            bb_lower_20_2=price - Decimal("1.00"),
+            sma_20=price - Decimal("0.20"),
+            sma_50=price - Decimal("0.50"),
+            atr_14=Decimal("0.40"),
+        )
+        db.add(indicator)
+        db.flush()
+        indicators[timeframe] = indicator
+    db.commit()
+
+    def context_for(indicator, *, timeframe, usable=True, status="ready", reason_codes=None):
+        return IndicatorContext(
+            readiness=IndicatorReadiness(
+                asset_symbol="XAG_GRAM",
+                timeframe=timeframe,
+                status=status,
+                usable=usable,
+                reason_codes=reason_codes or [],
+                required_min_bar_count=1,
+                required_fields=(),
+                indicator=indicator,
+                indicator_id=indicator.id if indicator is not None else None,
+                market_bar_id=indicator.market_bar_id if indicator is not None else None,
+                price_snapshot_id=indicator.price_snapshot_id if indicator is not None else None,
+                source="yahoo-si-f",
+                bar_timestamp=indicator.bar_timestamp if indicator is not None else None,
+                age_seconds=0,
+                freshness_minutes=60,
+                calculation_version=indicator.calculation_version if indicator is not None else None,
+                quality_status="ok" if indicator is not None else None,
+                input_bar_count=indicator.input_bar_count if indicator is not None else None,
+                missing_required_fields=[],
+                close_usd_oz=indicator.close_usd_oz if indicator is not None else None,
+            ),
+            previous_indicator=None,
+        )
+
+    contexts = {
+        "1d": context_for(
+            None,
+            timeframe="1d",
+            usable=False,
+            status="warming_up",
+            reason_codes=["INSUFFICIENT_HISTORY", "WARMUP_FIELDS_PENDING"],
+        ),
+        "1h": context_for(indicators["1h"], timeframe="1h"),
+        "5m": context_for(indicators["5m"], timeframe="5m"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.collectors.public_sources.collect_kuveyt_public_silver") as mock_kuveyt,
+        patch("app.collectors.public_sources.collect_global_xag_usd") as mock_global,
+        patch("app.agents.orchestrator.run_blended_consensus_resolution", new_callable=AsyncMock) as mock_consensus,
+    ):
+        settings = MagicMock()
+        report = asyncio.run(run_canli_analysis_report(db, settings))
+
+        assert "SilverPilot İşlem Blok Raporu" in report
+        assert "Günlük trend verisi hazır değil" in report
+        assert "INSUFFICIENT_HISTORY" in report
+        assert "30.0000" in report
+        assert "30.2000" in report
+        assert "Strateji Oylaması" not in report
+        assert "Yüce Hakem" not in report
+        mock_kuveyt.assert_not_called()
+        mock_global.assert_not_called()
+        mock_consensus.assert_not_called()
 
     db.close()
     Base.metadata.drop_all(bind=engine)
