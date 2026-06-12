@@ -118,6 +118,10 @@ def test_strategy_v2_is_default_for_auto_trading():
     settings = Settings()
     assert settings.strategy_name == "strategy_v2"
     assert settings.auto_trading_mode == "diagnostic"
+    assert settings.auto_trading_asset_symbol == "XAG_GRAM"
+    assert settings.auto_trading_portfolio_name == "gram-paper"
+    assert settings.auto_trading_sentiment_agent_name == "hermes-agent"
+    assert settings.default_provider_name == "kuveyt_turk"
     assert settings.hold_notification_cooldown_minutes == 360
 
 
@@ -273,6 +277,47 @@ async def test_invalid_strategy_blocks_without_exception_or_trade():
         assert envelope["requested_strategy"] == "missing_strategy"
         assert envelope["resolved_strategy"] is None
         assert envelope["execution"]["skipped_reason"] == "config_invalid"
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_blended_readiness_block_does_not_require_strategy_metadata():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="blended",
+        auto_trading_mode="paper",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    contexts = {
+        "1d": _make_context(None, timeframe="1d", usable=False, status="empty", reason_codes=["INDICATOR_NOT_FOUND"]),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        envelope = signal.details_json["decision_envelope"]
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "DAILY_TREND_MISSING"
+        assert envelope["resolved_strategy"] == "blended"
+        assert envelope["execution"]["skipped_reason"] == "not_actionable"
         assert db.execute(select(PaperTrade)).scalars().all() == []
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()

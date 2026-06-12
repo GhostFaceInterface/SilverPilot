@@ -563,7 +563,7 @@ class StrategyRunner:
             stmt = (
                 db.query(AgentMemoryEvent)
                 .filter(
-                    AgentMemoryEvent.agent_name == "hermes-agent",
+                    AgentMemoryEvent.agent_name == settings.auto_trading_sentiment_agent_name,
                     AgentMemoryEvent.event_type == "hermes_sentiment",
                     AgentMemoryEvent.key == "latest_analysis",
                 )

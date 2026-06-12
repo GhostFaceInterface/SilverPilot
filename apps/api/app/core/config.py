@@ -31,7 +31,11 @@ class Settings(BaseSettings):
     strategy_name: str = "strategy_v2"
     auto_trading_enabled: bool = True
     auto_trading_mode: Literal["diagnostic", "paper"] = "diagnostic"
+    auto_trading_asset_symbol: str = "XAG_GRAM"
+    auto_trading_portfolio_name: str = "gram-paper"
+    auto_trading_sentiment_agent_name: str = "hermes-agent"
     hold_notification_cooldown_minutes: int = Field(default=360, ge=0)
+    default_provider_name: str = "kuveyt_turk"
 
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"

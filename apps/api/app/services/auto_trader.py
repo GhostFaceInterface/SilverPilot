@@ -1,6 +1,7 @@
 import logging
 import html
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Asset, Portfolio, Signal, AgentMemoryEvent
-from app.services.strategy import StrategyRunner, STRATEGY_REGISTRY
+from app.services.strategy import StrategyDecision, StrategyRunner, STRATEGY_REGISTRY
 from app.paper_trading.service import calculate_position
 from app.services.indicator_readiness import get_latest_indicator_context
 from app.services.trade_intents import TradeIntent, execute_trade_intent
@@ -20,6 +21,76 @@ STRATEGY_TIMEFRAME_POLICY = {
     "1h": 3 * 60,
     "5m": 20,
 }
+
+ACTION_BUY = "BUY"
+ACTION_SELL = "SELL"
+ACTION_HOLD = "HOLD"
+BLOCKED_CONFIG_INVALID = "BLOCKED_CONFIG_INVALID"
+BLOCKED_REASON_CODES = {BLOCKED_CONFIG_INVALID}
+
+
+@dataclass(frozen=True)
+class DecisionContext:
+    requested_strategy: str
+    active_strategy: str
+    portfolio: Portfolio
+    asset: Asset
+    latest_snapshot: object
+    latest_indicator: object | None
+    daily_context: object
+    hourly_context: object
+    execution_context: object
+    timeframe_contexts: dict
+    readiness_block_flags: list[str]
+    has_open_position: bool
+    news_sentiment: str
+    latest_event: AgentMemoryEvent | None
+
+
+@dataclass(frozen=True)
+class StrategyResolution:
+    action: str
+    candidate_action: str
+    reason_code: str
+    confidence: Decimal
+    details: dict
+    stop_loss_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
+    expected_exit_price: Decimal | None = None
+    resolved_strategy: str | None = None
+    exit_metadata: dict | None = None
+
+    @property
+    def is_blocked(self) -> bool:
+        return self.reason_code in BLOCKED_REASON_CODES
+
+
+@dataclass(frozen=True)
+class ExecutionOutcome:
+    status: str
+    skipped_reason: str | None
+    trade_id: int | None
+
+    def as_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "skipped_reason": self.skipped_reason,
+            "trade_id": self.trade_id,
+        }
+
+
+@dataclass(frozen=True)
+class NotificationDecision:
+    sent: bool
+    skipped_reason: str | None
+    cooldown_seconds: int
+
+    def as_dict(self) -> dict:
+        return {
+            "sent": self.sent,
+            "skipped_reason": self.skipped_reason,
+            "cooldown_seconds": self.cooldown_seconds,
+        }
 
 
 def escape_html_response(text: str) -> str:
@@ -59,7 +130,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
     is_blended = trade_data.get("strategy_name") == "blended"
 
     if is_blended:
-        regime_info = trade_data.get("regime_info", {})
+        regime_info = trade_data.get("regime_info") or {}
         regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
         REGIME_MAP = {
             "TRENDING_UP": "Güçlü Yükseliş Trendi (TRENDING UP)",
@@ -68,7 +139,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         regime = regime_info.get("regime", "SIDEWAYS")
         regime_label = REGIME_MAP.get(regime, "Yatay Sakin Piyasa (SIDEWAYS)")
 
-        votes = trade_data.get("strategy_votes", {})
+        votes = trade_data.get("strategy_votes") or {}
 
         def format_vote(vote_dict):
             if not vote_dict:
@@ -208,6 +279,151 @@ async def run_auto_trading(db: Session = None):
             db_session.close()
 
 
+def _select_block_reason(strategy_readiness_flags: list[str]) -> str | None:
+    prioritized_block_flags = [
+        "TIMEFRAME_SOURCE_MISMATCH",
+        "ENTRY_TIMEFRAME_STALE",
+        "ENTRY_TIMEFRAME_UNUSABLE",
+        "DAILY_TREND_MISSING",
+        "EXECUTION_TIMEFRAME_STALE",
+        "EXECUTION_TIMEFRAME_UNUSABLE",
+    ]
+    return next((flag for flag in prioritized_block_flags if flag in strategy_readiness_flags), None)
+
+
+def _base_strategy_details(context: DecisionContext) -> dict:
+    return {
+        "strategy_name": context.active_strategy,
+        "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+        "timeframe_inputs": summarize_timeframe_inputs(context.timeframe_contexts),
+        "agent_sentiment": context.news_sentiment,
+        "readiness_block_flags": context.readiness_block_flags,
+    }
+
+
+def _blocked_strategy_resolution(
+    context: DecisionContext, *, reason_code: str, confidence: Decimal
+) -> StrategyResolution:
+    details = _base_strategy_details(context)
+    return StrategyResolution(
+        action=ACTION_HOLD,
+        candidate_action=ACTION_HOLD,
+        reason_code=reason_code,
+        confidence=confidence,
+        details=details,
+        resolved_strategy=context.active_strategy,
+        exit_metadata={},
+    )
+
+
+def _invalid_strategy_resolution(context: DecisionContext) -> StrategyResolution:
+    details = _base_strategy_details(context)
+    details["config_error"] = f"Strategy {context.active_strategy} not registered in STRATEGY_REGISTRY"
+    return StrategyResolution(
+        action=ACTION_HOLD,
+        candidate_action=ACTION_HOLD,
+        reason_code=BLOCKED_CONFIG_INVALID,
+        confidence=Decimal("0.9900"),
+        details=details,
+        resolved_strategy=None,
+        exit_metadata={},
+    )
+
+
+async def _resolve_strategy_resolution(db: Session, context: DecisionContext) -> StrategyResolution:
+    if context.active_strategy not in STRATEGY_REGISTRY:
+        return _invalid_strategy_resolution(context)
+
+    block_reason = _select_block_reason(context.readiness_block_flags)
+    if block_reason is not None:
+        confidence_map = {
+            "TIMEFRAME_SOURCE_MISMATCH": Decimal("0.9900"),
+            "ENTRY_TIMEFRAME_STALE": Decimal("0.9800"),
+            "ENTRY_TIMEFRAME_UNUSABLE": Decimal("0.9800"),
+            "DAILY_TREND_MISSING": Decimal("0.9900"),
+        }
+        return _blocked_strategy_resolution(
+            context,
+            reason_code=block_reason,
+            confidence=confidence_map.get(block_reason, Decimal("0.9700")),
+        )
+
+    strategy = STRATEGY_REGISTRY[context.active_strategy]
+    latest_indicator = context.latest_indicator
+    hourly_context = context.hourly_context
+
+    atr_value = (
+        Decimal(str(latest_indicator.atr_14)) if (latest_indicator and latest_indicator.atr_14 is not None) else None
+    )
+    close_value = (
+        Decimal(str(latest_indicator.close_usd_oz))
+        if (latest_indicator and latest_indicator.close_usd_oz is not None)
+        else None
+    )
+
+    strategy_context = {
+        "close": latest_indicator.close_usd_oz if latest_indicator else None,
+        "rsi_14": latest_indicator.rsi_14 if latest_indicator else None,
+        "sma_20": latest_indicator.sma_20 if latest_indicator else None,
+        "sma_50": latest_indicator.sma_50 if latest_indicator else None,
+        "prev_sma_20": (
+            hourly_context.previous_indicator.sma_20
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        ),
+        "prev_sma_50": (
+            hourly_context.previous_indicator.sma_50
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        ),
+        "bb_lower": latest_indicator.bb_lower_20_2 if latest_indicator else None,
+        "bb_upper": latest_indicator.bb_upper_20_2 if latest_indicator else None,
+        "macd_line": latest_indicator.macd_line if latest_indicator else None,
+        "macd_signal": latest_indicator.macd_signal if latest_indicator else None,
+        "prev_macd_line": (
+            hourly_context.previous_indicator.macd_line
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        ),
+        "prev_macd_signal": (
+            hourly_context.previous_indicator.macd_signal
+            if (hourly_context.previous_indicator and latest_indicator)
+            else None
+        ),
+        "atr_value": atr_value,
+        "close_value": close_value,
+        "has_open_position": context.has_open_position,
+        "asset": context.asset,
+        "hourly_context": hourly_context,
+        "daily_context": context.daily_context,
+        "latest_indicator": latest_indicator,
+        "latest_snapshot": context.latest_snapshot,
+        "latest_event": context.latest_event,
+        "readiness_block_flags": context.readiness_block_flags,
+    }
+
+    strategy_decision: StrategyDecision = await strategy.evaluate(db, strategy_context)
+    details = {
+        **_base_strategy_details(context),
+        **strategy_decision.to_signal_details(),
+    }
+    if strategy_decision.exit_metadata:
+        details.update(strategy_decision.exit_metadata)
+
+    return StrategyResolution(
+        action=strategy_decision.action,
+        candidate_action=strategy_decision.action,
+        reason_code=strategy_decision.reason_code,
+        confidence=strategy_decision.confidence,
+        stop_loss_price=strategy_decision.stop_loss_price,
+        take_profit_price=strategy_decision.take_profit_price,
+        expected_exit_price=strategy_decision.expected_exit_price,
+        details=details,
+        resolved_strategy=context.active_strategy,
+        exit_metadata=strategy_decision.exit_metadata or {},
+    )
+
+
 async def _run_auto_trading_impl(db: Session, settings):
     # 0. Pazartesi Isınma Süresi Kontrolü (Indicator Warmup)
     # Pazar 18:00 - 18:05 ET arası (piyasa açılışının ilk 5 dakikası) işlemler ertelenir
@@ -222,16 +438,18 @@ async def _run_auto_trading_impl(db: Session, settings):
         )
         return
 
-    # 1. Fetch portfolio 'gram-paper'
-    portfolio = db.execute(select(Portfolio).where(Portfolio.name == "gram-paper")).scalar_one_or_none()
+    # 1. Fetch configured auto-trading portfolio
+    portfolio = db.execute(
+        select(Portfolio).where(Portfolio.name == settings.auto_trading_portfolio_name)
+    ).scalar_one_or_none()
     if not portfolio:
-        logger.error("Portfolio 'gram-paper' not found")
+        logger.error("Auto-trading portfolio %r not found", settings.auto_trading_portfolio_name)
         return
 
-    # 2. Fetch asset 'XAG_GRAM'
-    asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
+    # 2. Fetch configured auto-trading asset
+    asset = db.execute(select(Asset).where(Asset.symbol == settings.auto_trading_asset_symbol)).scalar_one_or_none()
     if not asset:
-        logger.error("Asset 'XAG_GRAM' not found")
+        logger.error("Auto-trading asset %r not found", settings.auto_trading_asset_symbol)
         return
 
     timeframe_contexts = get_strategy_timeframe_contexts(db, asset.symbol)
@@ -261,10 +479,10 @@ async def _run_auto_trading_impl(db: Session, settings):
     current_position = calculate_position(db, portfolio.id, asset.id)
     has_open_position = current_position.quantity > 0
 
-    # Retrieve latest 'hermes-agent' memory event from db
+    # Retrieve latest configured sentiment memory event from db
     latest_event = db.execute(
         select(AgentMemoryEvent)
-        .where(AgentMemoryEvent.agent_name == "hermes-agent")
+        .where(AgentMemoryEvent.agent_name == settings.auto_trading_sentiment_agent_name)
         .order_by(AgentMemoryEvent.created_at.desc())
         .limit(1)
     ).scalar_one_or_none()
@@ -273,154 +491,31 @@ async def _run_auto_trading_impl(db: Session, settings):
     if latest_event and latest_event.value_json:
         news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
 
-    # 4. Evaluate strategy based on config routing.
     requested_strategy = settings.strategy_name or "strategy_v2"
     active_strategy = requested_strategy
-    action = "HOLD"
-    candidate_action = "HOLD"
-    reason_code = "UNKNOWN"
-    confidence = Decimal("0.5000")
-    stop_loss_price = None
-    take_profit_price = None
-    expected_exit_price = None
-    details = {}
+    decision_context = DecisionContext(
+        requested_strategy=requested_strategy,
+        active_strategy=active_strategy,
+        portfolio=portfolio,
+        asset=asset,
+        latest_snapshot=latest_snapshot,
+        latest_indicator=latest_indicator,
+        daily_context=daily_context,
+        hourly_context=hourly_context,
+        execution_context=execution_context,
+        timeframe_contexts=timeframe_contexts,
+        readiness_block_flags=strategy_readiness_flags,
+        has_open_position=has_open_position,
+        news_sentiment=news_sentiment,
+        latest_event=latest_event,
+    )
 
-    has_block_flag = False
-    block_reason = None
-    prioritized_block_flags = [
-        "TIMEFRAME_SOURCE_MISMATCH",
-        "ENTRY_TIMEFRAME_STALE",
-        "ENTRY_TIMEFRAME_UNUSABLE",
-        "DAILY_TREND_MISSING",
-        "EXECUTION_TIMEFRAME_STALE",
-        "EXECUTION_TIMEFRAME_UNUSABLE",
-    ]
-    block_reason = next((flag for flag in prioritized_block_flags if flag in strategy_readiness_flags), None)
-    has_block_flag = block_reason is not None
-
-    invalid_strategy = active_strategy not in STRATEGY_REGISTRY
-
-    if invalid_strategy:
-        action = "HOLD"
-        reason_code = "BLOCKED_CONFIG_INVALID"
-        confidence = Decimal("0.9900")
-        details = {
-            "strategy_name": active_strategy,
-            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
-            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
-            "agent_sentiment": news_sentiment,
-            "readiness_block_flags": strategy_readiness_flags,
-            "config_error": f"Strategy {active_strategy} not registered in STRATEGY_REGISTRY",
-        }
-    elif has_block_flag:
-        action = "HOLD"
-        reason_code = block_reason
-        confidence_map = {
-            "TIMEFRAME_SOURCE_MISMATCH": Decimal("0.9900"),
-            "ENTRY_TIMEFRAME_STALE": Decimal("0.9800"),
-            "ENTRY_TIMEFRAME_UNUSABLE": Decimal("0.9800"),
-            "DAILY_TREND_MISSING": Decimal("0.9900"),
-        }
-        confidence = confidence_map.get(block_reason, Decimal("0.9700"))
-
-        details = {
-            "strategy_name": active_strategy,
-            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
-            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
-            "agent_sentiment": news_sentiment,
-            "readiness_block_flags": strategy_readiness_flags,
-        }
-    else:
-        # Resolve strategy from STRATEGY_REGISTRY
-        strategy = STRATEGY_REGISTRY[active_strategy]
-
-        close = latest_indicator.close_usd_oz if latest_indicator else None
-        rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
-        sma_20 = latest_indicator.sma_20 if latest_indicator else None
-        sma_50 = latest_indicator.sma_50 if latest_indicator else None
-        prev_sma_20 = (
-            hourly_context.previous_indicator.sma_20
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        prev_sma_50 = (
-            hourly_context.previous_indicator.sma_50
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        bb_lower = latest_indicator.bb_lower_20_2 if latest_indicator else None
-        bb_upper = latest_indicator.bb_upper_20_2 if latest_indicator else None
-
-        macd_line = latest_indicator.macd_line if latest_indicator else None
-        macd_signal = latest_indicator.macd_signal if latest_indicator else None
-        prev_macd_line = (
-            hourly_context.previous_indicator.macd_line
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-        prev_macd_signal = (
-            hourly_context.previous_indicator.macd_signal
-            if (hourly_context.previous_indicator and latest_indicator)
-            else None
-        )
-
-        atr_value = (
-            Decimal(str(latest_indicator.atr_14))
-            if (latest_indicator and latest_indicator.atr_14 is not None)
-            else None
-        )
-        close_value = (
-            Decimal(str(latest_indicator.close_usd_oz))
-            if (latest_indicator and latest_indicator.close_usd_oz is not None)
-            else None
-        )
-
-        context = {
-            "close": close,
-            "rsi_14": rsi_14,
-            "sma_20": sma_20,
-            "sma_50": sma_50,
-            "prev_sma_20": prev_sma_20,
-            "prev_sma_50": prev_sma_50,
-            "bb_lower": bb_lower,
-            "bb_upper": bb_upper,
-            "macd_line": macd_line,
-            "macd_signal": macd_signal,
-            "prev_macd_line": prev_macd_line,
-            "prev_macd_signal": prev_macd_signal,
-            "atr_value": atr_value,
-            "close_value": close_value,
-            "has_open_position": has_open_position,
-            "asset": asset,
-            "hourly_context": hourly_context,
-            "daily_context": daily_context,
-            "latest_indicator": latest_indicator,
-            "latest_snapshot": latest_snapshot,
-            "latest_event": latest_event,
-            "readiness_block_flags": strategy_readiness_flags,
-        }
-
-        strategy_decision = await strategy.evaluate(db, context)
-
-        action = strategy_decision.action
-        reason_code = strategy_decision.reason_code
-        confidence = strategy_decision.confidence
-        stop_loss_price = strategy_decision.stop_loss_price
-        take_profit_price = strategy_decision.take_profit_price
-        expected_exit_price = strategy_decision.expected_exit_price
-
-        details = {
-            "strategy_name": active_strategy,
-            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
-            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
-            "agent_sentiment": news_sentiment,
-            **strategy_decision.to_signal_details(),
-        }
-        if strategy_decision.exit_metadata:
-            details.update(strategy_decision.exit_metadata)
+    resolution = await _resolve_strategy_resolution(db, decision_context)
+    action = resolution.action
+    reason_code = resolution.reason_code
+    details = dict(resolution.details)
 
     logger.info("Strategy %s evaluation: action=%s reason=%s.", active_strategy, action, reason_code)
-    candidate_action = action
 
     risk_decision_val = "APPROVED"
 
@@ -436,12 +531,13 @@ async def _run_auto_trading_impl(db: Session, settings):
         reason_code = filter_reason
 
     details["agent_filter_reason"] = filter_reason or None
+    resolved_strategy = resolution.resolved_strategy
     decision_envelope = build_decision_envelope(
         mode=settings.auto_trading_mode,
         asset_symbol=asset.symbol,
         requested_strategy=requested_strategy,
-        resolved_strategy=active_strategy if not invalid_strategy else None,
-        candidate_action=candidate_action,
+        resolved_strategy=resolved_strategy,
+        candidate_action=resolution.candidate_action,
         final_action=action,
         reason_code=reason_code,
         timeframe_contexts=timeframe_contexts,
@@ -458,7 +554,7 @@ async def _run_auto_trading_impl(db: Session, settings):
             "cooldown_seconds": settings.hold_notification_cooldown_minutes * 60,
         },
     )
-    if invalid_strategy:
+    if resolution.is_blocked:
         decision_envelope["execution"] = {
             "status": "skipped",
             "skipped_reason": "config_invalid",
@@ -481,25 +577,21 @@ async def _run_auto_trading_impl(db: Session, settings):
     buy_price = latest_snapshot.buy_price if latest_snapshot.buy_price else latest_snapshot.mid_price
     sell_price = latest_snapshot.sell_price if latest_snapshot.sell_price else latest_snapshot.mid_price
 
-    execution_result = decision_envelope["execution"]
+    execution_result = ExecutionOutcome(**decision_envelope["execution"])
 
     # 6. Trade execution via trade intents only.
     if settings.auto_trading_mode == "diagnostic":
-        execution_result = {
-            "status": "skipped",
-            "skipped_reason": "diagnostic_mode",
-            "trade_id": None,
-        }
-    elif action == "BUY" and not has_open_position:
+        execution_result = ExecutionOutcome(status="skipped", skipped_reason="diagnostic_mode", trade_id=None)
+    elif action == ACTION_BUY and not has_open_position:
         intent = TradeIntent(
-            portfolio_name="gram-paper",
-            asset_symbol="XAG_GRAM",
-            action="BUY",
-            confidence=confidence,
+            portfolio_name=settings.auto_trading_portfolio_name,
+            asset_symbol=settings.auto_trading_asset_symbol,
+            action=ACTION_BUY,
+            confidence=resolution.confidence,
             reason_code=reason_code,
-            stop_loss_price=stop_loss_price,
-            take_profit_price=take_profit_price,
-            expected_exit_price=expected_exit_price,
+            stop_loss_price=resolution.stop_loss_price,
+            take_profit_price=resolution.take_profit_price,
+            expected_exit_price=resolution.expected_exit_price,
             metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
         )
         original_commit = db.commit
@@ -514,23 +606,23 @@ async def _run_auto_trading_impl(db: Session, settings):
                     fee_amount=Decimal("0.05"),
                 )
             logger.info("Auto trader BUY intent executed: trade_id=%s status=%s", trade.id, trade.action)
-            execution_result = {
-                "status": "executed" if trade.action == "paper_buy" else "blocked",
-                "skipped_reason": None if trade.action == "paper_buy" else trade.risk_decision.reason_code,
-                "trade_id": trade.id,
-            }
+            execution_result = ExecutionOutcome(
+                status="executed" if trade.action == "paper_buy" else "blocked",
+                skipped_reason=None if trade.action == "paper_buy" else trade.risk_decision.reason_code,
+                trade_id=trade.id,
+            )
         except Exception:
             logger.exception("Failed to execute auto trader BUY intent")
-            execution_result = {"status": "failed", "skipped_reason": "execution_exception", "trade_id": None}
+            execution_result = ExecutionOutcome(status="failed", skipped_reason="execution_exception", trade_id=None)
         finally:
             db.commit = original_commit
 
-    elif settings.auto_trading_mode == "paper" and action == "SELL" and has_open_position:
+    elif settings.auto_trading_mode == "paper" and action == ACTION_SELL and has_open_position:
         intent = TradeIntent(
-            portfolio_name="gram-paper",
-            asset_symbol="XAG_GRAM",
-            action="SELL",
-            confidence=confidence,
+            portfolio_name=settings.auto_trading_portfolio_name,
+            asset_symbol=settings.auto_trading_asset_symbol,
+            action=ACTION_SELL,
+            confidence=resolution.confidence,
             reason_code=reason_code,
             metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
         )
@@ -546,29 +638,29 @@ async def _run_auto_trading_impl(db: Session, settings):
                     fee_amount=Decimal("0.05"),
                 )
             logger.info("Auto trader SELL intent executed: trade_id=%s status=%s", trade.id, trade.action)
-            execution_result = {
-                "status": "executed" if trade.action == "paper_sell" else "blocked",
-                "skipped_reason": None if trade.action == "paper_sell" else trade.risk_decision.reason_code,
-                "trade_id": trade.id,
-            }
+            execution_result = ExecutionOutcome(
+                status="executed" if trade.action == "paper_sell" else "blocked",
+                skipped_reason=None if trade.action == "paper_sell" else trade.risk_decision.reason_code,
+                trade_id=trade.id,
+            )
         except Exception:
             logger.exception("Failed to execute auto trader SELL intent")
-            execution_result = {"status": "failed", "skipped_reason": "execution_exception", "trade_id": None}
+            execution_result = ExecutionOutcome(status="failed", skipped_reason="execution_exception", trade_id=None)
         finally:
             db.commit = original_commit
     else:
         skipped_reason = "not_actionable"
-        if action == "BUY" and has_open_position:
+        if action == ACTION_BUY and has_open_position:
             skipped_reason = "position_already_open"
-        elif action == "SELL" and not has_open_position:
+        elif action == ACTION_SELL and not has_open_position:
             skipped_reason = "no_open_position"
-        elif reason_code == "BLOCKED_CONFIG_INVALID":
+        elif reason_code == BLOCKED_CONFIG_INVALID:
             skipped_reason = "config_invalid"
-        execution_result = {"status": "skipped", "skipped_reason": skipped_reason, "trade_id": None}
+        execution_result = ExecutionOutcome(status="skipped", skipped_reason=skipped_reason, trade_id=None)
 
     # 7. Extract notification data prior to commit/close to avoid DetachedInstanceError
     notification_data = {
-        "action": trade.action if trade else ("blocked" if reason_code.startswith("BLOCKED_") else action),
+        "action": trade.action if trade else ("blocked" if reason_code in BLOCKED_REASON_CODES else action),
         "price": float(trade.price) if trade else float(latest_snapshot.mid_price),
         "quantity": float(trade.quantity) if trade else 0.0,
         "net_amount": float(trade.net_amount) if trade else 0.0,
@@ -603,7 +695,7 @@ async def _run_auto_trading_impl(db: Session, settings):
     }
 
     if active_strategy == "blended":
-        meta = strategy_decision.exit_metadata or {}
+        meta = resolution.exit_metadata or {}
         notification_data["regime_info"] = meta.get("regime_info")
         notification_data["strategy_votes"] = meta.get("strategy_votes")
         notification_data["arbiter_decision"] = meta.get("arbiter_decision")
@@ -621,7 +713,7 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     refreshed_details = dict(signal.details_json or {})
     refreshed_envelope = dict(refreshed_details.get("decision_envelope") or {})
-    refreshed_envelope["execution"] = execution_result
+    refreshed_envelope["execution"] = execution_result.as_dict()
     refreshed_envelope["notification"] = notification_decision
     if trade and trade.risk_decision:
         refreshed_envelope["risk_preflight"] = {
@@ -690,7 +782,7 @@ def should_send_trade_notification(
 ) -> dict:
     cooldown_seconds = cooldown_minutes * 60
     if notification_action != "HOLD" or cooldown_seconds <= 0:
-        return {"sent": True, "skipped_reason": None, "cooldown_seconds": cooldown_seconds}
+        return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
 
     stmt_prev = select(Signal).where(Signal.action == "HOLD", Signal.reason_code == signal.reason_code)
     if signal.id is not None:
@@ -714,13 +806,13 @@ def should_send_trade_notification(
         if previous_time.tzinfo is None:
             previous_time = previous_time.replace(tzinfo=UTC)
         if (current_time - previous_time).total_seconds() < cooldown_seconds:
-            return {
-                "sent": False,
-                "skipped_reason": "hold_cooldown",
-                "cooldown_seconds": cooldown_seconds,
-            }
+            return NotificationDecision(
+                sent=False,
+                skipped_reason="hold_cooldown",
+                cooldown_seconds=cooldown_seconds,
+            ).as_dict()
 
-    return {"sent": True, "skipped_reason": None, "cooldown_seconds": cooldown_seconds}
+    return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
 
 
 def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
