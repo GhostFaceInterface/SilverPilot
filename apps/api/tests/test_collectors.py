@@ -26,12 +26,13 @@ from app.collectors.public_sources import (
     collect_kuveyt_usd_try,
     parse_kuveyt_public_silver_html,
 )
-from app.collectors.service import ingest_fx_rate
+from app.collectors.service import _try_compute_and_store_indicator, ingest_fx_rate
 from app.collectors.runner import parse_collector_jobs, resolve_jobs_argument, run_jobs
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
 from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
+from app.services.indicator_readiness import get_indicator_readiness
 
 
 def make_client():
@@ -603,6 +604,70 @@ def test_collector_validation_gate_reports_warming_up_before_window_completes():
     assert body["phase4_allowed"] is False
     assert body["validation_window_complete"] is False
     assert body["reasons"] == ["VALIDATION_WINDOW_INCOMPLETE"]
+
+
+def test_daily_indicator_uses_enough_snapshot_history_for_warmup():
+    client, testing_session = make_client()
+    now = datetime.now(UTC).replace(second=0, microsecond=0)
+    db = testing_session()
+    try:
+        asset = ensure_xag_gram(db)
+
+        for idx in range(60):
+            observed_at = now - timedelta(days=70 - idx)
+            price = Decimal("25.00") + Decimal(idx) / Decimal("10")
+            db.add(
+                PriceSnapshot(
+                    asset_id=asset.id,
+                    source="yahoo-si-f",
+                    buy_price=price,
+                    sell_price=price,
+                    mid_price=price,
+                    currency="USD",
+                    spread_absolute=Decimal("0.00"),
+                    spread_percent=Decimal("0.00"),
+                    observed_at=observed_at,
+                )
+            )
+
+        latest_snapshot = None
+        for idx in range(600):
+            observed_at = now - timedelta(minutes=5 * (599 - idx))
+            price = Decimal("31.00") + Decimal(idx) / Decimal("1000")
+            latest_snapshot = PriceSnapshot(
+                asset_id=asset.id,
+                source="yahoo-si-f",
+                buy_price=price,
+                sell_price=price,
+                mid_price=price,
+                currency="USD",
+                spread_absolute=Decimal("0.00"),
+                spread_percent=Decimal("0.00"),
+                observed_at=observed_at,
+            )
+            db.add(latest_snapshot)
+
+        db.flush()
+        assert latest_snapshot is not None
+        _try_compute_and_store_indicator(
+            db, asset=asset, source="yahoo-si-f", snapshot=latest_snapshot, observed_at=now
+        )
+        db.commit()
+
+        readiness = get_indicator_readiness(
+            db,
+            asset_symbol="XAG_GRAM",
+            timeframe="1d",
+            required_min_bar_count=50,
+            max_age_minutes=90 * 24 * 60,
+            allowed_sources=("yahoo-si-f",),
+        )
+        assert readiness.status == "ready"
+        assert readiness.usable is True
+        assert readiness.input_bar_count >= 50
+    finally:
+        db.close()
+        client.app.dependency_overrides.clear()
 
 
 def test_runner_parse_collector_jobs_uses_comma_list_or_fallback():

@@ -295,6 +295,11 @@ _MARKET_BAR_BUILDER_VERSION = "market-bars-v1"
 _INDICATOR_CALCULATION_VERSION = "technical-indicators-v2"
 
 
+def _snapshot_history_limit(timeframe_minutes: int) -> int:
+    samples_per_bar = max(3, timeframe_minutes // _MARKET_BAR_MINUTES)
+    return _INDICATOR_HISTORY_BARS * samples_per_bar
+
+
 def _try_compute_and_store_indicator(
     db: Session,
     *,
@@ -426,7 +431,7 @@ def _ensure_recent_market_bars_from_snapshots(
             PriceSnapshot.source == source,
         )
         .order_by(desc(PriceSnapshot.observed_at), desc(PriceSnapshot.id))
-        .limit(_INDICATOR_HISTORY_BARS * 3)
+        .limit(_snapshot_history_limit(timeframe_minutes))
     ).subquery()
     snapshots = (
         db.execute(
