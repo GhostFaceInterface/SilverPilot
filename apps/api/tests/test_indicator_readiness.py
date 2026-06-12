@@ -153,3 +153,40 @@ def test_indicator_readiness_route(db_session):
     assert payload["usable"] is True
     assert payload["status"] == "ready"
     assert payload["asset_symbol"] == "XAG_GRAM"
+
+
+def test_indicator_readiness_route_includes_strategy_policy(db_session):
+    now = datetime.now(UTC)
+    _seed_indicator_series(db_session, count=1, timeframe="1d", start=now - timedelta(hours=24))
+    _seed_indicator_series(db_session, count=1, timeframe="1h", start=now - timedelta(hours=2))
+    _seed_indicator_series(db_session, count=1, timeframe="5m", start=now - timedelta(minutes=5))
+
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    response = client.get(
+        "/indicators/readiness",
+        params={
+            "asset_symbol": "XAG_GRAM",
+            "timeframe": "5m",
+            "required_min_bar_count": 1,
+            "include_policy": True,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["timeframe_policy"] == {"trend": "1d", "entry": "1h", "execution": "5m"}
+    policy_payload = {item["role"]: item for item in payload["policy_readiness"]}
+    assert set(policy_payload) == {"trend", "entry", "execution"}
+    assert policy_payload["trend"]["timeframe"] == "1d"
+    assert policy_payload["trend"]["max_age_minutes"] == 48 * 60
+    assert policy_payload["entry"]["timeframe"] == "1h"
+    assert policy_payload["entry"]["max_age_minutes"] == 3 * 60
+    assert policy_payload["execution"]["timeframe"] == "5m"
+    assert policy_payload["execution"]["max_age_minutes"] == 20
+    assert all(item["readiness"]["usable"] is True for item in policy_payload.values())

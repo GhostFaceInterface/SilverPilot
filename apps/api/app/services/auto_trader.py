@@ -11,16 +11,14 @@ from app.core.config import get_settings
 from app.models import Asset, Portfolio, Signal, AgentMemoryEvent, NotificationAudit
 from app.services.strategy import StrategyDecision, StrategyRunner, STRATEGY_REGISTRY
 from app.paper_trading.service import calculate_position
-from app.services.indicator_readiness import get_latest_indicator_context
+from app.services.indicator_readiness import (
+    STRATEGY_TIMEFRAME_POLICY,
+    STRATEGY_TIMEFRAME_ROLES,
+    get_latest_indicator_context,
+)
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
-
-STRATEGY_TIMEFRAME_POLICY = {
-    "1d": 48 * 60,
-    "1h": 3 * 60,
-    "5m": 20,
-}
 
 ACTION_BUY = "BUY"
 ACTION_SELL = "SELL"
@@ -411,7 +409,7 @@ def _select_block_reason(strategy_readiness_flags: list[str]) -> str | None:
 def _base_strategy_details(context: DecisionContext) -> dict:
     return {
         "strategy_name": context.active_strategy,
-        "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+        "timeframe_policy": dict(STRATEGY_TIMEFRAME_ROLES),
         "timeframe_inputs": summarize_timeframe_inputs(context.timeframe_contexts),
         "timeframe_indicators": build_timeframe_indicator_summary(context.timeframe_contexts),
         "agent_sentiment": context.news_sentiment,

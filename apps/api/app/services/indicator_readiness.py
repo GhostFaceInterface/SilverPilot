@@ -16,6 +16,16 @@ SUPPORTED_INDICATOR_CALCULATION_VERSIONS = (
     "technical-indicators-v1",
 )
 DEFAULT_INDICATOR_TIMEFRAME = "5m"
+STRATEGY_TIMEFRAME_ROLES = {
+    "trend": "1d",
+    "entry": "1h",
+    "execution": "5m",
+}
+STRATEGY_TIMEFRAME_POLICY = {
+    "1d": 48 * 60,
+    "1h": 3 * 60,
+    "5m": 20,
+}
 DEFAULT_REQUIRED_FIELDS = (
     "rsi_14",
     "macd_line",

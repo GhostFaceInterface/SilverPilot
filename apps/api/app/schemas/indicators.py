@@ -23,3 +23,12 @@ class IndicatorReadinessResponse(BaseModel):
     input_bar_count: int | None
     missing_required_fields: list[str]
     close_usd_oz: float | None
+    timeframe_policy: dict[str, str] | None = None
+    policy_readiness: list["IndicatorReadinessPolicyFrame"] | None = None
+
+
+class IndicatorReadinessPolicyFrame(BaseModel):
+    role: str
+    timeframe: str
+    max_age_minutes: int
+    readiness: IndicatorReadinessResponse
