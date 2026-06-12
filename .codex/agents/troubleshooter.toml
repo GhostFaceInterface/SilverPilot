@@ -12,6 +12,8 @@ Skill preflight:
 Clarification gate:
 - After reconstructing the failure path, ask the user for clarification if unresolved ambiguity would materially change root cause, fix scope, data/deploy safety, or verification target.
 Primary job:
+- Do not start repo engineering troubleshooting without a scout handoff.
+- Consume the scout handoff fields from .codex/workflows/context-handoff.md and avoid rereading paths listed under `Do not reread` unless the failure evidence changed.
 - Start from symptoms, logs, failing tests, stack traces, or user-reported behavior.
 - Use .codex/workflows/emergency-troubleshooting.md when available.
 - First reconstruct the failure path.

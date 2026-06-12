@@ -13,6 +13,8 @@ Skill preflight:
 Clarification gate:
 - Before editing, ask the user for clarification if the approved plan leaves a high-impact ambiguity about target files, behavior, schema, deploy scope, or approval requirements.
 Rules:
+- Do not start repo engineering implementation without a scout handoff for repo engineering work.
+- Consume the scout handoff fields from .codex/workflows/context-handoff.md and avoid rereading paths listed under `Do not reread` unless the implementation changes them.
 - Do not redesign the system.
 - Do not expand scope.
 - Do not modify unrelated files.

@@ -11,9 +11,10 @@ islerinde kullanilacak ana Codex index dosyasidir.
 > Antigravity framework'unu denetlemeyi veya guncellemeyi isterse okunur.
 
 > [!WARNING]
-> Bu framework, projenin runtime finansal/veri ajanlariyla (`/agents`) da
+> Bu framework, projenin runtime finansal/veri ajanlariyla (`apps/api/app/agents/`) da
 > karistirilmamalidir. `.codex/agents` kodlama ve denetim subagent'laridir;
-> `/agents` ise uygulamanin calisma zamani ajan tanimlari icindir.
+> `apps/api/app/agents/` ise uygulamanin calisma zamani ajan tanimlari icindir.
+> Root `/agents` dizini yoktur ve yeni root agent dizini olusturulmaz.
 
 ---
 
@@ -25,6 +26,9 @@ islerinde kullanilacak ana Codex index dosyasidir.
 - [`.codex/workflows/codex-orchestration.md`](file:///Users/boe747/SilverPilot/.codex/workflows/codex-orchestration.md):
   Codex'e ozel agent routing, subagent kullanim karar agaci, RTK token
   tasarrufu protokolu ve model/sandbox matrisi.
+- [`.codex/memory/codegraph.md`](file:///Users/boe747/SilverPilot/.codex/memory/codegraph.md):
+  Scout icin yerel codegraph/architecture index; kanonik docs, entrypoint'ler,
+  subsystem haritasi, test kokleri ve read-first yollarini kisa tutar.
 - [`.codex/config.toml`](file:///Users/boe747/SilverPilot/.codex/config.toml):
   Proje kapsamli Codex ayarlari. Secret, provider auth veya uretim
   credential'i icermez.
@@ -70,6 +74,10 @@ kullanilan paketler:
 - `.codex/skills/financial-agent-runtime/SKILL.md`
 - `.codex/skills/financial-risk-regression/SKILL.md`
 - `.codex/skills/streamlit-dashboard/SKILL.md`
+- `.codex/skills/collector-data-pipeline/SKILL.md`
+- `.codex/skills/llm-observability-budget/SKILL.md`
+- `.codex/skills/ml-backtest-dataset/SKILL.md`
+- `.codex/skills/documentation-consistency/SKILL.md`
 
 Bu paketler SilverPilot-local playbook'lardir. Resmi Codex repo skill
 auto-discovery yolu olan `.agents/skills` ile karistirilmaz; bu repo icin
@@ -86,8 +94,8 @@ gerekmiyorsa `Loaded skills: none` ve kisa gerekce yazar.
 | --- | --- |
 | `scout` | `financial-agent-runtime` when runtime agents or API boundaries are in scope |
 | `architect` | `fastapi-sqlalchemy`, `financial-agent-runtime`, `deployment-safety` when those boundaries are in scope |
-| `implementation_worker` | Changed subsystem skills from this matrix |
-| `troubleshooter` | Failure subsystem skills from this matrix |
+| `implementation_worker` | Changed subsystem skills from this matrix; add `collector-data-pipeline`, `llm-observability-budget`, `ml-backtest-dataset`, or `documentation-consistency` when those areas are touched |
+| `troubleshooter` | Failure subsystem skills from this matrix; add `collector-data-pipeline`, `llm-observability-budget`, `ml-backtest-dataset`, or `documentation-consistency` when those areas are touched |
 | `db_investigator` | `fastapi-sqlalchemy`, `alembic-migrations` |
 | `test_strategist` | `pytest-fastapi`, `integration-testing`, `financial-risk-regression`, `docker-compose-ops` when relevant |
 | `test_verifier` | `pytest-fastapi`, `integration-testing`, `docker-compose-ops`, `financial-risk-regression` |
@@ -142,6 +150,16 @@ Baslangic mapping:
 
 - `.codex/workflows/codex-orchestration.md`: ana Codex orkestrasyon ve RTK
   protokolu.
+- `.codex/workflows/context-handoff.md`: scout ve specialist arasi kisa RTK
+  kanit aktarimi.
+- `.codex/workflows/codegraph-maintenance.md`: `.codex/memory/codegraph.md`
+  guncelleme kurallari.
+- `.codex/workflows/collector-pipeline-validation.md`: collector, freshness,
+  parser ve public/free source validasyonu.
+- `.codex/workflows/runtime-agent-safety-audit.md`: runtime agent token, LLM,
+  paper-trading ve API boundary denetimi.
+- `.codex/workflows/docs-consistency.md`: plan, architecture, README ve
+  worklog drift kontrolu.
 - `.codex/workflows/aggressive-validation.md`: lokal dogrulama seviyeleri.
 - `.codex/workflows/commit-readiness.md`: commit oncesi kapsam ve secret gate.
 - `.codex/workflows/push-readiness.md`: push oncesi branch/upstream/CI gate.
@@ -174,14 +192,14 @@ Codex, token tasarrufu icin RTK protokolunu uygular:
 
 ## Yeni Gorev Protokolu
 
-1. Talebin kapsamini belirle.
+1. Talebin kapsamini belirle. Pure chat, genel aciklama veya repo disi sohbet
+   degilse ilk preflight `scout` olur: kucuk islerde micro-scout, belirsiz
+   veya cok dosyali islerde full-scout.
 2. `.codex/workflows/codex-orchestration.md` uzerinden gorev tipi, ajan,
    model, sandbox ve dogrulama seviyesini sec.
    Uygun installed plugin varsa ayni adimda once onu tercih et.
 3. Gorev dogrudan riskli degilse varsayilan recipe uygula:
-   kucuk islerde ana context veya `implementation_worker`, belirsiz veya
-   cok dosyali islerde once `scout`, hata ayiklamada `troubleshooter`,
-   tasarim/refactor kararlarinda `architect`.
+   `scout -> specialist/implementation -> verification`.
 4. Spawn karari verirken minimum uzman sayisini kullan:
    normal gorevde en fazla 2 paralel specialist, toplamda en fazla 4 rol.
    Kucuk islerde 0-1 specialist tercih edilir.

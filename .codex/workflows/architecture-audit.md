@@ -15,7 +15,7 @@ Use this workflow for major feature design, module boundary review, technical de
 1. FastAPI app boundaries
 2. SQLAlchemy model/service separation
 3. Alembic migration safety
-4. Runtime financial agents under `/agents`
+4. Runtime financial agents under `apps/api/app/agents/`
 5. API ↔ dashboard contract
 6. ML model lifecycle
 7. Paper trading execution path

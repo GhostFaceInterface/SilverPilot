@@ -26,5 +26,6 @@ icin ayrintili ajan, skill, workflow ve model kurallari burada tutulmaz.
 
 ## Runtime Agent Ayrimi
 
-`/agents` uygulamanin runtime finansal/veri ajanlari icindir. `.codex/agents`
-ve `.agent/agents` ise kodlama asistanina ait gelistirme/denetim ajanlaridir.
+Uygulamanin runtime finansal/veri ajanlari `apps/api/app/agents/` altindadir.
+`.codex/agents` ve `.agent/agents` ise kodlama asistanina ait gelistirme/denetim
+ajanlaridir. Root `/agents` dizini yoktur ve Codex bunu icat etmez.

@@ -18,6 +18,12 @@ conflicts with `.codex/`, follow `.codex/` for Codex work.
 
 ## 2. Routing Matrix
 
+Every repo engineering task begins with `scout` preflight unless the request is
+pure chat, a general explanation, or repo-external conversation. Use
+micro-scout for narrow one/two-file work and full-scout for unclear, multi-file,
+cross-subsystem, failure, architecture, security, database, or deploy-adjacent
+work. Specialists consume the scout handoff before starting.
+
 | Task type | Primary agent | Supporting agents | Model tier | Sandbox |
 | --- | --- | --- | --- | --- |
 | Read-only codebase mapping | `scout` | `db_investigator` when schema is involved | mini | read-only |
@@ -76,8 +82,8 @@ Use when all are true:
 
 Route:
 
-1. Stay in main context or use `implementation_worker`.
-2. Do not spawn `scout` unless file location is unclear.
+1. Run micro-scout: read `.codex/memory/codegraph.md`, run targeted `rg`, read only the needed ranges, and produce the context-handoff fields.
+2. Stay in main context or use `implementation_worker`.
 3. Use one verification step with `test_verifier` only if runtime behavior changed.
 
 ### B. Normal bug fix or feature slice
@@ -90,7 +96,7 @@ Route:
 1. Prefer the matching plugin surface first:
    `/backend-development:feature-development` for feature work or
    `/debugging-toolkit:smart-debug` for failure-heavy work.
-2. `scout` first only if the file map remains unclear.
+2. Run full-scout and hand off RTK evidence, read ranges, do-not-reread notes, and recommended next agent.
 3. `implementation_worker` for the patch.
 4. `test_strategist` before broad new tests or shared behavior changes.
 5. `test_verifier` after edits.
@@ -102,8 +108,8 @@ Use when the user reports a bug, stack trace, broken behavior, or failing CI.
 Route:
 
 1. Prefer `/debugging-toolkit:smart-debug` for first-pass narrowing.
-2. `troubleshooter` owns the task.
-3. Spawn `scout` if the failing path is still unclear after the first read.
+2. Run micro-scout for obvious failures or full-scout when the failing path spans subsystems.
+3. `troubleshooter` owns the task after consuming the scout handoff.
 4. Spawn `db_investigator` if persistence, migration, query, or data shape is involved.
 5. Spawn `test_verifier` after the fix.
 
@@ -114,12 +120,13 @@ high-risk refactor.
 
 Route:
 
-1. `architect` owns the task.
-2. Consider `/agent-orchestration:multi-agent-optimize` when the user is
+1. Run full-scout and produce a context handoff with codegraph, canonical docs, files searched, ranges read, and risk notes.
+2. `architect` owns the task after consuming the handoff.
+3. Consider `/agent-orchestration:multi-agent-optimize` when the user is
    explicitly asking how agents, skills, or workflows should be coordinated.
-3. Spawn `security_reviewer` for auth, secrets, CI permission, or prompt-injection surfaces.
-4. Spawn `db_investigator` for schema or migration consequences.
-5. Do not use `implementation_worker` until the design is accepted.
+4. Spawn `security_reviewer` for auth, secrets, CI permission, or prompt-injection surfaces.
+5. Spawn `db_investigator` for schema or migration consequences.
+6. Do not use `implementation_worker` until the design is accepted.
 
 ### E. Release and deployment work
 
@@ -128,21 +135,23 @@ Use when the user asks about commit, push, CI, release, deploy, smoke, or rollba
 Route:
 
 1. Prefer `/deployment-validation:config-validate` for first-pass deploy checks.
-2. `git_guardian` for commit/push scope.
-3. `ci_investigator` for red workflows or flaky CI.
-4. `deploy_guardian` before deploy.
-5. `rollback_planner` when deploy risk or migration risk exists.
-6. `final_reviewer` before broad release claims.
+2. Run full-scout for repo evidence relevant to the requested gate.
+3. `git_guardian` for commit/push scope.
+4. `ci_investigator` for red workflows or flaky CI.
+5. `deploy_guardian` before deploy.
+6. `rollback_planner` when deploy risk or migration risk exists.
+7. `final_reviewer` before broad release claims.
 
 ## 3. Model Policy
 
-- Mini models: read-heavy scouting, git checks, test execution summaries, and
+- Mini models: read-heavy scouting, default database investigation, git checks, test execution summaries, and
   post-deploy evidence classification.
 - Standard models: implementation, debugging, CI root-cause analysis, deploy
   planning, rollback planning, and test strategy.
 - Strongest available model: security review, final review, architecture
   review for risk-sensitive changes, and decisions involving financial risk,
   auth, production deployment, or irreversible data effects.
+- `db_investigator` defaults to token-efficient mini/medium for static schema and query mapping. Escalate high-risk migration, irreversible data-loss, or production data decisions to `architect` or strongest available review.
 - Extra-high reasoning is a gate, not a default. Use it only for critical
   architecture decisions, financial risk formulas, DB migration/data-loss
   decisions, security/release gates, production incidents, and rollback
@@ -156,9 +165,17 @@ available model with the same role and report the fallback.
 
 ## 4. Subagent Delegation
 
+### Scout Handoff Gate
+
+`implementation_worker`, `troubleshooter`, `architect`, `test_strategist`,
+`security_reviewer`, and `db_investigator` must not start repo engineering work
+without a scout handoff, except for pure chat or repo-external explanation. The
+handoff format is defined in `.codex/workflows/context-handoff.md`.
+
 ### Spawn Rules
 
-Subagent spawning is allowed only when at least one of these is true:
+After scout preflight, additional subagent spawning is allowed only when at
+least one of these is true:
 
 - the task spans more than one subsystem;
 - the first-pass file map is unclear;
@@ -205,18 +222,20 @@ changes, stay in the main context and apply the relevant skill directly.
 
 RTK means targeted reading and context conservation:
 
-1. Start with `rg --files` or `rg -n` to locate exact files, symbols, tests,
+1. Start with `.codex/memory/codegraph.md` and relevant canonical docs named by that index.
+2. Use `rg --files` or `rg -n` to locate exact files, symbols, tests,
    routes, and configs.
-2. Read only targeted line ranges with `sed -n 'start,endp'`, `nl -ba`, or an
+3. Read only targeted line ranges with `sed -n 'start,endp'`, `nl -ba`, or an
    equivalent range-limited read.
-3. Avoid whole-file reads for large files unless the file is short or the whole
+4. Avoid whole-file reads for large files unless the file is short or the whole
    structure is directly relevant.
-4. Prefer existing architecture, memory, and workflow notes before reverse
+5. Prefer existing architecture, memory, and workflow notes before reverse
    engineering already-documented behavior.
-5. Summarize subagent findings into concrete paths, line references, and next
+6. Summarize subagent findings into concrete paths, line references, and next
    actions. Do not paste raw bulk logs into the main context.
-6. Reuse prior search results in the same turn instead of repeating broad
+7. Reuse prior search results in the same turn instead of repeating broad
    searches.
+8. For long tasks or context compression, carry only short path/line/fact/risk summaries, not raw file dumps or command logs.
 
 ## 6. Implementation Gate
 

@@ -3,7 +3,7 @@ Implement only the minimal fix from the approved diagnosis.
 Constraints:
 - Do not refactor unrelated files.
 - Do not touch `.agent/`.
-- Do not touch root `/agents` runtime definitions unless the approved plan explicitly says so.
+- Do not create or touch root `/agents`; runtime agent definitions live under `apps/api/app/agents/` unless the approved plan explicitly says otherwise.
 - Do not change database schema unless explicitly approved.
 - Keep the patch reversible.
 

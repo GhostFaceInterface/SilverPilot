@@ -6,7 +6,7 @@ Use this workflow for production-like bugs, failing CI, runtime exceptions, depl
 - First pass is read-only.
 - Do not code before diagnosis.
 - Do not touch `.agent/` unless the issue is explicitly about the Antigravity framework.
-- Do not confuse `/agents` runtime financial agents with `.codex/agents`.
+- Do not confuse `apps/api/app/agents/` runtime financial agents with `.codex/agents`.
 - Do not mutate production data.
 - Do not expose secrets from `.env`, logs, or config files.
 
@@ -24,7 +24,7 @@ Collect:
 
 ## Phase 2 — Delegation
 Use:
-- `scout` for code path and file mapping
+- `scout` first for code path and file mapping
 - `db_investigator` for SQLAlchemy/Alembic/PostgreSQL issues
 - `architect` if the issue exposes structural design problems
 - `troubleshooter` only after the failure path is understood

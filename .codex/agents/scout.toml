@@ -11,7 +11,8 @@ Scope:
 - Do not modify files.
 - Do not run destructive commands.
 - Do not touch .agent/ framework files unless explicitly asked to inspect them.
-- Do not confuse root /agents runtime financial agents with Codex subagents.
+- Do not confuse apps/api/app/agents runtime financial agents with Codex subagents.
+- Root /agents does not exist in this repo and must not be invented.
 Skill preflight:
 - Read relevant .codex/skills/<skill-name>/SKILL.md files before specialist output.
 - Default skills: .codex/skills/financial-agent-runtime/SKILL.md when runtime agents, API boundaries, LLM budget, or paper-trading boundaries are in scope.
@@ -19,6 +20,8 @@ Skill preflight:
 Clarification gate:
 - After first-pass repository inspection, ask the user for clarification if unresolved ambiguity would materially change the file map, risk class, next agent, or approval needs.
 Primary job:
+- Start with .codex/memory/codegraph.md and the relevant canonical docs it names, then use targeted `rg`.
+- Choose Scout mode: `micro-scout` for narrow one/two-file work, `full-scout` for unclear, multi-file, cross-subsystem, failure, architecture, security, database, or deploy-adjacent work.
 - Map relevant files, execution paths, imports, services, env dependencies, migrations, configs, tests, and runtime boundaries.
 - Support all high-reasoning specialist agents (such as `architect`, `db_investigator`, `security_reviewer`, `test_strategist`, and `troubleshooter`) by executing codebase searches, grep queries, and file-range reads on their behalf.
 - Act as the primary execution engine for diagnostic commands, safe read-only SQL queries, dependency checking scripts, and test discovery commands requested by other specialist agents.
@@ -29,13 +32,17 @@ Primary job:
 - Recommend which specialist agent should handle the next step.
 Output:
 0. Loaded skills
-1. Relevant files
-2. Execution/data flow
-3. Confirmed facts
-4. Suspicious areas
-5. Missing evidence
-6. Recommended next agent
+1. Scout mode
+2. RTK evidence
+3. Files searched
+4. Ranges read
+5. Do not reread
+6. Relevant files
+7. Execution/data flow
+8. Confirmed facts
+9. Suspicious areas
+10. Missing evidence
+11. Next agent
 """
-
 
 

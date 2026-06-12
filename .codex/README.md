@@ -17,7 +17,7 @@ This directory is the project-scoped Codex framework for engineering verificatio
 
 ## What this is not
 - It is not the Antigravity framework in `.agent/`.
-- It is not the runtime financial/data agents in `/agents`.
+- It is not the runtime financial/data agents in `apps/api/app/agents/`.
 - It is not a secrets store, deployment credential store, or production automation tool.
 - It does not authorize commit, push, deploy, rollback, production log access, or production database mutation.
 
@@ -30,7 +30,7 @@ This directory is the project-scoped Codex framework for engineering verificatio
 - Keep Codex framework files inside `.codex/`.
 - Do not modify `.agent/` from this framework.
 - Do not read `.agent/` as a planning, routing, model, RTK, or approval authority for Codex tasks.
-- Do not modify root `/agents/` unless a later runtime-agent task explicitly requires it.
+- Do not create or modify root `/agents/`; the actual runtime-agent code lives under `apps/api/app/agents/`.
 - Do not add `.agents/`, `agent/`, or another root-level agent framework directory.
 - Do not write secrets, tokens, `.env` values, or production credentials.
 - Do not run destructive database operations.
@@ -89,6 +89,7 @@ Practical meaning:
 ## Model policy
 Recommended routing:
 - `scout`: `gpt-5.4-mini`
+- `db_investigator`: `gpt-5.4-mini` by default; escalate database migration or data-loss decisions to `architect` or strongest review.
 - `test_strategist`: `gpt-5.5`
 - `test_verifier`: `gpt-5.4-mini`
 - `ci_investigator`: `gpt-5.5`
@@ -121,11 +122,11 @@ Use `workflows/codex-orchestration.md` before large, multi-file, risk-sensitive,
 
 For small single-file changes, apply the relevant `.codex/skills/*/SKILL.md` bundle directly and keep the work in the main context.
 
-Practical defaults:
-- Small low-risk change: main context or `implementation_worker`.
-- Multi-file but still straightforward: `scout` then `implementation_worker`.
-- Bug/debugging: `troubleshooter` owns, with `scout` or `db_investigator` only if needed.
-- Architecture/refactor planning: `architect` first, implementation later.
+- All repo engineering work starts with scout preflight unless it is pure chat, general explanation, or repo-external conversation.
+- Small low-risk change: micro-scout then main context or `implementation_worker`.
+- Multi-file but still straightforward: full-scout then `implementation_worker`.
+- Bug/debugging: micro/full-scout then `troubleshooter`; add `db_investigator` when persistence is involved.
+- Architecture/refactor planning: scout handoff then `architect`, implementation later.
 - Release/deploy/rollback: gate agents only when the user asks for those phases.
 
 Plugin-first shortcuts:
@@ -141,17 +142,19 @@ Plugin-first shortcuts:
 
 ## RTK targeted-reading protocol
 Use RTK for token economy:
+- For engineering tasks, start with scout preflight. Micro-scout is a short codegraph/read-first check plus targeted `rg`; full-scout adds subsystem mapping and line-range evidence.
 - Start with `rg --files` or `rg -n`.
 - Read targeted line ranges with `sed -n 'start,endp'`, `nl -ba`, or equivalent range-limited tools.
 - Avoid whole-file reads for large files unless the full file structure is directly relevant.
 - Delegate broad mapping to `scout` and bring back only evidence-backed findings.
+- Scout handoff must use `workflows/context-handoff.md` and include RTK evidence, searched files, read ranges, do-not-reread notes, and the next agent.
 
 ## First-pass diagnosis
 ```bash
 bash .codex/scripts/collect-diagnostics.sh
 ```
 
-Use `scout` for read-only mapping before implementation.
+Use `scout` for read-only mapping before implementation. Scout reads `memory/codegraph.md` and relevant canonical docs before wider search.
 
 Useful local skill bundles:
 - `.codex/skills/pytest-fastapi/SKILL.md`
@@ -163,6 +166,10 @@ Useful local skill bundles:
 - `.codex/skills/alembic-migrations/SKILL.md`
 - `.codex/skills/financial-risk-regression/SKILL.md`
 - `.codex/skills/streamlit-dashboard/SKILL.md`
+- `.codex/skills/collector-data-pipeline/SKILL.md`
+- `.codex/skills/llm-observability-budget/SKILL.md`
+- `.codex/skills/ml-backtest-dataset/SKILL.md`
+- `.codex/skills/documentation-consistency/SKILL.md`
 
 ## Aggressive validation
 ```bash

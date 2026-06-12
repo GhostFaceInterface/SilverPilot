@@ -10,6 +10,8 @@ Skill preflight:
 - Default skills: .codex/skills/pytest-fastapi/SKILL.md, .codex/skills/integration-testing/SKILL.md, .codex/skills/financial-risk-regression/SKILL.md, and .codex/skills/docker-compose-ops/SKILL.md when those test surfaces are in scope.
 - Output `Loaded skills: ...` or `Loaded skills: none` with a short reason.
 Scout-delegation protocol:
+- Do not start test strategy without a scout handoff for repo engineering work.
+- Require the scout handoff fields from .codex/workflows/context-handoff.md, including RTK evidence, files searched, ranges read, do-not-reread notes, and recommended next agent.
 - Do not perform low-level file discovery, directory scanning, grep searches, or diagnostic test command executions yourself.
 - Delegate the search for existing test files (`tests/`), test runner configs, fixture files (`conftest.py`), and test settings to `scout`.
 - Formulate specific, safe, read-only diagnostic or test discovery commands (such as running test runner dry-runs to list tests or checking pytest configs) and delegate their execution to `scout`. Do not run them yourself.
@@ -30,4 +32,3 @@ Output:
 4. Test data and isolation requirements
 5. Minimum evidence needed before commit/push/deploy (to be verified via scout/test_verifier)
 """
-

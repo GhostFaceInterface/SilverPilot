@@ -11,6 +11,8 @@ import tomllib
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 AGENTS_DIR = ROOT / ".codex" / "agents"
 SKILLS_DIR = ROOT / ".codex" / "skills"
+WORKFLOWS_DIR = ROOT / ".codex" / "workflows"
+MEMORY_DIR = ROOT / ".codex" / "memory"
 
 REQUIRED_AGENT_KEYS = {
     "name",
@@ -67,9 +69,43 @@ EXPECTED_SKILLS = {
     "troubleshooter": set(),
 }
 
+EXPECTED_SKILL_FILES = {
+    "alembic-migrations",
+    "collector-data-pipeline",
+    "deployment-safety",
+    "docker-compose-ops",
+    "documentation-consistency",
+    "fastapi-sqlalchemy",
+    "financial-agent-runtime",
+    "financial-risk-regression",
+    "github-actions-monitoring",
+    "integration-testing",
+    "llm-observability-budget",
+    "ml-backtest-dataset",
+    "pytest-fastapi",
+    "streamlit-dashboard",
+}
+
+EXPECTED_WORKFLOWS = {
+    "codegraph-maintenance.md",
+    "collector-pipeline-validation.md",
+    "context-handoff.md",
+    "docs-consistency.md",
+    "runtime-agent-safety-audit.md",
+}
+
+SCOUT_HANDOFF_AGENTS = {
+    "architect",
+    "db_investigator",
+    "implementation_worker",
+    "security_reviewer",
+    "test_strategist",
+    "troubleshooter",
+}
+
 EXPECTED_MODEL_POLICY = {
     "scout": {"model": "gpt-5.4-mini", "model_reasoning_effort": "medium"},
-    "db_investigator": {"model": "gpt-5.5", "model_reasoning_effort": "high"},
+    "db_investigator": {"model": "gpt-5.4-mini", "model_reasoning_effort": "medium"},
     "test_verifier": {
         "model": "gpt-5.4-mini",
         "model_reasoning_effort": "medium",
@@ -81,6 +117,20 @@ def main() -> int:
     errors: list[str] = []
     agent_files = sorted(AGENTS_DIR.glob("*.toml"))
     seen_agents: set[str] = set()
+
+    for skill in EXPECTED_SKILL_FILES:
+        skill_path = SKILLS_DIR / skill / "SKILL.md"
+        if not skill_path.is_file():
+            errors.append(f"Missing expected skill file {skill_path}")
+
+    for workflow in EXPECTED_WORKFLOWS:
+        workflow_path = WORKFLOWS_DIR / workflow
+        if not workflow_path.is_file():
+            errors.append(f"Missing expected workflow file {workflow_path}")
+
+    codegraph_path = MEMORY_DIR / "codegraph.md"
+    if not codegraph_path.is_file():
+        errors.append(f"Missing local codegraph memory {codegraph_path}")
 
     if not agent_files:
         errors.append(f"No agent TOML files found under {AGENTS_DIR}")
@@ -104,6 +154,23 @@ def main() -> int:
         for phrase in ("Skill preflight", "Clarification gate", "Loaded skills"):
             if phrase not in instructions:
                 errors.append(f"{path}: missing required phrase {phrase!r}")
+
+        if name == "scout":
+            for phrase in (
+                "Scout mode",
+                "RTK evidence",
+                "Files searched",
+                "Ranges read",
+                "Do not reread",
+                "Next agent",
+            ):
+                if phrase not in instructions:
+                    errors.append(f"{path}: missing scout handoff output field {phrase!r}")
+
+        if name in SCOUT_HANDOFF_AGENTS:
+            for phrase in ("scout handoff", "context-handoff"):
+                if phrase not in instructions:
+                    errors.append(f"{path}: missing scout handoff requirement phrase {phrase!r}")
 
         for skill in EXPECTED_SKILLS.get(name, set()):
             skill_path = SKILLS_DIR / skill / "SKILL.md"

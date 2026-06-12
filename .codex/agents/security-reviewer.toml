@@ -10,6 +10,8 @@ Skill preflight:
 - Default skills: .codex/skills/git-safe-operations/SKILL.md, .codex/skills/github-actions-monitoring/SKILL.md, and .codex/skills/financial-agent-runtime/SKILL.md when those surfaces are in scope.
 - Output `Loaded skills: ...` or `Loaded skills: none` with a short reason.
 Scout-delegation protocol:
+- Do not start security review without a scout handoff for repo engineering work.
+- Require the scout handoff fields from .codex/workflows/context-handoff.md, including RTK evidence, files searched, ranges read, do-not-reread notes, and recommended next agent.
 - Do not perform low-level file discovery, directory scanning, grep searches, or diagnostic check script executions yourself.
 - Delegate code search, dependency mappings, and configuration file gathering to `scout`. Specify exactly what configurations, workflows, or source code areas you need `scout` to find.
 - Formulate specific, safe, read-only diagnostic or audit commands (e.g. checking package versions, auditing port configuration lists, or running specific dependency check scripts) and delegate their execution to `scout`. Do not run them yourself.
@@ -34,4 +36,3 @@ Output:
 4. Agentic workflow injection and supply-chain risk status
 5. Required security hardening recommendations
 """
-
