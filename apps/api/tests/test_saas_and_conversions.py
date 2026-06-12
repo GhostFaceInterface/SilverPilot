@@ -1,11 +1,15 @@
 from decimal import Decimal
+import pytest
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base
-from app.models import Asset, Provider, TenantPortfolio, StrategyParameter, AssetConversion, Portfolio
-from app.collectors.service import get_conversion_rate
+from app.models import Asset, Provider, TenantPortfolio, StrategyParameter, AssetConversion, Portfolio, PaperTrade
+from app.collectors.service import CollectorError, get_conversion_rate, get_conversion_rate_with_source
+from app.paper_trading.service import execute_paper_trade
+from app.schemas.paper_trading import PaperTradeRequest
 from app.services.seed import seed_development_data
 
 
@@ -87,8 +91,9 @@ def test_get_conversion_rate_dynamic_lookup():
 
     try:
         # Default conversion rate lookup when not in DB
-        rate_default = get_conversion_rate(db, "XAG", "XAG_GRAM")
+        rate_default, source_default = get_conversion_rate_with_source(db, "XAG", "XAG_GRAM")
         assert rate_default == Decimal("31.1035")
+        assert source_default == "default_missing"
 
         # Create assets and conversion rate in DB
         asset_from = Asset(symbol="XAG", name="Silver Spot Ounce", asset_type="metal", is_active=True)
@@ -103,8 +108,10 @@ def test_get_conversion_rate_dynamic_lookup():
         db.commit()
 
         # Dynamic conversion rate lookup from DB
-        rate_db = get_conversion_rate(db, "XAG", "XAG_GRAM")
+        rate_db, source_db = get_conversion_rate_with_source(db, "XAG", "XAG_GRAM")
         assert rate_db == Decimal("32.5")
+        assert source_db == "db"
+        assert get_conversion_rate(db, "XAG", "XAG_GRAM") == Decimal("32.5")
 
     finally:
         db.close()
@@ -147,6 +154,7 @@ def test_seed_development_data_saas_tables(monkeypatch):
         seed_development_data()
         assert db.query(Provider).count() == 2
         assert db.query(AssetConversion).count() == 1
+        assert db.query(TenantPortfolio).count() == 1
 
         db.close()
 
@@ -160,8 +168,9 @@ def test_get_conversion_rate_db_error_fallback():
 
     db_mock = MagicMock()
     db_mock.execute.side_effect = Exception("DB Connection Timeout")
-    rate = get_conversion_rate(db_mock, "XAG", "XAG_GRAM")
+    rate, source = get_conversion_rate_with_source(db_mock, "XAG", "XAG_GRAM")
     assert rate == Decimal("31.1035")
+    assert source == "default_db_error"
 
 
 def test_get_conversion_rate_returns_null_fallback():
@@ -169,5 +178,111 @@ def test_get_conversion_rate_returns_null_fallback():
 
     db_mock = MagicMock()
     db_mock.execute.return_value.scalar_one_or_none.return_value = None
-    rate = get_conversion_rate(db_mock, "XAG", "XAG_GRAM")
+    rate, source = get_conversion_rate_with_source(db_mock, "XAG", "XAG_GRAM")
     assert rate == Decimal("31.1035")
+    assert source == "default_missing"
+
+
+def test_conversion_non_positive_db_rate_fails_closed():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSession()
+
+    try:
+        asset_from = Asset(symbol="XAG", name="Silver Spot Ounce", asset_type="metal", is_active=True)
+        asset_to = Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True)
+        db.add_all([asset_from, asset_to])
+        db.flush()
+        db.add(
+            AssetConversion(
+                from_asset_id=asset_from.id,
+                to_asset_id=asset_to.id,
+                conversion_rate=Decimal("0"),
+            )
+        )
+        db.commit()
+
+        with pytest.raises(CollectorError, match="non-positive conversion rate"):
+            get_conversion_rate(db, "XAG", "XAG_GRAM")
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+def test_cost_model_uses_tenant_provider_or_kuveyt_default():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSession()
+
+    try:
+        asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+        ziraat = Provider(name="ziraat", display_name="Ziraat Bank", is_active=True, config_json={})
+        db.add_all([asset, ziraat])
+        db.flush()
+
+        default_portfolio = Portfolio(
+            name="ziraat-named-but-unbound",
+            base_currency="USD",
+            initial_cash=Decimal("1000.000000"),
+            cash_balance=Decimal("1000.000000"),
+            is_real_money=False,
+        )
+        bound_portfolio = Portfolio(
+            name="plain-bound",
+            base_currency="USD",
+            initial_cash=Decimal("1000.000000"),
+            cash_balance=Decimal("1000.000000"),
+            is_real_money=False,
+        )
+        db.add_all([default_portfolio, bound_portfolio])
+        db.flush()
+        db.add(TenantPortfolio(tenant_id="tenant-z", portfolio_id=bound_portfolio.id, provider_id=ziraat.id))
+        db.commit()
+
+        default_trade, _ = execute_paper_trade(
+            db,
+            PaperTradeRequest(
+                portfolio_name=default_portfolio.name,
+                asset_symbol="XAG_GRAM",
+                action="paper_buy",
+                quantity=Decimal("10.000000"),
+                buy_price=Decimal("10.000000"),
+                sell_price=Decimal("9.900000"),
+                fees=Decimal("0"),
+                taxes=Decimal("0"),
+            ),
+        )
+        bound_trade, _ = execute_paper_trade(
+            db,
+            PaperTradeRequest(
+                portfolio_name=bound_portfolio.name,
+                asset_symbol="XAG_GRAM",
+                action="paper_buy",
+                quantity=Decimal("10.000000"),
+                buy_price=Decimal("10.000000"),
+                sell_price=Decimal("9.900000"),
+                fees=Decimal("0"),
+                taxes=Decimal("0"),
+            ),
+        )
+
+        assert default_trade.fees == Decimal("0.000000")
+        assert default_trade.taxes == Decimal("0.200000")
+        assert bound_trade.fees == Decimal("0.100000")
+        assert bound_trade.taxes == Decimal("0.200000")
+        assert db.query(PaperTrade).count() == 2
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()

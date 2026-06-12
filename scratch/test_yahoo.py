@@ -3,6 +3,7 @@ import json
 from decimal import Decimal
 from datetime import datetime, UTC
 
+
 def parse_yahoo_finance_chart_json(
     raw_payload: str,
     *,
@@ -29,10 +30,6 @@ def parse_yahoo_finance_chart_json(
         return
 
     result = result_list[0]
-    meta = result.get("meta") or {}
-    symbol = str(meta.get("symbol") or expected_symbol).upper()
-    currency = str(meta.get("currency") or "USD").upper()
-
     timestamps = result.get("timestamp") or []
     indicators = result.get("indicators") or {}
     quotes = indicators.get("quote") or []
@@ -58,7 +55,7 @@ def parse_yahoo_finance_chart_json(
                 price = Decimal(str(closes[idx]))
                 observed_timestamp = timestamps[idx]
                 break
-            except Exception as e:
+            except Exception:
                 pass
         idx -= 1
 
@@ -69,11 +66,14 @@ def parse_yahoo_finance_chart_json(
     observed_at = datetime.fromtimestamp(observed_timestamp, tz=UTC)
     print(f"Success! Price: {price}, Observed at: {observed_at}")
 
+
 url = "https://query1.finance.yahoo.com/v8/finance/chart/SI=F?range=5d&interval=5m"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json"
+    "Accept": "application/json",
 }
 r = httpx.get(url, headers=headers)
 print(f"Status: {r.status_code}")
-parse_yahoo_finance_chart_json(r.text, fetched_at=datetime.now(UTC), expected_symbol="SI=F", source="yahoo-si-f", parser_version="1.0")
+parse_yahoo_finance_chart_json(
+    r.text, fetched_at=datetime.now(UTC), expected_symbol="SI=F", source="yahoo-si-f", parser_version="1.0"
+)

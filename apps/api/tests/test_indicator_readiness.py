@@ -119,6 +119,22 @@ def test_indicator_readiness_warmup(db_session):
     assert "INSUFFICIENT_HISTORY" in readiness.reason_codes
 
 
+def test_low_1d_input_bar_count_keeps_daily_trend_missing(db_session):
+    start = datetime.now(UTC) - timedelta(minutes=5 * 10)
+    _seed_indicator_series(db_session, count=10, timeframe="1d", start=start)
+
+    readiness = get_indicator_readiness(
+        db_session,
+        asset_symbol="XAG_GRAM",
+        timeframe="1d",
+        required_min_bar_count=50,
+        max_age_minutes=48 * 60,
+    )
+    assert readiness.usable is False
+    assert readiness.status == "warming_up"
+    assert "INSUFFICIENT_HISTORY" in readiness.reason_codes
+
+
 def test_indicator_readiness_route(db_session):
     start = datetime.now(UTC) - timedelta(minutes=5 * 60)
     _seed_indicator_series(db_session, count=50, start=start)

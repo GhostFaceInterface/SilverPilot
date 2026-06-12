@@ -5,7 +5,8 @@ from decimal import Decimal, ROUND_DOWN
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, RawFxRate, RiskDecision
+from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, Provider, RawFxRate, RiskDecision
+from app.models.entities import TenantPortfolio
 from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
 from app.services.cost_models import COST_MODEL_REGISTRY
@@ -69,9 +70,7 @@ def _execute_paper_trade(
     if asset.symbol == "XAG_GRAM":
         price = request.buy_price if request.action == "paper_buy" else request.sell_price
         is_buy = request.action == "paper_buy"
-        cost_model_key = "kuveyt_turk"
-        if "ziraat" in request.portfolio_name.lower():
-            cost_model_key = "ziraat"
+        cost_model_key = _resolve_portfolio_provider_key(db, portfolio)
         cost_model = COST_MODEL_REGISTRY[cost_model_key]
 
         if request.quantity is not None:
@@ -201,6 +200,19 @@ def _latest_price_snapshot_id(db: Session, asset_id: int) -> int | None:
         .order_by(PriceSnapshot.observed_at.desc(), PriceSnapshot.id.desc())
         .limit(1)
     ).scalar_one_or_none()
+
+
+def _resolve_portfolio_provider_key(db: Session, portfolio: Portfolio) -> str:
+    provider_name = db.execute(
+        select(Provider.name)
+        .join(TenantPortfolio, TenantPortfolio.provider_id == Provider.id)
+        .where(TenantPortfolio.portfolio_id == portfolio.id, TenantPortfolio.is_active.is_(True))
+        .order_by(TenantPortfolio.id.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if provider_name in COST_MODEL_REGISTRY:
+        return provider_name
+    return "kuveyt_turk"
 
 
 def calculate_position(db: Session, portfolio_id: int, asset_id: int) -> Position:

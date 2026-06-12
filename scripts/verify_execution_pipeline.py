@@ -14,8 +14,8 @@ elif os.path.exists(os.path.join(root_path, "app")):
     if root_path not in sys.path:
         sys.path.insert(0, root_path)
 
-from app.core.db import SessionLocal, Base
-from app.models import (
+from app.core.db import SessionLocal, Base  # noqa: E402
+from app.models import (  # noqa: E402
     Asset,
     PriceSnapshot,
     TechnicalIndicator,
@@ -23,20 +23,20 @@ from app.models import (
     Portfolio,
     PaperTrade,
 )
-from app.services.strategy import StrategyRunner
+from app.services.strategy import StrategyRunner  # noqa: E402
 
 
 def run_pipeline_verification():
     print("\033[1;36m" + "=" * 65 + "\033[0m")
     print("\033[1;36m|          E2E PIPELINE EXECUTION VERIFICATION SCRIPT         |\033[0m")
     print("\033[1;36m" + "=" * 65 + "\033[0m")
-    
+
     # Establish Session
     db = SessionLocal()
     try:
         # Ensure tables exist (especially helpful for sqlite in-memory smoke testing)
         Base.metadata.create_all(bind=db.get_bind())
-        
+
         # Start transaction with automatic rollback control
         transaction = db.begin()
         try:
@@ -54,7 +54,7 @@ def run_pipeline_verification():
             # 2. Insert mock PriceSnapshot & TechnicalIndicator
             mock_observed_time = datetime.now(UTC)
             mid_price = Decimal("29.50")
-            
+
             snapshot = PriceSnapshot(
                 asset_id=asset.id,
                 source="manual-local-smoke",
@@ -100,7 +100,7 @@ def run_pipeline_verification():
                 has_open_position=False,
                 strategy_name="rsi",
             )
-            
+
             print(f"[5/6] StrategyRunner evaluated row. Action: \033[1;33m{action}\033[0m, Reason: {reason}")
             assert action == "BUY"
             assert reason == "RSI_OVERSOLD"
@@ -118,7 +118,7 @@ def run_pipeline_verification():
             db.add(signal)
             db.flush()
             print(f"[6/6] Verified Signal database model record insertion. Signal ID: {signal.id}")
-            
+
             # 5. Simulate Portfolio & PaperTrade insert under transaction safety
             portfolio = Portfolio(
                 name="SmokeTestPortfolio_" + str(int(datetime.now(UTC).timestamp())),
@@ -129,20 +129,20 @@ def run_pipeline_verification():
             )
             db.add(portfolio)
             db.flush()
-            
+
             # Calculate fee, taxes and purchase
             fee = Decimal("0.05")
             spread = Decimal("0.02")
             slippage = Decimal("0.0005")
-            
+
             buy_capital = portfolio.cash_balance - fee
             execution_buy_price = mid_price * (Decimal("1.0") + (spread / Decimal("2.0"))) * (Decimal("1.0") + slippage)
-            
+
             # KUveyt Turk Gram buy taxes: %0.2 BSMV (Kambiyo vergisi)
             gross_amount = buy_capital / Decimal("1.002")
             taxes = gross_amount * Decimal("0.002")
             quantity = gross_amount / execution_buy_price
-            
+
             trade = PaperTrade(
                 portfolio_id=portfolio.id,
                 asset_id=asset.id,
@@ -155,10 +155,10 @@ def run_pipeline_verification():
                 net_amount=gross_amount + fee + taxes,
             )
             db.add(trade)
-            
+
             portfolio.cash_balance = Decimal("0.00")
             db.flush()
-            print(f"[SUCCESS] Mock Portfolio & PaperTrade executed and verified successfully.")
+            print("[SUCCESS] Mock Portfolio & PaperTrade executed and verified successfully.")
             print(f"          Starting Portfolio: ${portfolio.initial_cash:.2f}")
             print(f"          Remaining Cash    : ${portfolio.cash_balance:.2f}")
             print(f"          Bought Quantity   : {trade.quantity:.4f} grams at ${trade.price:.4f}")

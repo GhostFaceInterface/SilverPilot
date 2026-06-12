@@ -262,7 +262,11 @@ async def test_auto_trading_blended_bullish_consensus():
         prev_indicator = indicators[-2] if len(indicators) > 1 else None
 
         settings = Settings(
-            auto_trading_enabled=True, strategy_name="blended", telegram_bot_token="test_token", telegram_chat_id=12345
+            auto_trading_enabled=True,
+            auto_trading_mode="paper",
+            strategy_name="blended",
+            telegram_bot_token="test_token",
+            telegram_chat_id=12345,
         )
 
         mock_risk = RiskDecision(

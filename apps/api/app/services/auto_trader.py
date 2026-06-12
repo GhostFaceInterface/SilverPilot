@@ -44,6 +44,8 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
     action_str = ""
     status_emoji = ""
     ACTION_MAP = {
+        "BUY": ("ALIM ADAYI (BUY)", "🟢"),
+        "SELL": ("SATIM ADAYI (SELL)", "🔴"),
         "paper_buy": ("ALIM (BUY)", "🟢"),
         "paper_sell": ("SATIM (SELL)", "🔴"),
         "blocked": ("ENGELLENDİ (BLOCKED)", "⚠️"),
@@ -272,8 +274,10 @@ async def _run_auto_trading_impl(db: Session, settings):
         news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
 
     # 4. Evaluate strategy based on config routing.
-    active_strategy = settings.strategy_name or "strategy_v2"
+    requested_strategy = settings.strategy_name or "strategy_v2"
+    active_strategy = requested_strategy
     action = "HOLD"
+    candidate_action = "HOLD"
     reason_code = "UNKNOWN"
     confidence = Decimal("0.5000")
     stop_loss_price = None
@@ -294,7 +298,21 @@ async def _run_auto_trading_impl(db: Session, settings):
     block_reason = next((flag for flag in prioritized_block_flags if flag in strategy_readiness_flags), None)
     has_block_flag = block_reason is not None
 
-    if has_block_flag:
+    invalid_strategy = active_strategy not in STRATEGY_REGISTRY
+
+    if invalid_strategy:
+        action = "HOLD"
+        reason_code = "BLOCKED_CONFIG_INVALID"
+        confidence = Decimal("0.9900")
+        details = {
+            "strategy_name": active_strategy,
+            "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"},
+            "timeframe_inputs": summarize_timeframe_inputs(timeframe_contexts),
+            "agent_sentiment": news_sentiment,
+            "readiness_block_flags": strategy_readiness_flags,
+            "config_error": f"Strategy {active_strategy} not registered in STRATEGY_REGISTRY",
+        }
+    elif has_block_flag:
         action = "HOLD"
         reason_code = block_reason
         confidence_map = {
@@ -314,9 +332,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         }
     else:
         # Resolve strategy from STRATEGY_REGISTRY
-        strategy = STRATEGY_REGISTRY.get(active_strategy)
-        if not strategy:
-            raise ValueError(f"Strategy {active_strategy} not registered in STRATEGY_REGISTRY")
+        strategy = STRATEGY_REGISTRY[active_strategy]
 
         close = latest_indicator.close_usd_oz if latest_indicator else None
         rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
@@ -404,6 +420,7 @@ async def _run_auto_trading_impl(db: Session, settings):
             details.update(strategy_decision.exit_metadata)
 
     logger.info("Strategy %s evaluation: action=%s reason=%s.", active_strategy, action, reason_code)
+    candidate_action = action
 
     risk_decision_val = "APPROVED"
 
@@ -419,6 +436,34 @@ async def _run_auto_trading_impl(db: Session, settings):
         reason_code = filter_reason
 
     details["agent_filter_reason"] = filter_reason or None
+    decision_envelope = build_decision_envelope(
+        mode=settings.auto_trading_mode,
+        asset_symbol=asset.symbol,
+        requested_strategy=requested_strategy,
+        resolved_strategy=active_strategy if not invalid_strategy else None,
+        candidate_action=candidate_action,
+        final_action=action,
+        reason_code=reason_code,
+        timeframe_contexts=timeframe_contexts,
+        readiness_block_flags=strategy_readiness_flags,
+        filter_reason=filter_reason,
+        execution={
+            "status": "pending",
+            "skipped_reason": None,
+            "trade_id": None,
+        },
+        notification={
+            "sent": False,
+            "skipped_reason": "pending",
+            "cooldown_seconds": settings.hold_notification_cooldown_minutes * 60,
+        },
+    )
+    if invalid_strategy:
+        decision_envelope["execution"] = {
+            "status": "skipped",
+            "skipped_reason": "config_invalid",
+            "trade_id": None,
+        }
 
     signal = Signal(
         observed_at=latest_snapshot.observed_at,
@@ -427,7 +472,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         action=action,
         reason_code=reason_code,
         price_usd_oz=latest_snapshot.mid_price,
-        details_json=details,
+        details_json={**details, "decision_envelope": decision_envelope},
     )
     db.add(signal)
     db.flush()
@@ -436,8 +481,16 @@ async def _run_auto_trading_impl(db: Session, settings):
     buy_price = latest_snapshot.buy_price if latest_snapshot.buy_price else latest_snapshot.mid_price
     sell_price = latest_snapshot.sell_price if latest_snapshot.sell_price else latest_snapshot.mid_price
 
+    execution_result = decision_envelope["execution"]
+
     # 6. Trade execution via trade intents only.
-    if action == "BUY" and not has_open_position:
+    if settings.auto_trading_mode == "diagnostic":
+        execution_result = {
+            "status": "skipped",
+            "skipped_reason": "diagnostic_mode",
+            "trade_id": None,
+        }
+    elif action == "BUY" and not has_open_position:
         intent = TradeIntent(
             portfolio_name="gram-paper",
             asset_symbol="XAG_GRAM",
@@ -461,12 +514,18 @@ async def _run_auto_trading_impl(db: Session, settings):
                     fee_amount=Decimal("0.05"),
                 )
             logger.info("Auto trader BUY intent executed: trade_id=%s status=%s", trade.id, trade.action)
+            execution_result = {
+                "status": "executed" if trade.action == "paper_buy" else "blocked",
+                "skipped_reason": None if trade.action == "paper_buy" else trade.risk_decision.reason_code,
+                "trade_id": trade.id,
+            }
         except Exception:
             logger.exception("Failed to execute auto trader BUY intent")
+            execution_result = {"status": "failed", "skipped_reason": "execution_exception", "trade_id": None}
         finally:
             db.commit = original_commit
 
-    elif action == "SELL" and has_open_position:
+    elif settings.auto_trading_mode == "paper" and action == "SELL" and has_open_position:
         intent = TradeIntent(
             portfolio_name="gram-paper",
             asset_symbol="XAG_GRAM",
@@ -487,14 +546,29 @@ async def _run_auto_trading_impl(db: Session, settings):
                     fee_amount=Decimal("0.05"),
                 )
             logger.info("Auto trader SELL intent executed: trade_id=%s status=%s", trade.id, trade.action)
+            execution_result = {
+                "status": "executed" if trade.action == "paper_sell" else "blocked",
+                "skipped_reason": None if trade.action == "paper_sell" else trade.risk_decision.reason_code,
+                "trade_id": trade.id,
+            }
         except Exception:
             logger.exception("Failed to execute auto trader SELL intent")
+            execution_result = {"status": "failed", "skipped_reason": "execution_exception", "trade_id": None}
         finally:
             db.commit = original_commit
+    else:
+        skipped_reason = "not_actionable"
+        if action == "BUY" and has_open_position:
+            skipped_reason = "position_already_open"
+        elif action == "SELL" and not has_open_position:
+            skipped_reason = "no_open_position"
+        elif reason_code == "BLOCKED_CONFIG_INVALID":
+            skipped_reason = "config_invalid"
+        execution_result = {"status": "skipped", "skipped_reason": skipped_reason, "trade_id": None}
 
     # 7. Extract notification data prior to commit/close to avoid DetachedInstanceError
     notification_data = {
-        "action": trade.action if trade else action,
+        "action": trade.action if trade else ("blocked" if reason_code.startswith("BLOCKED_") else action),
         "price": float(trade.price) if trade else float(latest_snapshot.mid_price),
         "quantity": float(trade.quantity) if trade else 0.0,
         "net_amount": float(trade.net_amount) if trade else 0.0,
@@ -535,24 +609,28 @@ async def _run_auto_trading_impl(db: Session, settings):
         notification_data["arbiter_decision"] = meta.get("arbiter_decision")
         notification_data["arbiter_reason"] = meta.get("arbiter_reason")
 
-    should_notify = True
-    if action == "HOLD":
-        stmt_prev = select(Signal)
-        if signal.id is not None:
-            stmt_prev = stmt_prev.where(Signal.id != signal.id)
-        stmt_prev = stmt_prev.order_by(Signal.observed_at.desc(), Signal.id.desc()).limit(1)
-        prev_signal = db.execute(stmt_prev).scalar_one_or_none()
+    notification_decision = should_send_trade_notification(
+        db,
+        signal=signal,
+        asset_symbol=asset.symbol,
+        strategy_name=active_strategy,
+        notification_action=notification_data["action"],
+        cooldown_minutes=settings.hold_notification_cooldown_minutes,
+    )
+    should_notify = notification_decision["sent"]
 
-        if prev_signal and prev_signal.action == "HOLD" and prev_signal.reason_code == reason_code:
-            t1 = prev_signal.observed_at
-            t2 = signal.observed_at
-            if t1.tzinfo is None:
-                t1 = t1.replace(tzinfo=UTC)
-            if t2.tzinfo is None:
-                t2 = t2.replace(tzinfo=UTC)
-            elapsed_time = (t2 - t1).total_seconds()
-            if elapsed_time < 6 * 3600:
-                should_notify = False
+    refreshed_details = dict(signal.details_json or {})
+    refreshed_envelope = dict(refreshed_details.get("decision_envelope") or {})
+    refreshed_envelope["execution"] = execution_result
+    refreshed_envelope["notification"] = notification_decision
+    if trade and trade.risk_decision:
+        refreshed_envelope["risk_preflight"] = {
+            "decision": trade.risk_decision.decision,
+            "reason_code": trade.risk_decision.reason_code,
+            "risk_level": trade.risk_decision.risk_level,
+        }
+    refreshed_details["decision_envelope"] = refreshed_envelope
+    signal.details_json = refreshed_details
 
     # Commit transactions
     db.commit()
@@ -561,6 +639,88 @@ async def _run_auto_trading_impl(db: Session, settings):
     is_silent = notification_data["action"] == "HOLD"
     if should_notify:
         await send_telegram_notification(notification_data, settings, disable_notification=is_silent)
+
+
+def build_decision_envelope(
+    *,
+    mode: str,
+    asset_symbol: str,
+    requested_strategy: str,
+    resolved_strategy: str | None,
+    candidate_action: str,
+    final_action: str,
+    reason_code: str,
+    timeframe_contexts: dict,
+    readiness_block_flags: list[str],
+    filter_reason: str | None,
+    execution: dict,
+    notification: dict,
+) -> dict:
+    return {
+        "schema_version": 1,
+        "mode": mode,
+        "asset_symbol": asset_symbol,
+        "requested_strategy": requested_strategy,
+        "resolved_strategy": resolved_strategy,
+        "candidate_action": candidate_action,
+        "final_action": final_action,
+        "reason_code": reason_code,
+        "readiness": {
+            "block_flags": list(readiness_block_flags),
+            "timeframes": summarize_timeframe_inputs(timeframe_contexts),
+        },
+        "risk_preflight": {"decision": "not_evaluated", "reason_code": None, "risk_level": None},
+        "agent_filter": {
+            "applied": filter_reason is not None,
+            "reason_code": filter_reason,
+        },
+        "execution": execution,
+        "notification": notification,
+    }
+
+
+def should_send_trade_notification(
+    db: Session,
+    *,
+    signal: Signal,
+    asset_symbol: str,
+    strategy_name: str,
+    notification_action: str,
+    cooldown_minutes: int,
+) -> dict:
+    cooldown_seconds = cooldown_minutes * 60
+    if notification_action != "HOLD" or cooldown_seconds <= 0:
+        return {"sent": True, "skipped_reason": None, "cooldown_seconds": cooldown_seconds}
+
+    stmt_prev = select(Signal).where(Signal.action == "HOLD", Signal.reason_code == signal.reason_code)
+    if signal.id is not None:
+        stmt_prev = stmt_prev.where(Signal.id != signal.id)
+    stmt_prev = stmt_prev.order_by(Signal.observed_at.desc(), Signal.id.desc()).limit(25)
+    previous_signals = db.execute(stmt_prev).scalars().all()
+
+    current_time = signal.observed_at
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=UTC)
+    for prev_signal in previous_signals:
+        details = prev_signal.details_json or {}
+        envelope = details.get("decision_envelope") or {}
+        if envelope:
+            if envelope.get("asset_symbol") != asset_symbol or envelope.get("resolved_strategy") != strategy_name:
+                continue
+        elif details.get("strategy_name") != strategy_name:
+            continue
+
+        previous_time = prev_signal.observed_at
+        if previous_time.tzinfo is None:
+            previous_time = previous_time.replace(tzinfo=UTC)
+        if (current_time - previous_time).total_seconds() < cooldown_seconds:
+            return {
+                "sent": False,
+                "skipped_reason": "hold_cooldown",
+                "cooldown_seconds": cooldown_seconds,
+            }
+
+    return {"sent": True, "skipped_reason": None, "cooldown_seconds": cooldown_seconds}
 
 
 def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:

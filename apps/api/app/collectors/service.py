@@ -229,7 +229,8 @@ def ingest_global_price(
     if asset.symbol == "XAG":
         gram_asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
         if gram_asset:
-            conversion_rate = get_conversion_rate(db, "XAG", "XAG_GRAM")
+            conversion_rate, conversion_source = get_conversion_rate_with_source(db, "XAG", "XAG_GRAM")
+            run.details_json = {**(run.details_json or {}), "conversion_source": conversion_source}
             gram_buy = _price(buy_price / conversion_rate)
             gram_sell = _price(sell_price / conversion_rate)
             gram_mid = _price(mid_price / conversion_rate)
@@ -596,7 +597,8 @@ def ingest_bank_price(
     if asset_symbol == "XAG":
         gram_asset = db.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one_or_none()
         if gram_asset:
-            conversion_rate = get_conversion_rate(db, "XAG", "XAG_GRAM")
+            conversion_rate, conversion_source = get_conversion_rate_with_source(db, "XAG", "XAG_GRAM")
+            run.details_json = {**(run.details_json or {}), "conversion_source": conversion_source}
             gram_snap_buy = _price(snap_buy / conversion_rate)
             gram_snap_sell = _price(snap_sell / conversion_rate)
             gram_snap_mid = _price(mid_price / conversion_rate)
@@ -1463,6 +1465,11 @@ def _ratio(numerator: int, denominator: int) -> float:
 
 
 def get_conversion_rate(db: Session, from_symbol: str, to_symbol: str) -> Decimal:
+    rate, _source = get_conversion_rate_with_source(db, from_symbol, to_symbol)
+    return rate
+
+
+def get_conversion_rate_with_source(db: Session, from_symbol: str, to_symbol: str) -> tuple[Decimal, str]:
     from sqlalchemy.orm import aliased
 
     try:
@@ -1474,7 +1481,18 @@ def get_conversion_rate(db: Session, from_symbol: str, to_symbol: str) -> Decima
             .join(to_asset, AssetConversion.to_asset_id == to_asset.id)
             .where(from_asset.symbol == from_symbol, to_asset.symbol == to_symbol)
         ).scalar_one_or_none()
-        return Decimal(str(rate)) if rate is not None else Decimal("31.1035")
+        if rate is None:
+            if from_symbol == "XAG" and to_symbol == "XAG_GRAM":
+                return Decimal("31.1035"), "default_missing"
+            raise CollectorError(f"Missing asset conversion rate for {from_symbol}->{to_symbol}")
+        conversion_rate = Decimal(str(rate))
+        if conversion_rate <= 0:
+            raise CollectorError(f"Invalid non-positive conversion rate for {from_symbol}->{to_symbol}")
+        return conversion_rate, "db"
     except Exception as e:
-        logger.warning(f"Error fetching conversion rate from DB, falling back: {e}")
-        return Decimal("31.1035")
+        if isinstance(e, CollectorError):
+            raise
+        if from_symbol == "XAG" and to_symbol == "XAG_GRAM":
+            logger.warning(f"Error fetching conversion rate from DB, falling back: {e}")
+            return Decimal("31.1035"), "default_db_error"
+        raise CollectorError(f"Error fetching conversion rate for {from_symbol}->{to_symbol}") from e

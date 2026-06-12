@@ -9,7 +9,6 @@ sys.path.append("/Users/boe747/SilverPilot/apps/api")
 from app.core.db import Base
 from app.core.config import Settings
 from app.collectors.public_sources import collect_global_xag_usd
-from app.models import CollectorRun
 
 # Setup in-memory sqlite for debugging
 engine = create_engine("sqlite:///:memory:")
@@ -25,45 +24,35 @@ yahoo_json = {
     "chart": {
         "result": [
             {
-                "meta": {
-                    "symbol": "SI=F",
-                    "currency": "USD"
-                },
+                "meta": {"symbol": "SI=F", "currency": "USD"},
                 "timestamp": [observed_timestamp],
                 "indicators": {
-                    "quote": [
-                        {
-                            "close": [28.45],
-                            "open": [28.40],
-                            "high": [28.50],
-                            "low": [28.35],
-                            "volume": [1000]
-                        }
-                    ]
-                }
+                    "quote": [{"close": [28.45], "open": [28.40], "high": [28.50], "low": [28.35], "volume": [1000]}]
+                },
             }
         ],
-        "error": None
+        "error": None,
     }
 }
 
+
 def handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json=yahoo_json)
+
 
 client = httpx.Client(transport=httpx.MockTransport(handler))
 
 try:
     # First seed assets since XAG is needed
     from app.models import Asset
+
     xag = Asset(symbol="XAG", name="Silver Spot", asset_type="metal", is_active=True)
     db.add(xag)
     db.commit()
 
     # Pass the priority override to include yahoo-si-f
     run, raw_inserted, snapshot = collect_global_xag_usd(
-        db, 
-        settings=Settings(global_xag_source_priority="yahoo-si-f"), 
-        client=client
+        db, settings=Settings(global_xag_source_priority="yahoo-si-f"), client=client
     )
     print("RUN STATUS:", run.status)
     print("ERROR MESSAGE:", run.error_message)

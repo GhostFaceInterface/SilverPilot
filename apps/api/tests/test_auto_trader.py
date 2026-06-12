@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.core.db import Base
 from app.models import Asset, PaperTrade, Portfolio, PriceSnapshot, RiskDecision, Signal, TechnicalIndicator
-from app.services.auto_trader import run_auto_trading
+from app.services.auto_trader import run_auto_trading, should_send_trade_notification
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
 
@@ -114,6 +114,13 @@ def _seed_runtime_state():
     return engine, db, asset, portfolio, snapshots, indicators
 
 
+def test_strategy_v2_is_default_for_auto_trading():
+    settings = Settings()
+    assert settings.strategy_name == "strategy_v2"
+    assert settings.auto_trading_mode == "diagnostic"
+    assert settings.hold_notification_cooldown_minutes == 360
+
+
 @pytest.mark.anyio
 async def test_auto_trading_disabled():
     engine, db, _, _, _, _ = _seed_runtime_state()
@@ -138,6 +145,7 @@ async def test_auto_trading_uses_strategy_v2_and_trade_intent():
     settings = Settings(
         auto_trading_enabled=True,
         strategy_name="strategy_v2",
+        auto_trading_mode="paper",
         telegram_bot_token="token",
         telegram_chat_id=1,
     )
@@ -171,6 +179,8 @@ async def test_auto_trading_uses_strategy_v2_and_trade_intent():
         assert signal.action == "BUY"
         assert signal.reason_code == "STRATEGY_V2_BUY_CONFIRMED"
         assert signal.details_json["strategy_name"] == "strategy_v2"
+        assert signal.details_json["decision_envelope"]["mode"] == "paper"
+        assert signal.details_json["decision_envelope"]["execution"]["status"] == "executed"
         assert signal.details_json["timeframe_policy"] == {"trend": "1d", "entry": "1h", "execution": "5m"}
         assert signal.details_json["stop_loss_price"] is not None
         assert signal.details_json["take_profit_price"] is not None
@@ -178,6 +188,93 @@ async def test_auto_trading_uses_strategy_v2_and_trade_intent():
         trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one()
         assert trade.risk_decision.reason_code == "RISK_CHECK_PASSED"
         assert portfolio.cash_balance < Decimal("0.001000")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_diagnostic_mode_does_not_execute_buy_or_sell():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="strategy_v2",
+        auto_trading_mode="diagnostic",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        envelope = signal.details_json["decision_envelope"]
+        assert signal.action == "BUY"
+        assert envelope["mode"] == "diagnostic"
+        assert envelope["candidate_action"] == "BUY"
+        assert envelope["execution"] == {
+            "status": "skipped",
+            "skipped_reason": "diagnostic_mode",
+            "trade_id": None,
+        }
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_invalid_strategy_blocks_without_exception_or_trade():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="missing_strategy",
+        auto_trading_mode="paper",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        envelope = signal.details_json["decision_envelope"]
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "BLOCKED_CONFIG_INVALID"
+        assert envelope["requested_strategy"] == "missing_strategy"
+        assert envelope["resolved_strategy"] is None
+        assert envelope["execution"]["skipped_reason"] == "config_invalid"
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()
 
     db.close()
@@ -315,6 +412,135 @@ async def test_auto_trading_holds_when_timeframe_sources_do_not_align():
         assert db.execute(select(PaperTrade)).scalars().all() == []
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+def test_hold_notification_dedupes_same_reason_inside_cooldown():
+    engine, db, _, _, snapshots, _ = _seed_runtime_state()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    previous = Signal(
+        observed_at=now - datetime.timedelta(minutes=30),
+        price_snapshot_id=snapshots["5m"].id,
+        action="HOLD",
+        reason_code="DAILY_TREND_MISSING",
+        price_usd_oz=Decimal("30.20"),
+        details_json={
+            "decision_envelope": {
+                "asset_symbol": "XAG_GRAM",
+                "resolved_strategy": "strategy_v2",
+            }
+        },
+    )
+    current = Signal(
+        observed_at=now,
+        price_snapshot_id=snapshots["5m"].id,
+        action="HOLD",
+        reason_code="DAILY_TREND_MISSING",
+        price_usd_oz=Decimal("30.20"),
+        details_json={},
+    )
+    db.add_all([previous, current])
+    db.flush()
+
+    decision = should_send_trade_notification(
+        db,
+        signal=current,
+        asset_symbol="XAG_GRAM",
+        strategy_name="strategy_v2",
+        notification_action="HOLD",
+        cooldown_minutes=360,
+    )
+
+    assert decision == {"sent": False, "skipped_reason": "hold_cooldown", "cooldown_seconds": 21600}
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+def test_hold_notification_sends_when_reason_changes():
+    engine, db, _, _, snapshots, _ = _seed_runtime_state()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    previous = Signal(
+        observed_at=now - datetime.timedelta(minutes=30),
+        price_snapshot_id=snapshots["5m"].id,
+        action="HOLD",
+        reason_code="DAILY_TREND_MISSING",
+        price_usd_oz=Decimal("30.20"),
+        details_json={
+            "decision_envelope": {
+                "asset_symbol": "XAG_GRAM",
+                "resolved_strategy": "strategy_v2",
+            }
+        },
+    )
+    current = Signal(
+        observed_at=now,
+        price_snapshot_id=snapshots["5m"].id,
+        action="HOLD",
+        reason_code="ENTRY_TIMEFRAME_STALE",
+        price_usd_oz=Decimal("30.20"),
+        details_json={},
+    )
+    db.add_all([previous, current])
+    db.flush()
+
+    decision = should_send_trade_notification(
+        db,
+        signal=current,
+        asset_symbol="XAG_GRAM",
+        strategy_name="strategy_v2",
+        notification_action="HOLD",
+        cooldown_minutes=360,
+    )
+
+    assert decision == {"sent": True, "skipped_reason": None, "cooldown_seconds": 21600}
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+def test_non_hold_notification_ignores_hold_cooldown():
+    engine, db, _, _, snapshots, _ = _seed_runtime_state()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    previous = Signal(
+        observed_at=now - datetime.timedelta(minutes=30),
+        price_snapshot_id=snapshots["5m"].id,
+        action="HOLD",
+        reason_code="DAILY_TREND_MISSING",
+        price_usd_oz=Decimal("30.20"),
+        details_json={
+            "decision_envelope": {
+                "asset_symbol": "XAG_GRAM",
+                "resolved_strategy": "strategy_v2",
+            }
+        },
+    )
+    current = Signal(
+        observed_at=now,
+        price_snapshot_id=snapshots["5m"].id,
+        action="BUY",
+        reason_code="STRATEGY_V2_BUY_CONFIRMED",
+        price_usd_oz=Decimal("30.20"),
+        details_json={},
+    )
+    db.add_all([previous, current])
+    db.flush()
+
+    decision = should_send_trade_notification(
+        db,
+        signal=current,
+        asset_symbol="XAG_GRAM",
+        strategy_name="strategy_v2",
+        notification_action="paper_buy",
+        cooldown_minutes=360,
+    )
+
+    assert decision == {"sent": True, "skipped_reason": None, "cooldown_seconds": 21600}
 
     db.close()
     Base.metadata.drop_all(bind=engine)

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.core.db import SessionLocal
-from app.models import Asset, Portfolio, Provider, AssetConversion
+from app.models import Asset, Portfolio, Provider, AssetConversion, TenantPortfolio
 
 
 from sqlalchemy import text
@@ -104,6 +104,30 @@ def seed_development_data() -> None:
         (xag is not None and xag_gram is not None and not has_conversion) and db.add(
             AssetConversion(from_asset_id=xag.id, to_asset_id=xag_gram.id, conversion_rate=Decimal("31.1035"))
         )
+
+        # 6. Seed default tenant/provider binding for provider-aware paper cost models.
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one_or_none()
+        kuveyt = db.query(Provider).filter(Provider.name == "kuveyt_turk").one_or_none()
+        if portfolio is not None and kuveyt is not None:
+            has_tenant_portfolio = (
+                db.query(TenantPortfolio)
+                .filter(
+                    TenantPortfolio.tenant_id == "default",
+                    TenantPortfolio.portfolio_id == portfolio.id,
+                    TenantPortfolio.provider_id == kuveyt.id,
+                )
+                .first()
+                is not None
+            )
+            if not has_tenant_portfolio:
+                db.add(
+                    TenantPortfolio(
+                        tenant_id="default",
+                        portfolio_id=portfolio.id,
+                        provider_id=kuveyt.id,
+                        is_active=True,
+                    )
+                )
 
         db.commit()
     finally:

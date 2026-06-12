@@ -17,11 +17,16 @@ api_path = os.path.join(root_path, "apps", "api")
 if api_path not in sys.path:
     sys.path.insert(0, api_path)
 
-from app.core.db import SessionLocal
-from app.models.entities import (
-    Asset, PriceSnapshot, RawFxRate, TechnicalIndicator,
-    HistoricalAgentCache, CollectorRun
+from app.core.db import SessionLocal  # noqa: E402
+from app.models.entities import (  # noqa: E402
+    Asset,
+    PriceSnapshot,
+    RawFxRate,
+    TechnicalIndicator,
+    HistoricalAgentCache,
+    CollectorRun,
 )
+
 
 def seed_data():
     db = SessionLocal()
@@ -32,7 +37,7 @@ def seed_data():
             asset = Asset(symbol="XAG", name="Silver", asset_type="metal", is_active=True)
             db.add(asset)
             db.flush()
-        
+
         # Add CollectorRun
         start_time = datetime.now(UTC) - timedelta(days=20)
         run = db.query(CollectorRun).filter(CollectorRun.collector_name == "tcmb_usd_try").first()
@@ -45,11 +50,11 @@ def seed_data():
                 records_inserted=1,
                 started_at=start_time,
                 finished_at=start_time,
-                details_json={}
+                details_json={},
             )
             db.add(run)
             db.flush()
-        
+
         # Add RawFxRate
         fx = db.query(RawFxRate).filter(RawFxRate.base_currency == "USD").first()
         if not fx:
@@ -63,7 +68,7 @@ def seed_data():
                 fetched_at=start_time,
                 raw_payload_hash="dummy",
                 parser_version="1.0.0",
-                payload_json={}
+                payload_json={},
             )
             db.add(fx)
             db.flush()
@@ -78,7 +83,7 @@ def seed_data():
 
             buy_price = mid * 1.005
             sell_price = mid * 0.995
-            
+
             p = PriceSnapshot(
                 asset_id=asset.id,
                 source="kuveyt_public_silver",
@@ -88,7 +93,7 @@ def seed_data():
                 currency="TRY",
                 spread_absolute=Decimal(str(buy_price - sell_price)),
                 spread_percent=Decimal("1.0"),
-                observed_at=t
+                observed_at=t,
             )
             db.add(p)
             db.flush()
@@ -110,22 +115,24 @@ def seed_data():
                 sma_50=Decimal(str(mid)),
                 sma_200=Decimal(str(mid)),
                 atr_14=Decimal("0.5"),
-                xau_xag_ratio=Decimal("80.0")
+                xau_xag_ratio=Decimal("80.0"),
             )
             db.add(ind)
-            
+
             # Add Agent Veto records occasionally
             if i % 10 == 0:
-                db.add(HistoricalAgentCache(
-                    agent_name="news-agent",
-                    event_type="news_sentiment",
-                    timestamp=t,
-                    value_json={
-                        "decision": "BULLISH" if i % 20 == 0 else "BEARISH",
-                        "reason": "Mock sentiment",
-                        "confidence": 0.85
-                    }
-                ))
+                db.add(
+                    HistoricalAgentCache(
+                        agent_name="news-agent",
+                        event_type="news_sentiment",
+                        timestamp=t,
+                        value_json={
+                            "decision": "BULLISH" if i % 20 == 0 else "BEARISH",
+                            "reason": "Mock sentiment",
+                            "confidence": 0.85,
+                        },
+                    )
+                )
 
         db.commit()
         print(f"Successfully seeded database with {count} price indices.")
@@ -135,6 +142,7 @@ def seed_data():
         sys.exit(1)
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     seed_data()

@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     risk_ml_min_probability: float = Field(default=0.50, ge=0.0, le=1.0)
     risk_ml_model_path: str = "data/models/champion_model.pkl"
 
-    strategy_name: str = "rsi"
+    strategy_name: str = "strategy_v2"
     auto_trading_enabled: bool = True
+    auto_trading_mode: Literal["diagnostic", "paper"] = "diagnostic"
+    hold_notification_cooldown_minutes: int = Field(default=360, ge=0)
 
     postgres_db: str = "silverpilot"
     postgres_user: str = "silverpilot"

@@ -2,7 +2,9 @@ import os
 import sys
 import pytest
 from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -15,7 +17,8 @@ if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
 from app.core.db import Base
-from app.models import Asset, CollectorRun, PriceSnapshot, RawGlobalPrice, TechnicalIndicator
+from app.models import Asset, CollectorRun, PriceSnapshot, RawGlobalPrice, TechnicalIndicator, MarketBar
+from app.services.indicator_readiness import get_indicator_readiness
 
 # Import the backfill script
 import scripts.backfill_history as backfill_script
@@ -70,7 +73,7 @@ def test_backfill_success_and_failure():
         mock_get.return_value = mock_response
 
         # --- Test 1: Successful backfill ---
-        backfill_script.backfill()
+        backfill_script.backfill(min_bars=2)
 
         # Verify database inserts
         db = TestingSessionLocal()
@@ -92,11 +95,15 @@ def test_backfill_success_and_failure():
         indicators = db.query(TechnicalIndicator).all()
         # Since we ran calculate_indicators, verify it populated indicators
         assert len(indicators) == 4
+        assert db.query(MarketBar).count() == 4
+        assert all(indicator.market_bar_id is not None for indicator in indicators)
+        assert all(indicator.calculation_version == "technical-indicators-v2" for indicator in indicators)
+        assert indicators[-1].input_bar_count == 2
         db.close()
 
         # --- Test 2: Duplicate detection (Phase 2 & 3 set O(1) optimization) ---
         # Run again with the same mock data. It should identify all as duplicates
-        backfill_script.backfill()
+        backfill_script.backfill(min_bars=2)
 
         db = TestingSessionLocal()
         runs = db.query(CollectorRun).all()
@@ -107,17 +114,65 @@ def test_backfill_success_and_failure():
         assert runs[1].duplicates == 2
         db.close()
 
-        # --- Test 3: Failure scenario (Phase 1 Crash Safety) ---
-        # Mock httpx to raise a connection error
+        # --- Test 3: Failure scenario before DB mutation
         mock_get.side_effect = httpx.RequestError("Connection failed")
 
         with pytest.raises(httpx.RequestError):
-            backfill_script.backfill()
+            backfill_script.backfill(min_bars=2)
 
         db = TestingSessionLocal()
         runs = db.query(CollectorRun).all()
-        assert len(runs) == 3
-        # Last run should have failed
-        assert runs[2].status == "failed"
-        assert "Connection failed" in runs[2].error_message
+        assert len(runs) == 2
         db.close()
+
+
+def test_1d_backfill_creates_marketbar_linked_ready_indicators():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    start = datetime.now(UTC) - timedelta(days=59)
+    rows = []
+    for idx in range(60):
+        price = 28 + (idx / 10)
+        rows.append(
+            {
+                "timestamp": int((start + timedelta(days=idx)).timestamp()),
+                "open": price - 0.1,
+                "high": price + 0.2,
+                "low": price - 0.2,
+                "close": price,
+                "volume": 1000 + idx,
+            }
+        )
+    history = pd.DataFrame(rows)
+
+    with (
+        patch("scripts.backfill_history.SessionLocal", TestingSessionLocal),
+        patch("scripts.backfill_history.fetch_yahoo_daily_history", return_value=history),
+    ):
+        backfill_script.backfill(assets=["XAG_GRAM"], timeframes=["1d"], min_bars=60)
+
+    db = TestingSessionLocal()
+    try:
+        readiness = get_indicator_readiness(
+            db,
+            asset_symbol="XAG_GRAM",
+            timeframe="1d",
+            required_min_bar_count=50,
+            max_age_minutes=48 * 60,
+            allowed_sources=("yahoo-si-f",),
+        )
+        assert readiness.status == "ready"
+        assert readiness.usable is True
+        assert readiness.input_bar_count == 60
+        assert readiness.market_bar_id is not None
+        assert db.query(MarketBar).count() == 60
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()

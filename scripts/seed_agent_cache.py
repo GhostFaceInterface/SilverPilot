@@ -1,7 +1,5 @@
 import os
 import sys
-from datetime import datetime, UTC
-from decimal import Decimal
 
 # Path setup to import app modules from apps/api
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -10,8 +8,9 @@ api_path = os.path.join(root_path, "apps", "api")
 if api_path not in sys.path:
     sys.path.insert(0, api_path)
 
-from app.core.db import SessionLocal
-from app.models import Asset, PriceSnapshot, TechnicalIndicator
+from app.core.db import SessionLocal  # noqa: E402
+from app.models import Asset, PriceSnapshot, TechnicalIndicator  # noqa: E402
+
 
 def seed_cache():
     db = SessionLocal()
@@ -25,7 +24,9 @@ def seed_cache():
             sys.exit(1)
 
         if HistoricalAgentCache is None:
-            print("\033[1;31m[ERROR] HistoricalAgentCache model is None. Please check if it was imported correctly.\033[0m")
+            print(
+                "\033[1;31m[ERROR] HistoricalAgentCache model is None. Please check if it was imported correctly.\033[0m"
+            )
             sys.exit(1)
 
         print("\033[1;34m[INFO] Fetching Asset XAG...\033[0m")
@@ -44,7 +45,7 @@ def seed_cache():
 
         for timeframe in timeframes:
             print(f"\033[1;34m[INFO] Querying price snapshots for timeframe '{timeframe}'...\033[0m")
-            
+
             # Fetch PriceSnapshots that have a TechnicalIndicator record for this timeframe
             records = (
                 db.query(PriceSnapshot)
@@ -88,13 +89,10 @@ def seed_cache():
                 news_val = {
                     "sentiment": sentiment,
                     "confidence": confidence,
-                    "summary_markdown": f"Historical mock sentiment for price bar on {observed_at}"
+                    "summary_markdown": f"Historical mock sentiment for price bar on {observed_at}",
                 }
                 news_entry = HistoricalAgentCache(
-                    agent_name="news-agent",
-                    event_type="news_sentiment",
-                    timestamp=observed_at,
-                    value_json=news_val
+                    agent_name="news-agent", event_type="news_sentiment", timestamp=observed_at, value_json=news_val
                 )
                 cache_entries.append(news_entry)
 
@@ -112,13 +110,10 @@ def seed_cache():
                 risk_val = {
                     "decision": decision,
                     "confidence": risk_conf,
-                    "critique_markdown": f"Historical mock critique for price bar on {observed_at}"
+                    "critique_markdown": f"Historical mock critique for price bar on {observed_at}",
                 }
                 risk_entry = HistoricalAgentCache(
-                    agent_name="risk-agent",
-                    event_type="signal_critique",
-                    timestamp=observed_at,
-                    value_json=risk_val
+                    agent_name="risk-agent", event_type="signal_critique", timestamp=observed_at, value_json=risk_val
                 )
                 cache_entries.append(risk_entry)
 
@@ -127,7 +122,9 @@ def seed_cache():
                 db.add_all(cache_entries)
                 db.commit()
                 total_seeded += len(cache_entries)
-                print(f"\033[1;32m[SUCCESS] Seeded {len(cache_entries)} entries ({total_records} bars) for timeframe '{timeframe}'.\033[0m")
+                print(
+                    f"\033[1;32m[SUCCESS] Seeded {len(cache_entries)} entries ({total_records} bars) for timeframe '{timeframe}'.\033[0m"
+                )
 
         print(f"\n\033[1;32m[COMPLETE] Successfully seeded a total of {total_seeded} cache entries!\033[0m")
 
@@ -137,6 +134,7 @@ def seed_cache():
         raise exc
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     seed_cache()
