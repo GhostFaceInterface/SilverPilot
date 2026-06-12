@@ -9,7 +9,16 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
 from app.core.db import Base
-from app.models import Asset, PaperTrade, Portfolio, PriceSnapshot, RiskDecision, Signal, TechnicalIndicator
+from app.models import (
+    Asset,
+    NotificationAudit,
+    PaperTrade,
+    Portfolio,
+    PriceSnapshot,
+    RiskDecision,
+    Signal,
+    TechnicalIndicator,
+)
 from app.services.auto_trader import run_auto_trading, should_send_trade_notification
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
@@ -191,6 +200,9 @@ async def test_auto_trading_uses_strategy_v2_and_trade_intent():
 
         trade = db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalar_one()
         assert trade.risk_decision.reason_code == "RISK_CHECK_PASSED"
+        audit = db.execute(select(NotificationAudit).where(NotificationAudit.signal_id == signal.id)).scalar_one()
+        assert audit.notification_action == "paper_buy"
+        assert audit.sent is True
         assert portfolio.cash_balance < Decimal("0.001000")
         bot.send_message.assert_called_once()
 
@@ -489,6 +501,21 @@ def test_hold_notification_dedupes_same_reason_inside_cooldown():
     )
     db.add_all([previous, current])
     db.flush()
+    db.add(
+        NotificationAudit(
+            signal_id=previous.id,
+            asset_symbol="XAG_GRAM",
+            strategy_name="strategy_v2",
+            notification_action="HOLD",
+            reason_code="DAILY_TREND_MISSING",
+            sent=True,
+            skipped_reason=None,
+            cooldown_seconds=21600,
+            observed_at=previous.observed_at,
+            details_json={},
+        )
+    )
+    db.flush()
 
     decision = should_send_trade_notification(
         db,
@@ -532,6 +559,21 @@ def test_hold_notification_sends_when_reason_changes():
     )
     db.add_all([previous, current])
     db.flush()
+    db.add(
+        NotificationAudit(
+            signal_id=previous.id,
+            asset_symbol="XAG_GRAM",
+            strategy_name="strategy_v2",
+            notification_action="HOLD",
+            reason_code="DAILY_TREND_MISSING",
+            sent=True,
+            skipped_reason=None,
+            cooldown_seconds=21600,
+            observed_at=previous.observed_at,
+            details_json={},
+        )
+    )
+    db.flush()
 
     decision = should_send_trade_notification(
         db,
@@ -574,6 +616,21 @@ def test_non_hold_notification_ignores_hold_cooldown():
         details_json={},
     )
     db.add_all([previous, current])
+    db.flush()
+    db.add(
+        NotificationAudit(
+            signal_id=previous.id,
+            asset_symbol="XAG_GRAM",
+            strategy_name="strategy_v2",
+            notification_action="HOLD",
+            reason_code="DAILY_TREND_MISSING",
+            sent=True,
+            skipped_reason=None,
+            cooldown_seconds=21600,
+            observed_at=previous.observed_at,
+            details_json={},
+        )
+    )
     db.flush()
 
     decision = should_send_trade_notification(

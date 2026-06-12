@@ -324,6 +324,27 @@ class Signal(Base):
     technical_indicator: Mapped["TechnicalIndicator | None"] = relationship()
 
 
+class NotificationAudit(Base):
+    __tablename__ = "notification_audits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    signal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("signals.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    asset_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_name: Mapped[str] = mapped_column(String(128), index=True)
+    notification_action: Mapped[str] = mapped_column(String(32), index=True)
+    reason_code: Mapped[str] = mapped_column(String(64), index=True)
+    sent: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    skipped_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cooldown_seconds: Mapped[int] = mapped_column(default=0)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    signal: Mapped["Signal | None"] = relationship()
+
+
 class Report(Base):
     __tablename__ = "reports"
 
@@ -485,6 +506,37 @@ class AssetConversion(Base):
     to_asset: Mapped["Asset"] = relationship(foreign_keys=[to_asset_id])
 
 
+class ProviderCostRule(Base):
+    __tablename__ = "provider_cost_rules"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_id",
+            "asset_id",
+            "asset_type",
+            "action",
+            "effective_from",
+            name="uq_provider_cost_rules_provider_asset_action_effective",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id", ondelete="CASCADE"), index=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), nullable=True, index=True)
+    asset_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(32), default="*", index=True)
+    fee_rate: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
+    tax_rate: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
+    fixed_fee: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    provider: Mapped["Provider"] = relationship()
+    asset: Mapped["Asset | None"] = relationship()
+
+
 Index(
     "ix_price_snapshots_asset_source_observed", PriceSnapshot.asset_id, PriceSnapshot.source, PriceSnapshot.observed_at
 )
@@ -503,4 +555,22 @@ Index(
     AgentMemoryEvent.event_type,
     AgentMemoryEvent.key,
     AgentMemoryEvent.created_at,
+)
+
+Index(
+    "ix_notification_audits_dedupe",
+    NotificationAudit.asset_symbol,
+    NotificationAudit.strategy_name,
+    NotificationAudit.notification_action,
+    NotificationAudit.reason_code,
+    NotificationAudit.observed_at,
+)
+
+Index(
+    "ix_provider_cost_rules_lookup",
+    ProviderCostRule.provider_id,
+    ProviderCostRule.asset_id,
+    ProviderCostRule.asset_type,
+    ProviderCostRule.action,
+    ProviderCostRule.is_active,
 )

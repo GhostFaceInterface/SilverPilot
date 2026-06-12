@@ -6,7 +6,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base
-from app.models import Asset, Provider, TenantPortfolio, StrategyParameter, AssetConversion, Portfolio, PaperTrade
+from app.models import (
+    Asset,
+    Provider,
+    TenantPortfolio,
+    StrategyParameter,
+    AssetConversion,
+    Portfolio,
+    PaperTrade,
+    ProviderCostRule,
+)
 from app.collectors.service import CollectorError, get_conversion_rate, get_conversion_rate_with_source
 from app.paper_trading.service import execute_paper_trade
 from app.schemas.paper_trading import PaperTradeRequest
@@ -55,6 +64,17 @@ def test_saas_models_creation():
         db.add(ac)
         db.flush()
 
+        cost_rule = ProviderCostRule(
+            provider_id=provider.id,
+            asset_id=asset_to.id,
+            action="paper_buy",
+            fee_rate=Decimal("0.001000"),
+            tax_rate=Decimal("0.002000"),
+            fixed_fee=Decimal("0.050000"),
+        )
+        db.add(cost_rule)
+        db.flush()
+
         db.commit()
 
         # Fetch and verify
@@ -72,6 +92,9 @@ def test_saas_models_creation():
 
         ac_db = db.query(AssetConversion).filter(AssetConversion.from_asset_id == asset_from.id).one()
         assert ac_db.conversion_rate == Decimal("1.234567")
+        rule_db = db.query(ProviderCostRule).filter(ProviderCostRule.provider_id == provider.id).one()
+        assert rule_db.fee_rate == Decimal("0.001000")
+        assert rule_db.tax_rate == Decimal("0.002000")
 
     finally:
         db.close()
@@ -282,6 +305,69 @@ def test_cost_model_uses_tenant_provider_or_kuveyt_default():
         assert bound_trade.fees == Decimal("0.100000")
         assert bound_trade.taxes == Decimal("0.200000")
         assert db.query(PaperTrade).count() == 2
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+def test_provider_cost_rule_overrides_legacy_registry_for_bound_provider():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSession()
+
+    try:
+        asset = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+        provider = Provider(name="ziraat", display_name="Ziraat Bank", is_active=True, config_json={})
+        db.add_all([asset, provider])
+        db.flush()
+
+        portfolio = Portfolio(
+            name="rule-bound",
+            base_currency="USD",
+            initial_cash=Decimal("1000.000000"),
+            cash_balance=Decimal("1000.000000"),
+            is_real_money=False,
+        )
+        db.add(portfolio)
+        db.flush()
+        db.add(TenantPortfolio(tenant_id="tenant-rule", portfolio_id=portfolio.id, provider_id=provider.id))
+        db.add(
+            ProviderCostRule(
+                provider_id=provider.id,
+                asset_id=asset.id,
+                action="paper_buy",
+                fee_rate=Decimal("0.004000"),
+                tax_rate=Decimal("0.003000"),
+                fixed_fee=Decimal("0.050000"),
+                is_active=True,
+            )
+        )
+        db.commit()
+
+        trade, _ = execute_paper_trade(
+            db,
+            PaperTradeRequest(
+                portfolio_name=portfolio.name,
+                asset_symbol="XAG_GRAM",
+                action="paper_buy",
+                quantity=Decimal("10.000000"),
+                buy_price=Decimal("10.000000"),
+                sell_price=Decimal("9.900000"),
+                fees=Decimal("0"),
+                taxes=Decimal("0"),
+            ),
+        )
+
+        assert trade.fees == Decimal("0.450000")
+        assert trade.taxes == Decimal("0.300000")
+        assert trade.cost_breakdown_json["fees"] == "0.450000"
+        assert trade.cost_breakdown_json["taxes"] == "0.300000"
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)

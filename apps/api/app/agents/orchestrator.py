@@ -17,6 +17,35 @@ from app.agents.auditor import run_system_audit
 logger = logging.getLogger("silverpilot.agents.orchestrator")
 
 
+def _fallback_blended_resolution_markdown(
+    *,
+    regime_info: dict,
+    strategy_votes: dict,
+    hermes_sentiment: dict | None = None,
+) -> str:
+    regime = regime_info.get("regime", "SIDEWAYS")
+    adx = float(regime_info.get("adx") or 0.0)
+    bb_bandwidth = float(regime_info.get("bb_bandwidth") or 0.0)
+    vote_parts = []
+    for label, key in (("RSI", "rsi"), ("Bollinger", "bollinger"), ("SMA Cross", "sma_cross")):
+        vote = strategy_votes.get(key) or {}
+        vote_parts.append(f"{label}: {vote.get('action', 'HOLD')} ({vote.get('reason', 'NO_REASON')})")
+
+    hermes_part = ""
+    if hermes_sentiment:
+        hermes_part = (
+            f" Hermes duyarlılığı {hermes_sentiment.get('sentiment', 'NEUTRAL')} "
+            f"(skor {float(hermes_sentiment.get('score') or 0.0):.4f}) olarak geldi."
+        )
+
+    return (
+        f"Arbiter gerekçesi model tarafından boş döndü. Sistem fail-closed özet üretti: "
+        f"rejim {regime}, ADX {adx:.2f}, Bollinger bant genişliği {bb_bandwidth:.4f}. "
+        f"Strateji oyları: {', '.join(vote_parts)}.{hermes_part} "
+        "Net yönlü teyit oluşmadığı için beklemede kalındı."
+    )
+
+
 async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Orchestrates the sequential execution of all SilverPilot agents.
@@ -253,7 +282,9 @@ async def run_multi_agent_analysis(db: Session, signal_id: Optional[int] = None)
                 resolved_stance = "NEUTRAL"
             confidence = float(data.get("confidence", 0.5))
             confidence = max(0.0, min(1.0, confidence))
-            resolution_markdown = str(data.get("resolution_markdown", "No details provided by arbiter."))
+            resolution_markdown = str(data.get("resolution_markdown") or "").strip()
+            if not resolution_markdown:
+                resolution_markdown = "No details provided by arbiter."
 
         except Exception as resolve_err:
             logger.warning(f"Supreme Arbiter execution or parse failed: {resolve_err}")
@@ -337,7 +368,7 @@ async def run_blended_consensus_resolution(
     mid_p = float(latest_snapshot.mid_price) if latest_snapshot else 0.0
     user_prompt = (
         f"Consensus Resolution Inputs:\n\n"
-        f"Market Snapshot Price: {mid_p:.4f} USD/oz\n"
+        f"Market Snapshot Price: {mid_p:.4f} USD/gram\n"
         f"Detected Market Regime: {regime_info.get('regime', 'SIDEWAYS')} (ADX: {regime_info.get('adx', 0.0):.2f}, Bollinger Bandwidth: {regime_info.get('bb_bandwidth', 0.0):.4f})\n\n"
         f"Strategy Votes:\n"
         f"- RSI (14): {strategy_votes.get('rsi', {}).get('action')} ({strategy_votes.get('rsi', {}).get('reason')})\n"
@@ -392,7 +423,13 @@ async def run_blended_consensus_resolution(
             resolved_stance = "NEUTRAL"
         confidence = float(data.get("confidence", 0.5))
         confidence = max(0.0, min(1.0, confidence))
-        resolution_markdown = str(data.get("resolution_markdown", "No details provided by arbiter."))
+        resolution_markdown = str(data.get("resolution_markdown") or "").strip()
+        if not resolution_markdown:
+            resolution_markdown = _fallback_blended_resolution_markdown(
+                regime_info=regime_info,
+                strategy_votes=strategy_votes,
+                hermes_sentiment=hermes_sentiment,
+            )
 
     except Exception as e:
         logger.error(f"Supreme Arbiter call failed in blended consensus: {e}", exc_info=True)

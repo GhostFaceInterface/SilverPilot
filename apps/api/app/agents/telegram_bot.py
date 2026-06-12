@@ -561,7 +561,9 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
 
     consensus_event = await run_blended_consensus_resolution(db, regime_info, strategy_votes, latest_snapshot)
     resolved_stance = consensus_event.value_json.get("resolved_stance", "NEUTRAL")
-    resolution_markdown = consensus_event.value_json.get("resolution_markdown", "Gerekçe bulunamadı.")
+    resolution_markdown = (consensus_event.value_json.get("resolution_markdown") or "").strip()
+    if not resolution_markdown:
+        resolution_markdown = "Arbiter gerekçesi boş döndü; teknik oylar ve rejim üzerinden beklemede kalındı."
 
     regime = regime_info.get("regime", "SIDEWAYS")
     regime_label = "Yatay Sakin Piyasa (SIDEWAYS)"
@@ -587,6 +589,12 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
         "🟢 AL" if resolved_stance == "BULLISH" else ("🔴 SAT" if resolved_stance == "BEARISH" else "⚪️ BEKLE")
     )
     arbiter_reason = escape_html_response(resolution_markdown)
+    indicator_details = (
+        f"\n📊 <b>Teknik Göstergeler:</b>\n"
+        f"• RSI (14): {float(latest_indicator.rsi_14 or 0.0):,.2f}\n"
+        f"• SMA (20/50): {float(latest_indicator.sma_20 or 0.0):,.4f} / {float(latest_indicator.sma_50 or 0.0):,.4f}\n"
+        f"• Bollinger (U/L): {float(latest_indicator.bb_upper_20_2 or 0.0):,.4f} / {float(latest_indicator.bb_lower_20_2 or 0.0):,.4f}\n"
+    )
 
     price = float(latest_snapshot.mid_price)
     cash_balance = float(portfolio.cash_balance)
@@ -604,6 +612,7 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
         f"📝 <b>Gerekçe:</b> {arbiter_reason}\n\n"
         f"💵 <b>Nakit Bakiyesi:</b> {cash_balance:,.2f} USD\n"
         f"🥈 <b>Gümüş Portföyü:</b> {xag_balance:,.4f} XAG_GRAM\n"
+        f"{indicator_details}"
     )
     return msg
 

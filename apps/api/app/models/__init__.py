@@ -15,6 +15,7 @@ from app.models.entities import (
     RiskDecision,
     RiskRule,
     Signal,
+    NotificationAudit,
     TechnicalIndicator,
     LLMCallTrace,
     MLInferenceAudit,
@@ -25,6 +26,7 @@ from app.models.entities import (
     TenantPortfolio,
     StrategyParameter,
     AssetConversion,
+    ProviderCostRule,
 )
 
 __all__ = [
@@ -44,6 +46,7 @@ __all__ = [
     "RiskDecision",
     "RiskRule",
     "Signal",
+    "NotificationAudit",
     "TechnicalIndicator",
     "LLMCallTrace",
     "MLInferenceAudit",
@@ -54,4 +57,5 @@ __all__ = [
     "TenantPortfolio",
     "StrategyParameter",
     "AssetConversion",
+    "ProviderCostRule",
 ]

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Asset, Portfolio, Signal, AgentMemoryEvent
+from app.models import Asset, Portfolio, Signal, AgentMemoryEvent, NotificationAudit
 from app.services.strategy import StrategyDecision, StrategyRunner, STRATEGY_REGISTRY
 from app.paper_trading.service import calculate_position
 from app.services.indicator_readiness import get_latest_indicator_context
@@ -159,6 +159,18 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
             "🟢 AL" if arbiter_stance == "BULLISH" else ("🔴 SAT" if arbiter_stance == "BEARISH" else "⚪️ BEKLE")
         )
         arbiter_reason = escape_html_response(trade_data.get("arbiter_reason", "Gerekçe belirtilmedi."))
+        if not arbiter_reason.strip():
+            arbiter_reason = "Arbiter gerekçesi boş döndü; teknik oylar ve rejim üzerinden beklemede kalındı."
+
+        indicator_details = ""
+        indicators = trade_data.get("indicators") or {}
+        if indicators:
+            indicator_details = (
+                f"\n📊 <b>Teknik Göstergeler:</b>\n"
+                f"• RSI (14): {indicators.get('rsi', 0.0):,.2f}\n"
+                f"• SMA (20/50): {indicators.get('sma_20', 0.0):,.4f} / {indicators.get('sma_50', 0.0):,.4f}\n"
+                f"• Bollinger (U/L): {indicators.get('bb_upper', 0.0):,.4f} / {indicators.get('bb_lower', 0.0):,.4f}\n"
+            )
 
         msg = (
             f"📊 <b>SilverPilot Canlı Analiz Raporu</b>\n\n"
@@ -182,6 +194,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         msg += f"💵 <b>Nakit Bakiyesi:</b> {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
         if "xag_balance" in trade_data:
             msg += f"🥈 <b>Gümüş Portföyü:</b> {trade_data['xag_balance']:,.4f} XAG_GRAM\n"
+        msg += indicator_details
 
         risk_decision = trade_data.get("risk_decision")
         if risk_decision:
@@ -710,6 +723,15 @@ async def _run_auto_trading_impl(db: Session, settings):
         cooldown_minutes=settings.hold_notification_cooldown_minutes,
     )
     should_notify = notification_decision["sent"]
+    record_notification_audit(
+        db,
+        signal=signal,
+        asset_symbol=asset.symbol,
+        strategy_name=active_strategy,
+        notification_action=notification_data["action"],
+        decision=notification_decision,
+        details={"mode": settings.auto_trading_mode},
+    )
 
     refreshed_details = dict(signal.details_json or {})
     refreshed_envelope = dict(refreshed_details.get("decision_envelope") or {})
@@ -784,28 +806,33 @@ def should_send_trade_notification(
     if notification_action != "HOLD" or cooldown_seconds <= 0:
         return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
 
-    stmt_prev = select(Signal).where(Signal.action == "HOLD", Signal.reason_code == signal.reason_code)
-    if signal.id is not None:
-        stmt_prev = stmt_prev.where(Signal.id != signal.id)
-    stmt_prev = stmt_prev.order_by(Signal.observed_at.desc(), Signal.id.desc()).limit(25)
-    previous_signals = db.execute(stmt_prev).scalars().all()
-
     current_time = signal.observed_at
     if current_time.tzinfo is None:
         current_time = current_time.replace(tzinfo=UTC)
-    for prev_signal in previous_signals:
-        details = prev_signal.details_json or {}
-        envelope = details.get("decision_envelope") or {}
-        if envelope:
-            if envelope.get("asset_symbol") != asset_symbol or envelope.get("resolved_strategy") != strategy_name:
-                continue
-        elif details.get("strategy_name") != strategy_name:
-            continue
+    cutoff_time = current_time.timestamp() - cooldown_seconds
 
-        previous_time = prev_signal.observed_at
+    previous_audits = (
+        db.execute(
+            select(NotificationAudit)
+            .where(
+                NotificationAudit.asset_symbol == asset_symbol,
+                NotificationAudit.strategy_name == strategy_name,
+                NotificationAudit.notification_action == "HOLD",
+                NotificationAudit.reason_code == signal.reason_code,
+                NotificationAudit.sent.is_(True),
+            )
+            .order_by(NotificationAudit.observed_at.desc(), NotificationAudit.id.desc())
+            .limit(25)
+        )
+        .scalars()
+        .all()
+    )
+
+    for audit in previous_audits:
+        previous_time = audit.observed_at
         if previous_time.tzinfo is None:
             previous_time = previous_time.replace(tzinfo=UTC)
-        if (current_time - previous_time).total_seconds() < cooldown_seconds:
+        if previous_time.timestamp() > cutoff_time:
             return NotificationDecision(
                 sent=False,
                 skipped_reason="hold_cooldown",
@@ -813,6 +840,33 @@ def should_send_trade_notification(
             ).as_dict()
 
     return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
+
+
+def record_notification_audit(
+    db: Session,
+    *,
+    signal: Signal,
+    asset_symbol: str,
+    strategy_name: str,
+    notification_action: str,
+    decision: dict,
+    details: dict | None = None,
+) -> NotificationAudit:
+    audit = NotificationAudit(
+        signal_id=signal.id,
+        asset_symbol=asset_symbol,
+        strategy_name=strategy_name,
+        notification_action=notification_action,
+        reason_code=signal.reason_code,
+        sent=bool(decision["sent"]),
+        skipped_reason=decision.get("skipped_reason"),
+        cooldown_seconds=int(decision.get("cooldown_seconds") or 0),
+        observed_at=signal.observed_at,
+        details_json=details or {},
+    )
+    db.add(audit)
+    db.flush()
+    return audit
 
 
 def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:

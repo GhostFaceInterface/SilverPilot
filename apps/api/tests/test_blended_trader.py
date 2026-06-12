@@ -1,5 +1,6 @@
 import datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import create_engine, select
@@ -22,6 +23,7 @@ from app.models import (
 from app.services.regime import get_market_regime
 from app.services.strategy import StrategyRunner
 from app.services.auto_trader import run_auto_trading
+from app.agents.orchestrator import run_blended_consensus_resolution
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
 
@@ -402,7 +404,46 @@ async def test_auto_trading_blended_neutral_consensus_silent():
             assert called_args["disable_notification"] is True
             assert "BEKLE (HOLD)" in called_args["text"]
             assert "Test NEUTRAL justification." in called_args["text"]
+            assert "Teknik Göstergeler" in called_args["text"]
 
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+@pytest.mark.anyio
+async def test_blended_consensus_empty_reason_gets_fallback_and_uses_gram_unit():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = TestingSession()
+
+    try:
+        mock_llm_response = {"content": '{"resolved_stance": "NEUTRAL", "confidence": 0.75, "resolution_markdown": ""}'}
+        strategy_votes = {
+            "rsi": {"action": "HOLD", "reason": "RSI_NEUTRAL"},
+            "bollinger": {"action": "HOLD", "reason": "BB_NEUTRAL"},
+            "sma_cross": {"action": "HOLD", "reason": "SMA_NO_CROSSOVER"},
+        }
+
+        with patch("app.llm.gateway.DeepSeekGateway.generate_completion", return_value=mock_llm_response) as mock_llm:
+            event = await run_blended_consensus_resolution(
+                db=db,
+                regime_info={"regime": "SIDEWAYS", "adx": 12.34, "bb_bandwidth": 0.0123},
+                strategy_votes=strategy_votes,
+                latest_snapshot=SimpleNamespace(mid_price=Decimal("2.1400")),
+            )
+
+        reason = event.value_json["resolution_markdown"]
+        assert "Arbiter gerekçesi model tarafından boş döndü" in reason
+        assert "RSI: HOLD (RSI_NEUTRAL)" in reason
+        assert "beklemede kalındı" in reason
+        messages = mock_llm.call_args.kwargs["messages"]
+        assert "Market Snapshot Price: 2.1400 USD/gram" in messages[1]["content"]
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)

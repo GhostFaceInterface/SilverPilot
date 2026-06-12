@@ -2,10 +2,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, ROUND_DOWN
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Asset, PaperTrade, Portfolio, PortfolioSnapshot, PriceSnapshot, Provider, RawFxRate, RiskDecision
+from app.core.config import get_settings
+from app.models import (
+    Asset,
+    PaperTrade,
+    Portfolio,
+    PortfolioSnapshot,
+    PriceSnapshot,
+    Provider,
+    ProviderCostRule,
+    RawFxRate,
+    RiskDecision,
+)
 from app.models.entities import TenantPortfolio
 from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
@@ -43,6 +54,12 @@ class TradeCostBreakdown:
     mid_price: Decimal
 
 
+@dataclass(frozen=True)
+class ProviderCostRuleCosts:
+    fees: Decimal
+    taxes: Decimal
+
+
 def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperTrade, PortfolioSnapshot]:
     return _execute_paper_trade(db, request, precomputed_risk_decision=None)
 
@@ -67,26 +84,7 @@ def _execute_paper_trade(
     asset = _get_asset(db, request.asset_symbol)
 
     # --- Auto-inject fees and taxes using the active cost model ---
-    if asset.symbol == "XAG_GRAM":
-        price = request.buy_price if request.action == "paper_buy" else request.sell_price
-        is_buy = request.action == "paper_buy"
-        cost_model_key = _resolve_portfolio_provider_key(db, portfolio)
-        cost_model = COST_MODEL_REGISTRY[cost_model_key]
-
-        if request.quantity is not None:
-            qty = request.quantity
-            if request.fees == 0:
-                request.fees = _money(cost_model.calculate_fees(qty, price, is_buy))
-            if request.taxes == 0:
-                request.taxes = _money(cost_model.calculate_taxes(qty, price, is_buy))
-        elif request.cash_amount is not None and is_buy:
-            if request.fees == 0 and request.taxes == 0:
-                cost_ratio = cost_model.calculate_cost(Decimal("1.0"), Decimal("1.0"))
-                factor = Decimal("1.0") + cost_ratio
-                gross = request.cash_amount / factor
-                qty = gross / price
-                request.fees = _money(cost_model.calculate_fees(qty, price, is_buy))
-                request.taxes = _money(cost_model.calculate_taxes(qty, price, is_buy))
+    _inject_provider_costs(db, request=request, portfolio=portfolio, asset=asset)
 
     current_position = calculate_position(db, portfolio.id, asset.id)
 
@@ -202,17 +200,139 @@ def _latest_price_snapshot_id(db: Session, asset_id: int) -> int | None:
     ).scalar_one_or_none()
 
 
-def _resolve_portfolio_provider_key(db: Session, portfolio: Portfolio) -> str:
-    provider_name = db.execute(
-        select(Provider.name)
+def _inject_provider_costs(
+    db: Session,
+    *,
+    request: PaperTradeRequest,
+    portfolio: Portfolio,
+    asset: Asset,
+) -> None:
+    price = request.buy_price if request.action == "paper_buy" else request.sell_price
+    is_buy = request.action == "paper_buy"
+    provider = _resolve_portfolio_provider(db, portfolio)
+    rule = _resolve_provider_cost_rule(db, provider=provider, asset=asset, action=request.action)
+
+    if rule is not None:
+        if request.quantity is not None:
+            costs = _calculate_provider_rule_costs(rule, quantity=request.quantity, price=price)
+        elif request.cash_amount is not None and is_buy:
+            qty = _quantity_from_cash_amount(request.cash_amount, price=price, rule=rule)
+            costs = _calculate_provider_rule_costs(rule, quantity=qty, price=price)
+        else:
+            return
+
+        if request.fees == 0:
+            request.fees = costs.fees
+        if request.taxes == 0:
+            request.taxes = costs.taxes
+        return
+
+    settings = get_settings()
+    if asset.symbol != settings.auto_trading_asset_symbol:
+        return
+
+    cost_model_key = _resolve_legacy_cost_model_key(provider)
+    cost_model = COST_MODEL_REGISTRY[cost_model_key]
+    if request.quantity is not None:
+        qty = request.quantity
+        if request.fees == 0:
+            request.fees = _money(cost_model.calculate_fees(qty, price, is_buy))
+        if request.taxes == 0:
+            request.taxes = _money(cost_model.calculate_taxes(qty, price, is_buy))
+    elif request.cash_amount is not None and is_buy and request.fees == 0 and request.taxes == 0:
+        cost_ratio = cost_model.calculate_cost(Decimal("1.0"), Decimal("1.0"))
+        factor = Decimal("1.0") + cost_ratio
+        gross = request.cash_amount / factor
+        qty = gross / price
+        request.fees = _money(cost_model.calculate_fees(qty, price, is_buy))
+        request.taxes = _money(cost_model.calculate_taxes(qty, price, is_buy))
+
+
+def _resolve_portfolio_provider(db: Session, portfolio: Portfolio) -> Provider | None:
+    provider = db.execute(
+        select(Provider)
         .join(TenantPortfolio, TenantPortfolio.provider_id == Provider.id)
         .where(TenantPortfolio.portfolio_id == portfolio.id, TenantPortfolio.is_active.is_(True))
         .order_by(TenantPortfolio.id.asc())
         .limit(1)
     ).scalar_one_or_none()
-    if provider_name in COST_MODEL_REGISTRY:
-        return provider_name
+    if provider is not None:
+        return provider
+
+    settings = get_settings()
+    return db.execute(select(Provider).where(Provider.name == settings.default_provider_name)).scalar_one_or_none()
+
+
+def _resolve_legacy_cost_model_key(provider: Provider | None) -> str:
+    settings = get_settings()
+    if provider is not None and provider.name in COST_MODEL_REGISTRY:
+        return provider.name
+    if settings.default_provider_name in COST_MODEL_REGISTRY:
+        return settings.default_provider_name
     return "kuveyt_turk"
+
+
+def _resolve_provider_cost_rule(
+    db: Session,
+    *,
+    provider: Provider | None,
+    asset: Asset,
+    action: str,
+) -> ProviderCostRule | None:
+    if provider is None:
+        return None
+
+    now = datetime.now(UTC)
+    rules = (
+        db.execute(
+            select(ProviderCostRule)
+            .where(
+                ProviderCostRule.provider_id == provider.id,
+                ProviderCostRule.is_active.is_(True),
+                ProviderCostRule.action.in_([action, "*"]),
+                or_(ProviderCostRule.asset_id == asset.id, ProviderCostRule.asset_id.is_(None)),
+                or_(ProviderCostRule.asset_type == asset.asset_type, ProviderCostRule.asset_type.is_(None)),
+            )
+            .order_by(ProviderCostRule.asset_id.desc(), ProviderCostRule.asset_type.desc(), ProviderCostRule.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+    for rule in rules:
+        if rule.effective_from is not None and _as_aware(rule.effective_from) > now:
+            continue
+        if rule.effective_to is not None and _as_aware(rule.effective_to) <= now:
+            continue
+        return rule
+    return None
+
+
+def _calculate_provider_rule_costs(
+    rule: ProviderCostRule,
+    *,
+    quantity: Decimal,
+    price: Decimal,
+) -> ProviderCostRuleCosts:
+    gross = _money(quantity * price)
+    fees = _money(gross * Decimal(rule.fee_rate) + Decimal(rule.fixed_fee))
+    taxes = _money(gross * Decimal(rule.tax_rate))
+    return ProviderCostRuleCosts(fees=fees, taxes=taxes)
+
+
+def _quantity_from_cash_amount(cash_amount: Decimal, *, price: Decimal, rule: ProviderCostRule) -> Decimal:
+    fixed_fee = Decimal(rule.fixed_fee)
+    spendable = cash_amount - fixed_fee
+    if spendable <= 0:
+        raise PaperTradingError("cash_amount must exceed fixed provider fees")
+    variable_factor = Decimal("1.0") + Decimal(rule.fee_rate) + Decimal(rule.tax_rate)
+    return (spendable / (price * variable_factor)).quantize(MONEY_QUANT, rounding=ROUND_DOWN)
+
+
+def _as_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 def calculate_position(db: Session, portfolio_id: int, asset_id: int) -> Position:
