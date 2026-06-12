@@ -398,10 +398,10 @@ async def test_auto_trading_blended_neutral_consensus_silent():
             trade = db.execute(select(PaperTrade)).scalar_one_or_none()
             assert trade is None
 
-            # Verify silent Telegram message was sent with disable_notification=True
+            # HOLD notifications are delivered audibly; cooldown prevents spam.
             mock_bot_instance.send_message.assert_called_once()
             called_args = mock_bot_instance.send_message.call_args[1]
-            assert called_args["disable_notification"] is True
+            assert called_args["disable_notification"] is False
             assert "BEKLE (HOLD)" in called_args["text"]
             assert "Test NEUTRAL justification." in called_args["text"]
             assert "Teknik Göstergeler" in called_args["text"]

@@ -866,7 +866,7 @@ async def _run_auto_trading_impl(db: Session, settings):
     db.commit()
 
     # 8. Send Telegram message
-    is_silent = notification_data["action"] == "HOLD"
+    is_silent = False
     if should_notify:
         await send_telegram_notification(notification_data, settings, disable_notification=is_silent)
 
