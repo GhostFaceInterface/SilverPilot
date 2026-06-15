@@ -184,7 +184,7 @@ def test_indicator_readiness_route_includes_strategy_policy(db_session):
     policy_payload = {item["role"]: item for item in payload["policy_readiness"]}
     assert set(policy_payload) == {"trend", "entry", "execution"}
     assert policy_payload["trend"]["timeframe"] == "1d"
-    assert policy_payload["trend"]["max_age_minutes"] == 48 * 60
+    assert policy_payload["trend"]["max_age_minutes"] == 96 * 60
     assert policy_payload["entry"]["timeframe"] == "1h"
     assert policy_payload["entry"]["max_age_minutes"] == 3 * 60
     assert policy_payload["execution"]["timeframe"] == "5m"

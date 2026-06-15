@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     auto_trading_asset_symbol: str = "XAG_GRAM"
     auto_trading_portfolio_name: str = "gram-paper"
     auto_trading_sentiment_agent_name: str = "hermes-agent"
+    strategy_trend_max_age_minutes: int = Field(default=96 * 60, ge=1)
+    strategy_entry_max_age_minutes: int = Field(default=3 * 60, ge=1)
+    strategy_execution_max_age_minutes: int = Field(default=20, ge=1)
     hold_notification_cooldown_minutes: int = Field(default=360, ge=0)
     default_provider_name: str = "kuveyt_turk"
 

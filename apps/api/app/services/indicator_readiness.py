@@ -22,7 +22,7 @@ STRATEGY_TIMEFRAME_ROLES = {
     "execution": "5m",
 }
 STRATEGY_TIMEFRAME_POLICY = {
-    "1d": 48 * 60,
+    "1d": 96 * 60,
     "1h": 3 * 60,
     "5m": 20,
 }
@@ -44,6 +44,15 @@ DEFAULT_ALLOWED_SOURCES = (
     "metals-dev-silver-spot",
 )
 DEFAULT_REQUIRED_MIN_BAR_COUNT = 50
+
+
+def get_strategy_timeframe_policy() -> dict[str, int]:
+    settings = get_settings()
+    return {
+        "1d": settings.strategy_trend_max_age_minutes,
+        "1h": settings.strategy_entry_max_age_minutes,
+        "5m": settings.strategy_execution_max_age_minutes,
+    }
 
 
 @dataclass(frozen=True)

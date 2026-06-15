@@ -36,9 +36,9 @@ from app.paper_trading.service import PaperTradingError, calculate_position, exe
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.services.account_holdings import compute_account_holdings
 from app.services.indicator_readiness import (
-    STRATEGY_TIMEFRAME_POLICY,
     STRATEGY_TIMEFRAME_ROLES,
     get_indicator_readiness,
+    get_strategy_timeframe_policy,
 )
 from app.agents.hermes import run_hermes_sentiment_analysis
 from app.agents.risk import run_signal_critique
@@ -339,18 +339,19 @@ def get_indicator_readiness_status(
     )
     response_payload = payload.to_dict()
     if include_policy:
+        strategy_timeframe_policy = get_strategy_timeframe_policy()
         response_payload["timeframe_policy"] = dict(STRATEGY_TIMEFRAME_ROLES)
         response_payload["policy_readiness"] = [
             {
                 "role": role,
                 "timeframe": policy_timeframe,
-                "max_age_minutes": STRATEGY_TIMEFRAME_POLICY[policy_timeframe],
+                "max_age_minutes": strategy_timeframe_policy[policy_timeframe],
                 "readiness": get_indicator_readiness(
                     db,
                     asset_symbol=asset_symbol,
                     timeframe=policy_timeframe,
                     required_min_bar_count=required_min_bar_count,
-                    max_age_minutes=STRATEGY_TIMEFRAME_POLICY[policy_timeframe],
+                    max_age_minutes=strategy_timeframe_policy[policy_timeframe],
                 ).to_dict(),
             }
             for role, policy_timeframe in STRATEGY_TIMEFRAME_ROLES.items()

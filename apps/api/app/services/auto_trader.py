@@ -12,9 +12,9 @@ from app.models import Asset, Portfolio, Signal, AgentMemoryEvent, NotificationA
 from app.services.strategy import StrategyDecision, StrategyRunner, STRATEGY_REGISTRY
 from app.paper_trading.service import calculate_position
 from app.services.indicator_readiness import (
-    STRATEGY_TIMEFRAME_POLICY,
     STRATEGY_TIMEFRAME_ROLES,
     get_latest_indicator_context,
+    get_strategy_timeframe_policy,
 )
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
@@ -993,7 +993,7 @@ def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
             timeframe=timeframe,
             max_age_minutes=max_age_minutes,
         )
-        for timeframe, max_age_minutes in STRATEGY_TIMEFRAME_POLICY.items()
+        for timeframe, max_age_minutes in get_strategy_timeframe_policy().items()
     }
 
 
