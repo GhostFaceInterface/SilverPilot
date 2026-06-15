@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base
-from app.models import Asset, PaperTrade, Portfolio
+from app.models import AccountLedgerEntry, Asset, PaperTrade, Portfolio, TradeIntentRecord
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 
@@ -55,6 +55,11 @@ def test_buy_intent_missing_stop_or_target_is_blocked():
     assert trade.risk_decision.reason_code == "INTENT_METADATA_MISSING"
     assert portfolio.cash_balance == Decimal("600.000000")
     assert snapshot.cash_balance == Decimal("600.000000")
+    intent_record = db.execute(select(TradeIntentRecord)).scalar_one()
+    assert intent_record.status == "blocked"
+    assert intent_record.risk_decision_id == trade.risk_decision_id
+    assert trade.trade_intent_id == intent_record.id
+    assert db.execute(select(AccountLedgerEntry)).scalars().all() == []
 
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -85,6 +90,10 @@ def test_risk_blocked_intent_leaves_balances_unchanged():
     assert portfolio.cash_balance == Decimal("600.000000")
     assert snapshot.cash_balance == Decimal("600.000000")
     assert db.execute(select(PaperTrade)).scalar_one().action == "blocked"
+    intent_record = db.execute(select(TradeIntentRecord)).scalar_one()
+    assert intent_record.status == "blocked"
+    assert intent_record.reason_code == "STRATEGY_V2_BUY_CONFIRMED"
+    assert db.execute(select(PaperTrade)).scalar_one().trade_intent_id == intent_record.id
 
     db.close()
     Base.metadata.drop_all(bind=engine)

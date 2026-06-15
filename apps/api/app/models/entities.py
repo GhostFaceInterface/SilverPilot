@@ -15,15 +15,65 @@ class Asset(Base):
     name: Mapped[str] = mapped_column(String(128))
     asset_type: Mapped[str] = mapped_column(String(32))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"), nullable=True, index=True)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("measurement_units.id"), nullable=True, index=True)
+    quote_currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
 
     price_snapshots: Mapped[list["PriceSnapshot"]] = relationship(back_populates="asset")
     market_bars: Mapped[list["MarketBar"]] = relationship(back_populates="asset")
+    instrument: Mapped["Instrument | None"] = relationship()
+    unit: Mapped["MeasurementUnit | None"] = relationship()
+    quote_currency: Mapped["Currency | None"] = relationship()
 
     @property
     def currency(self) -> str:
         if self.symbol == "XAG_TRY":
             return "TRY"
+        if self.quote_currency is not None:
+            return self.quote_currency.code
         return "USD"
+
+
+class Currency(Base):
+    __tablename__ = "currencies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(8), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    numeric_code: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    minor_unit: Mapped[int] = mapped_column(default=2)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class MeasurementUnit(Base):
+    __tablename__ = "measurement_units"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    unit_type: Mapped[str] = mapped_column(String(32), index=True)
+    to_base_factor: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=Decimal("1"))
+    base_unit_code: Mapped[str] = mapped_column(String(32))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Instrument(Base):
+    __tablename__ = "instruments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    instrument_type: Mapped[str] = mapped_column(String(32), index=True)
+    native_currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
+    native_unit_id: Mapped[int | None] = mapped_column(ForeignKey("measurement_units.id"), nullable=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    native_currency: Mapped["Currency | None"] = relationship()
+    native_unit: Mapped["MeasurementUnit | None"] = relationship()
 
 
 class PriceSnapshot(Base):
@@ -273,6 +323,7 @@ class PaperTrade(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    trade_intent_id: Mapped[int | None] = mapped_column(ForeignKey("trade_intents.id"), nullable=True, index=True)
     action: Mapped[str] = mapped_column(String(32), index=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
@@ -287,7 +338,130 @@ class PaperTrade(Base):
 
     portfolio: Mapped[Portfolio] = relationship(back_populates="trades")
     asset: Mapped[Asset] = relationship()
+    trade_intent: Mapped["TradeIntentRecord | None"] = relationship()
     risk_decision: Mapped[RiskDecision | None] = relationship()
+
+
+class ProviderAccount(Base):
+    __tablename__ = "provider_accounts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "provider_id", "account_key", name="uq_provider_accounts_tenant_provider_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), default="default", index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True)
+    portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id"), nullable=True, index=True)
+    account_key: Mapped[str] = mapped_column(String(128), index=True)
+    display_name: Mapped[str] = mapped_column(String(128))
+    account_type: Mapped[str] = mapped_column(String(32), default="paper", index=True)
+    base_currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
+    is_paper: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    provider: Mapped["Provider"] = relationship()
+    portfolio: Mapped["Portfolio | None"] = relationship()
+    base_currency: Mapped["Currency | None"] = relationship()
+
+
+class TradeIntentRecord(Base):
+    __tablename__ = "trade_intents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), nullable=True, index=True)
+    portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id"), nullable=True, index=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0"))
+    reason_code: Mapped[str] = mapped_column(String(64), index=True)
+    stop_loss_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    take_profit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    expected_exit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="created", index=True)
+    risk_decision_id: Mapped[int | None] = mapped_column(ForeignKey("risk_decisions.id"), nullable=True, index=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+
+    signal: Mapped["Signal | None"] = relationship()
+    portfolio: Mapped["Portfolio | None"] = relationship()
+    asset: Mapped["Asset | None"] = relationship()
+    risk_decision: Mapped["RiskDecision | None"] = relationship()
+
+
+class AccountLedgerEntry(Base):
+    __tablename__ = "account_ledger_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("provider_accounts.id"), index=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"), nullable=True, index=True)
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"), nullable=True, index=True)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("measurement_units.id"), nullable=True, index=True)
+    currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
+    quote_currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
+    entry_type: Mapped[str] = mapped_column(String(32), index=True)
+    quantity_delta: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    cash_delta: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    gross_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    fees: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    taxes: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    paper_trade_id: Mapped[int | None] = mapped_column(ForeignKey("paper_trades.id"), nullable=True, index=True)
+    trade_intent_id: Mapped[int | None] = mapped_column(ForeignKey("trade_intents.id"), nullable=True, index=True)
+    risk_decision_id: Mapped[int | None] = mapped_column(ForeignKey("risk_decisions.id"), nullable=True, index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    account: Mapped["ProviderAccount"] = relationship()
+    asset: Mapped["Asset | None"] = relationship()
+    instrument: Mapped["Instrument | None"] = relationship()
+    unit: Mapped["MeasurementUnit | None"] = relationship()
+    currency: Mapped["Currency | None"] = relationship(foreign_keys=[currency_id])
+    quote_currency: Mapped["Currency | None"] = relationship(foreign_keys=[quote_currency_id])
+    paper_trade: Mapped["PaperTrade | None"] = relationship()
+    trade_intent: Mapped["TradeIntentRecord | None"] = relationship()
+    risk_decision: Mapped["RiskDecision | None"] = relationship()
+
+
+class AccountHoldingSnapshot(Base):
+    __tablename__ = "account_holding_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "asset_id",
+            "instrument_id",
+            "unit_id",
+            "currency_id",
+            name="uq_account_holding_snapshot_dimension",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("provider_accounts.id"), index=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"), nullable=True, index=True)
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"), nullable=True, index=True)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("measurement_units.id"), nullable=True, index=True)
+    currency_id: Mapped[int | None] = mapped_column(ForeignKey("currencies.id"), nullable=True, index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    cash_balance: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    source_ledger_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("account_ledger_entries.id"), nullable=True, index=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    account: Mapped["ProviderAccount"] = relationship()
+    asset: Mapped["Asset | None"] = relationship()
+    instrument: Mapped["Instrument | None"] = relationship()
+    unit: Mapped["MeasurementUnit | None"] = relationship()
+    currency: Mapped["Currency | None"] = relationship()
+    source_ledger_entry: Mapped["AccountLedgerEntry | None"] = relationship()
 
 
 class PortfolioSnapshot(Base):
@@ -414,6 +588,43 @@ class TechnicalIndicator(Base):
 
     price_snapshot: Mapped[PriceSnapshot | None] = relationship()
     market_bar: Mapped[MarketBar | None] = relationship()
+
+
+class IndicatorDefinition(Base):
+    __tablename__ = "indicator_definitions"
+    __table_args__ = (UniqueConstraint("code", "calculation_version", name="uq_indicator_definitions_code_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), index=True)
+    display_name: Mapped[str] = mapped_column(String(128))
+    value_type: Mapped[str] = mapped_column(String(32), default="decimal")
+    calculation_version: Mapped[str] = mapped_column(String(64), default="technical-indicators-v2", index=True)
+    params_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class TechnicalIndicatorValue(Base):
+    __tablename__ = "technical_indicator_values"
+    __table_args__ = (
+        UniqueConstraint(
+            "technical_indicator_id",
+            "indicator_definition_id",
+            name="uq_technical_indicator_values_indicator_definition",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    technical_indicator_id: Mapped[int] = mapped_column(ForeignKey("technical_indicators.id"), index=True)
+    indicator_definition_id: Mapped[int] = mapped_column(ForeignKey("indicator_definitions.id"), index=True)
+    numeric_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    text_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    quality_status: Mapped[str] = mapped_column(String(32), default="ok", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    technical_indicator: Mapped["TechnicalIndicator"] = relationship()
+    indicator_definition: Mapped["IndicatorDefinition"] = relationship()
 
 
 class LLMCallTrace(Base):
@@ -573,4 +784,28 @@ Index(
     ProviderCostRule.asset_type,
     ProviderCostRule.action,
     ProviderCostRule.is_active,
+)
+
+Index(
+    "ix_account_ledger_entries_account_occurred",
+    AccountLedgerEntry.account_id,
+    AccountLedgerEntry.occurred_at,
+    AccountLedgerEntry.id,
+)
+
+Index(
+    "ix_account_ledger_entries_asset_dimension",
+    AccountLedgerEntry.account_id,
+    AccountLedgerEntry.asset_id,
+    AccountLedgerEntry.instrument_id,
+    AccountLedgerEntry.unit_id,
+)
+
+Index(
+    "ix_account_holding_snapshots_account_dimension",
+    AccountHoldingSnapshot.account_id,
+    AccountHoldingSnapshot.asset_id,
+    AccountHoldingSnapshot.instrument_id,
+    AccountHoldingSnapshot.unit_id,
+    AccountHoldingSnapshot.currency_id,
 )

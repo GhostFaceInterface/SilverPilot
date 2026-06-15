@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
-from app.models import RiskDecision
+from app.models import RiskDecision, TradeIntentRecord
 from app.paper_trading.service import (
     PaperTradingError,
     _calculate_trade_amounts,
@@ -47,8 +47,49 @@ def execute_trade_intent(
         sell_price=sell_price,
         fee_amount=fee_amount,
     )
+    intent_record = persist_trade_intent(db, intent=intent, request=request)
     risk_decision = evaluate_trade_intent_risk(db, intent=intent, request=request)
-    return execute_paper_trade_with_risk_decision(db, request, risk_decision)
+    intent_record.risk_decision_id = risk_decision.id
+    intent_record.status = "risk_allowed" if risk_decision.decision == "allow" else "risk_blocked"
+    db.flush()
+    trade, snapshot = execute_paper_trade_with_risk_decision(
+        db,
+        request,
+        risk_decision,
+        trade_intent_record=intent_record,
+    )
+    intent_record.status = "executed" if trade.action in ("paper_buy", "paper_sell") else "blocked"
+    db.flush()
+    db.commit()
+    db.refresh(intent_record)
+    return trade, snapshot
+
+
+def persist_trade_intent(db: Session, *, intent: TradeIntent, request: PaperTradeRequest) -> TradeIntentRecord:
+    portfolio = _get_portfolio(db, intent.portfolio_name, lock=False)
+    asset = _get_asset(db, intent.asset_symbol)
+    signal_id = intent.metadata.get("signal_id")
+    record = TradeIntentRecord(
+        signal_id=signal_id if isinstance(signal_id, int) else None,
+        portfolio_id=portfolio.id,
+        asset_id=asset.id,
+        action=intent.action,
+        confidence=intent.confidence,
+        reason_code=intent.reason_code,
+        stop_loss_price=intent.stop_loss_price,
+        take_profit_price=intent.take_profit_price,
+        expected_exit_price=intent.expected_exit_price,
+        status="created",
+        metadata_json={
+            **intent.metadata,
+            "request_action": request.action,
+            "request_buy_price": str(request.buy_price),
+            "request_sell_price": str(request.sell_price),
+        },
+    )
+    db.add(record)
+    db.flush()
+    return record
 
 
 def evaluate_trade_intent_risk(db: Session, *, intent: TradeIntent, request: PaperTradeRequest) -> RiskDecision:

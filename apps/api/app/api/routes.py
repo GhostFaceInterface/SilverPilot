@@ -19,11 +19,14 @@ from app.collectors.service import (
     latest_collector_run,
 )
 from app.models import (
+    AccountLedgerEntry,
     Asset,
     CollectorRun,
+    Instrument,
     Portfolio,
     PortfolioSnapshot,
     PriceSnapshot,
+    ProviderAccount,
     Report,
     Signal,
     LLMCallTrace,
@@ -31,6 +34,7 @@ from app.models import (
 )
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
+from app.services.account_holdings import compute_account_holdings
 from app.services.indicator_readiness import (
     STRATEGY_TIMEFRAME_POLICY,
     STRATEGY_TIMEFRAME_ROLES,
@@ -107,6 +111,113 @@ def get_portfolio(db: Session = Depends(get_db)):
             if latest_snapshot
             else None,
         }
+    }
+
+
+@router.get("/instruments")
+def list_instruments(db: Session = Depends(get_db)):
+    rows = db.execute(select(Instrument).order_by(Instrument.symbol.asc())).scalars().all()
+    return {
+        "instruments": [
+            {
+                "id": row.id,
+                "symbol": row.symbol,
+                "name": row.name,
+                "instrument_type": row.instrument_type,
+                "native_currency": row.native_currency.code if row.native_currency else None,
+                "native_unit": row.native_unit.code if row.native_unit else None,
+                "is_active": row.is_active,
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/accounts")
+def list_accounts(db: Session = Depends(get_db)):
+    rows = db.execute(select(ProviderAccount).order_by(ProviderAccount.id.asc())).scalars().all()
+    return {
+        "accounts": [
+            {
+                "id": row.id,
+                "tenant_id": row.tenant_id,
+                "provider": row.provider.name,
+                "portfolio_id": row.portfolio_id,
+                "account_key": row.account_key,
+                "display_name": row.display_name,
+                "account_type": row.account_type,
+                "base_currency": row.base_currency.code if row.base_currency else None,
+                "is_paper": row.is_paper,
+                "is_active": row.is_active,
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/accounts/{account_id}/holdings")
+def get_account_holdings(account_id: int, db: Session = Depends(get_db)):
+    account = db.get(ProviderAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    holdings = compute_account_holdings(db, account_id)
+    return {
+        "account_id": account_id,
+        "holdings": [
+            {
+                "kind": holding.kind,
+                "asset_symbol": holding.asset_symbol,
+                "instrument_symbol": holding.instrument_symbol,
+                "unit_code": holding.unit_code,
+                "currency_code": holding.currency_code,
+                "quantity": str(holding.quantity),
+                "cash_balance": str(holding.cash_balance),
+            }
+            for holding in holdings
+        ],
+    }
+
+
+@router.get("/accounts/{account_id}/ledger")
+def get_account_ledger(account_id: int, limit: int = 100, db: Session = Depends(get_db)):
+    account = db.get(ProviderAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    limit = min(max(limit, 1), 500)
+    rows = (
+        db.execute(
+            select(AccountLedgerEntry)
+            .where(AccountLedgerEntry.account_id == account_id)
+            .order_by(desc(AccountLedgerEntry.occurred_at), desc(AccountLedgerEntry.id))
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "account_id": account_id,
+        "ledger": [
+            {
+                "id": row.id,
+                "entry_type": row.entry_type,
+                "asset_symbol": row.asset.symbol if row.asset else None,
+                "instrument_symbol": row.instrument.symbol if row.instrument else None,
+                "unit_code": row.unit.code if row.unit else None,
+                "currency_code": row.currency.code if row.currency else None,
+                "quantity_delta": str(row.quantity_delta),
+                "cash_delta": str(row.cash_delta),
+                "price": str(row.price) if row.price is not None else None,
+                "gross_amount": str(row.gross_amount),
+                "fees": str(row.fees),
+                "taxes": str(row.taxes),
+                "paper_trade_id": row.paper_trade_id,
+                "trade_intent_id": row.trade_intent_id,
+                "risk_decision_id": row.risk_decision_id,
+                "occurred_at": row.occurred_at,
+                "details": row.details_json,
+            }
+            for row in rows
+        ],
     }
 
 

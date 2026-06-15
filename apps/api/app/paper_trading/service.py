@@ -16,7 +16,9 @@ from app.models import (
     ProviderCostRule,
     RawFxRate,
     RiskDecision,
+    TradeIntentRecord,
 )
+from app.services.account_ledger import record_paper_trade_ledger_entry
 from app.models.entities import TenantPortfolio
 from app.risk.service import TradeAmounts, evaluate_paper_trade_risk
 from app.schemas.paper_trading import PaperTradeRequest
@@ -61,21 +63,25 @@ class ProviderCostRuleCosts:
 
 
 def execute_paper_trade(db: Session, request: PaperTradeRequest) -> tuple[PaperTrade, PortfolioSnapshot]:
-    return _execute_paper_trade(db, request, precomputed_risk_decision=None)
+    return _execute_paper_trade(db, request, precomputed_risk_decision=None, trade_intent_record=None)
 
 
 def execute_paper_trade_with_risk_decision(
     db: Session,
     request: PaperTradeRequest,
     risk_decision: RiskDecision,
+    trade_intent_record: TradeIntentRecord | None = None,
 ) -> tuple[PaperTrade, PortfolioSnapshot]:
-    return _execute_paper_trade(db, request, precomputed_risk_decision=risk_decision)
+    return _execute_paper_trade(
+        db, request, precomputed_risk_decision=risk_decision, trade_intent_record=trade_intent_record
+    )
 
 
 def _execute_paper_trade(
     db: Session,
     request: PaperTradeRequest,
     precomputed_risk_decision: RiskDecision | None,
+    trade_intent_record: TradeIntentRecord | None,
 ) -> tuple[PaperTrade, PortfolioSnapshot]:
     portfolio = _get_portfolio(db, request.portfolio_name, lock=True)
     if portfolio.is_real_money:
@@ -124,6 +130,7 @@ def _execute_paper_trade(
     trade = PaperTrade(
         portfolio_id=portfolio.id,
         asset_id=asset.id,
+        trade_intent_id=trade_intent_record.id if trade_intent_record is not None else None,
         action=stored_action,
         quantity=quantity,
         price=price,
@@ -149,6 +156,8 @@ def _execute_paper_trade(
         portfolio.cash_balance = _money(portfolio.cash_balance + sign * net_amount)
 
     db.flush()
+    if risk_decision.decision == "allow" and request.action in ("paper_buy", "paper_sell"):
+        record_paper_trade_ledger_entry(db, portfolio=portfolio, asset=asset, trade=trade)
 
     snapshot = create_portfolio_snapshot(
         db=db,
