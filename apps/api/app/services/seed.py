@@ -3,7 +3,7 @@ from decimal import Decimal
 from app.core.db import SessionLocal
 from app.models import Asset, Portfolio, Provider, AssetConversion, TenantPortfolio
 from app.services.account_ledger import ensure_opening_balance
-from app.services.instrument_registry import ensure_reference_data, get_or_create_default_provider_account
+from app.services.instrument_registry import ensure_default_provider_account
 
 
 from sqlalchemy import text
@@ -131,11 +131,10 @@ def seed_development_data() -> None:
                     )
                 )
 
-        # 7. Seed instrument/account reference data without changing legacy tables.
-        ensure_reference_data(db)
+        # 7. Seed default account only when reference objects already exist in DB.
         portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one_or_none()
         if portfolio is not None:
-            get_or_create_default_provider_account(db, portfolio)
+            ensure_default_provider_account(db, portfolio)
             ensure_opening_balance(db, portfolio)
 
         db.commit()

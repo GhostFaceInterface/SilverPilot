@@ -8,23 +8,26 @@ from sqlalchemy.orm import Session
 
 from app.models import AccountLedgerEntry, Asset, Currency, PaperTrade, Portfolio
 from app.services.instrument_registry import (
-    get_or_create_currency,
-    get_or_create_default_provider_account,
-    map_existing_assets,
+    ensure_default_provider_account,
+    get_currency_by_code,
 )
 
 MONEY_QUANT = Decimal("0.000001")
 
 
 def ensure_opening_balance(db: Session, portfolio: Portfolio) -> None:
-    account = get_or_create_default_provider_account(db, portfolio)
+    account = ensure_default_provider_account(db, portfolio)
+    if account is None:
+        return
     existing_count = db.execute(
         select(func.count(AccountLedgerEntry.id)).where(AccountLedgerEntry.account_id == account.id)
     ).scalar_one()
     if existing_count:
         return
 
-    currency = get_or_create_currency(db, portfolio.base_currency)
+    currency = get_currency_by_code(db, portfolio.base_currency)
+    if currency is None:
+        return
     db.add(
         AccountLedgerEntry(
             account_id=account.id,
@@ -47,9 +50,12 @@ def record_paper_trade_ledger_entry(db: Session, *, portfolio: Portfolio, asset:
         return
 
     ensure_opening_balance(db, portfolio)
-    map_existing_assets(db)
-    account = get_or_create_default_provider_account(db, portfolio)
+    account = ensure_default_provider_account(db, portfolio)
+    if account is None:
+        return
     currency = _resolve_trade_currency(db, portfolio, asset)
+    if currency is None:
+        return
 
     quantity_sign = Decimal("1") if trade.action == "paper_buy" else Decimal("-1")
     cash_sign = Decimal("-1") if trade.action == "paper_buy" else Decimal("1")
@@ -78,5 +84,5 @@ def record_paper_trade_ledger_entry(db: Session, *, portfolio: Portfolio, asset:
     db.flush()
 
 
-def _resolve_trade_currency(db: Session, portfolio: Portfolio, asset: Asset) -> Currency:
-    return get_or_create_currency(db, portfolio.base_currency)
+def _resolve_trade_currency(db: Session, portfolio: Portfolio, asset: Asset) -> Currency | None:
+    return get_currency_by_code(db, portfolio.base_currency)

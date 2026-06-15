@@ -12,6 +12,7 @@ from app.models import (
     MeasurementUnit,
     PaperTrade,
     Portfolio,
+    Provider,
     ProviderAccount,
     RiskDecision,
     TechnicalIndicatorValue,
@@ -20,7 +21,6 @@ from app.models import (
 from app.paper_trading.service import execute_paper_trade_with_risk_decision
 from app.schemas.paper_trading import PaperTradeRequest
 from app.services.account_holdings import compute_account_holdings
-from app.services.instrument_registry import ensure_reference_data
 
 
 def test_instrument_account_ledger_schema_is_additive():
@@ -45,30 +45,28 @@ def test_instrument_account_ledger_schema_is_additive():
         assert model.__table__.name
 
 
-def test_reference_seed_maps_assets_and_is_idempotent(db_session):
-    db_session.add_all(
-        [
-            Asset(symbol="XAG", name="Silver Spot Ounce", asset_type="metal", is_active=True),
-            Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True),
-        ]
+def test_asset_semantics_are_read_from_db_objects(db_session):
+    usd, gram, silver = _seed_reference_objects(db_session)
+    gram_asset = Asset(
+        symbol="XAG_GRAM",
+        name="Silver Gram",
+        asset_type="metal",
+        is_active=True,
+        instrument_id=silver.id,
+        unit_id=gram.id,
+        quote_currency_id=usd.id,
     )
+    db_session.add(gram_asset)
     db_session.commit()
 
-    ensure_reference_data(db_session)
-    ensure_reference_data(db_session)
-    db_session.commit()
-
-    assert db_session.execute(select(Currency).where(Currency.code == "USD")).scalar_one().name == "US Dollar"
-    assert db_session.execute(select(Instrument).where(Instrument.symbol == "XAG")).scalar_one().name == "Silver"
-
-    gram_asset = db_session.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one()
-    assert gram_asset.instrument.symbol == "XAG"
-    assert gram_asset.unit.code == "gram"
-    assert gram_asset.quote_currency.code == "USD"
+    loaded_asset = db_session.execute(select(Asset).where(Asset.symbol == "XAG_GRAM")).scalar_one()
+    assert loaded_asset.instrument.symbol == "XAG"
+    assert loaded_asset.unit.code == "gram"
+    assert loaded_asset.quote_currency.code == "USD"
 
 
 def test_paper_trade_dual_writes_ledger_and_derived_holdings(db_session):
-    asset = Asset(symbol="XAG_GRAM", name="Silver Gram", asset_type="metal", is_active=True)
+    usd, gram, silver = _seed_reference_objects(db_session)
     portfolio = Portfolio(
         name="gram-paper",
         base_currency="USD",
@@ -83,7 +81,19 @@ def test_paper_trade_dual_writes_ledger_and_derived_holdings(db_session):
         confidence=Decimal("1.0000"),
         details_json={},
     )
-    db_session.add_all([asset, portfolio, decision])
+    db_session.add_all([portfolio, decision])
+    db_session.flush()
+    asset = Asset(
+        symbol="XAG_GRAM",
+        name="Silver Gram",
+        asset_type="metal",
+        is_active=True,
+        instrument_id=silver.id,
+        unit_id=gram.id,
+        quote_currency_id=usd.id,
+    )
+    provider = Provider(name="kuveyt_turk", display_name="Kuveyt Turk", is_active=True, config_json={})
+    db_session.add_all([asset, provider])
     db_session.commit()
 
     trade, _snapshot = execute_paper_trade_with_risk_decision(
@@ -126,3 +136,26 @@ def test_paper_trade_dual_writes_ledger_and_derived_holdings(db_session):
     assert metal.unit_code == "gram"
     assert metal.quantity == Decimal("2.000000")
     assert db_session.execute(select(PaperTrade)).scalar_one().id == trade.id
+
+
+def _seed_reference_objects(db_session):
+    usd = Currency(code="USD", name="US Dollar", numeric_code="840", minor_unit=2, is_active=True)
+    gram = MeasurementUnit(
+        code="gram",
+        name="Gram",
+        unit_type="mass",
+        to_base_factor=Decimal("1.00000000"),
+        base_unit_code="gram",
+        is_active=True,
+    )
+    silver = Instrument(
+        symbol="XAG",
+        name="Silver",
+        instrument_type="metal",
+        native_unit=gram,
+        is_active=True,
+        metadata_json={},
+    )
+    db_session.add_all([usd, gram, silver])
+    db_session.flush()
+    return usd, gram, silver
