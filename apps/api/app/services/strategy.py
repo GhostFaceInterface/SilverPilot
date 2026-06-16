@@ -998,14 +998,18 @@ class MacdStrategy(BaseStrategy):
 
 
 class AutoRegimeStrategy(BaseStrategy):
-    def evaluate_sync(self, context: dict) -> tuple[str, str]:
-        regime_info = context.get("regime_info")
+    @staticmethod
+    def _normalize_regime_info(regime_info: dict | None) -> dict:
         if not regime_info:
-            regime_info = {
+            return {
                 "regime": "SIDEWAYS",
                 "adx": 0.0,
                 "bb_bandwidth": 0.0,
             }
+        return regime_info
+
+    def evaluate_sync(self, context: dict) -> tuple[str, str]:
+        regime_info = self._normalize_regime_info(context.get("regime_info"))
 
         regime_info.get("regime", "SIDEWAYS")
         adx_val = regime_info.get("adx")
@@ -1066,7 +1070,7 @@ class AutoRegimeStrategy(BaseStrategy):
         hourly_context = context.get("hourly_context")
         timeframe = hourly_context.readiness.timeframe if hourly_context else "1h"
 
-        regime_info = get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe)
+        regime_info = self._normalize_regime_info(get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe))
         if regime_info.get("status") == "degraded":
             return StrategyDecision(
                 action="HOLD",

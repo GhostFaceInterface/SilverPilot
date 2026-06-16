@@ -738,6 +738,9 @@ def test_runner_rejects_removed_kitco_rss_job():
 
 def test_runner_reports_failed_collector_job(monkeypatch):
     class FakeDb:
+        def rollback(self):
+            return None
+
         def close(self):
             return None
 
