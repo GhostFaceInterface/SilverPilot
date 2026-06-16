@@ -13,6 +13,18 @@ from app.services.indicator_readiness import (
 logger = logging.getLogger("silverpilot.services.regime")
 
 
+def _regime_degraded(reason_code: str, **details) -> dict:
+    return {
+        "regime": "REGIME_DEGRADED",
+        "adx": None,
+        "bb_bandwidth": None,
+        "relative_atr": None,
+        "status": "degraded",
+        "reason_code": reason_code,
+        "details": details,
+    }
+
+
 def get_market_regime(
     db: Session,
     *,
@@ -34,9 +46,18 @@ def get_market_regime(
             db,
             asset_symbol=asset_symbol,
             timeframe=timeframe,
+            required_min_bar_count=14,
             allowed_sources=DEFAULT_ALLOWED_SOURCES,
         )
-        if not readiness.usable or readiness.indicator is None or readiness.source is None:
+        non_blocking_reasons = {"REQUIRED_FIELDS_MISSING", "WARMUP_FIELDS_PENDING"}
+        blocking_reasons = set(readiness.reason_codes) - non_blocking_reasons
+        can_compute_regime = (
+            readiness.indicator is not None
+            and readiness.source is not None
+            and (readiness.input_bar_count or 0) >= 14
+            and not blocking_reasons
+        )
+        if (not readiness.usable or readiness.indicator is None or readiness.source is None) and not can_compute_regime:
             logger.info(
                 "Indicator readiness not usable for regime; asset=%s timeframe=%s status=%s reasons=%s.",
                 asset_symbol,
@@ -44,21 +65,14 @@ def get_market_regime(
                 readiness.status,
                 ",".join(readiness.reason_codes) if readiness.reason_codes else "",
             )
-            return {
-                "regime": "SIDEWAYS",
-                "adx": 0.0,
-                "bb_bandwidth": 0.0,
-                "relative_atr": 0.0,
-            }
+            return _regime_degraded(
+                "REGIME_READINESS_UNUSABLE",
+                readiness=readiness.to_dict(),
+            )
 
         asset = db.execute(select(Asset).where(Asset.symbol == asset_symbol)).scalar_one_or_none()
         if asset is None:
-            return {
-                "regime": "SIDEWAYS",
-                "adx": 0.0,
-                "bb_bandwidth": 0.0,
-                "relative_atr": 0.0,
-            }
+            return _regime_degraded("ASSET_NOT_FOUND", asset_symbol=asset_symbol)
 
         # Fetch latest TechnicalIndicator records from the same series only
         stmt = (
@@ -77,12 +91,7 @@ def get_market_regime(
         # If there are fewer than 14 records, return SIDEWAYS safely
         if len(results) < 14:
             logger.info(f"Insufficient indicator data (found {len(results)}). Defaulting to SIDEWAYS.")
-            return {
-                "regime": "SIDEWAYS",
-                "adx": 0.0,
-                "bb_bandwidth": 0.0,
-                "relative_atr": 0.0,
-            }
+            return _regime_degraded("REGIME_INSUFFICIENT_HISTORY", sample_count=len(results))
 
         # Reverse to chronological order (oldest first)
         results.reverse()
@@ -115,12 +124,7 @@ def get_market_regime(
 
         df = pd.DataFrame(data)
         if len(df) < 14:
-            return {
-                "regime": "SIDEWAYS",
-                "adx": 0.0,
-                "bb_bandwidth": 0.0,
-                "relative_atr": 0.0,
-            }
+            return _regime_degraded("REGIME_INSUFFICIENT_HISTORY", sample_count=len(df))
 
         # Ensure values are clean
         df["close_prev"] = df["close"].shift(1)
@@ -243,9 +247,4 @@ def get_market_regime(
         }
     except Exception as e:
         logger.error(f"Error calculating market regime: {e}", exc_info=True)
-        return {
-            "regime": "SIDEWAYS",
-            "adx": 0.0,
-            "bb_bandwidth": 0.0,
-            "relative_atr": 0.0,
-        }
+        return _regime_degraded("REGIME_ERROR", error_type=type(e).__name__)

@@ -23,6 +23,9 @@ class IndicatorReadinessResponse(BaseModel):
     input_bar_count: int | None
     missing_required_fields: list[str]
     close_usd_oz: float | None
+    market_state: str | None = None
+    expected_next_bar_at: datetime | None = None
+    freshness_status: str | None = None
     timeframe_policy: dict[str, str] | None = None
     policy_source: str | None = None
     policy_details: dict | None = None

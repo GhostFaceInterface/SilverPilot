@@ -454,6 +454,9 @@ class TradeIntentRecord(Base):
     __tablename__ = "trade_intents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    trading_decision_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trading_decision_runs.id"), nullable=True, index=True
+    )
     signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), nullable=True, index=True)
     portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id"), nullable=True, index=True)
     asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"), nullable=True, index=True)
@@ -472,6 +475,7 @@ class TradeIntentRecord(Base):
     )
 
     signal: Mapped["Signal | None"] = relationship()
+    trading_decision_run: Mapped["TradingDecisionRun | None"] = relationship()
     portfolio: Mapped["Portfolio | None"] = relationship()
     asset: Mapped["Asset | None"] = relationship()
     risk_decision: Mapped["RiskDecision | None"] = relationship()

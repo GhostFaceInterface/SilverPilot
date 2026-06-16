@@ -751,6 +751,23 @@ class BlendedStrategy(BaseStrategy):
         latest_event = context.get("latest_event")
 
         regime_info = get_market_regime(db, asset_symbol=asset.symbol, timeframe=hourly_context.readiness.timeframe)
+        if regime_info.get("status") == "degraded":
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="REGIME_DEGRADED",
+                confidence=Decimal("0.0000"),
+                trend_state="REGIME_DEGRADED",
+                entry_state="READY",
+                execution_state="READY",
+                buy_score=Decimal("0.0000"),
+                sell_score=Decimal("0.0000"),
+                component_scores={},
+                readiness_block_flags=context.get("readiness_block_flags", []),
+                stop_loss_price=None,
+                take_profit_price=None,
+                expected_exit_price=None,
+                exit_metadata={"regime_info": regime_info},
+            )
 
         close = latest_indicator.close_usd_oz if latest_indicator else None
         rsi_14 = latest_indicator.rsi_14 if latest_indicator else None
@@ -1049,12 +1066,24 @@ class AutoRegimeStrategy(BaseStrategy):
         hourly_context = context.get("hourly_context")
         timeframe = hourly_context.readiness.timeframe if hourly_context else "1h"
 
-        regime_info_raw = get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe)
-        regime_info = regime_info_raw or {
-            "regime": "SIDEWAYS",
-            "adx": 0.0,
-            "bb_bandwidth": 0.0,
-        }
+        regime_info = get_market_regime(db, asset_symbol=asset_symbol, timeframe=timeframe)
+        if regime_info.get("status") == "degraded":
+            return StrategyDecision(
+                action="HOLD",
+                reason_code="REGIME_DEGRADED",
+                confidence=Decimal("0.0000"),
+                trend_state="REGIME_DEGRADED",
+                entry_state="READY",
+                execution_state="READY",
+                buy_score=Decimal("0.0000"),
+                sell_score=Decimal("0.0000"),
+                component_scores={},
+                readiness_block_flags=context.get("readiness_block_flags", []),
+                stop_loss_price=None,
+                take_profit_price=None,
+                expected_exit_price=None,
+                exit_metadata={"mode": "auto_regime", "regime_info": regime_info},
+            )
 
         # Make a copy of context to prevent modifying caller's context dict
         local_context = dict(context)

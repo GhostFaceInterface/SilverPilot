@@ -153,9 +153,9 @@ async def test_regime_classifier_sideways_coldstart():
         seed_indicator_history(db, asset, count=5)
 
         regime = get_market_regime(db)
-        assert regime["regime"] == "SIDEWAYS"
-        assert regime["adx"] == 0.0
-        assert regime["bb_bandwidth"] == 0.0
+        assert regime["regime"] == "REGIME_DEGRADED"
+        assert regime["status"] == "degraded"
+        assert regime["reason_code"] in {"REGIME_READINESS_UNUSABLE", "REGIME_INSUFFICIENT_HISTORY"}
 
     finally:
         db.close()

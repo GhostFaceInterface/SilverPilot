@@ -69,7 +69,9 @@ def persist_trade_intent(db: Session, *, intent: TradeIntent, request: PaperTrad
     portfolio = _get_portfolio(db, intent.portfolio_name, lock=False)
     asset = _get_asset(db, intent.asset_symbol)
     signal_id = intent.metadata.get("signal_id")
+    trading_decision_run_id = intent.metadata.get("trading_decision_run_id")
     record = TradeIntentRecord(
+        trading_decision_run_id=trading_decision_run_id if isinstance(trading_decision_run_id, int) else None,
         signal_id=signal_id if isinstance(signal_id, int) else None,
         portfolio_id=portfolio.id,
         asset_id=asset.id,
@@ -82,6 +84,7 @@ def persist_trade_intent(db: Session, *, intent: TradeIntent, request: PaperTrad
         status="created",
         metadata_json={
             **intent.metadata,
+            "trading_decision_run_id": trading_decision_run_id,
             "request_action": request.action,
             "request_buy_price": str(request.buy_price),
             "request_sell_price": str(request.sell_price),

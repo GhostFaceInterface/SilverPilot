@@ -870,6 +870,7 @@ async def start_polling():
     while True:
         try:
             updates = await bot.get_updates(offset=offset, timeout=10)
+            _record_polling_heartbeat("ok", {"updates": len(updates)})
             for update in updates:
                 offset = update.update_id + 1
                 await process_telegram_update(update.to_dict(), settings)
@@ -878,7 +879,30 @@ async def start_polling():
             break
         except TelegramError as e:
             logger.error("Telegram error in polling loop; error_type=%s.", type(e).__name__)
+            _record_polling_heartbeat("degraded", {"error_type": type(e).__name__})
             await asyncio.sleep(5)
         except Exception as e:
             logger.error("Unexpected error in polling; error_type=%s.", type(e).__name__)
+            _record_polling_heartbeat("degraded", {"error_type": type(e).__name__})
             await asyncio.sleep(5)
+
+
+def _record_polling_heartbeat(status: str, details: dict) -> None:
+    from app.core.db import SessionLocal
+    from app.services.runtime import record_runtime_heartbeat
+
+    db = SessionLocal()
+    try:
+        record_runtime_heartbeat(
+            db,
+            component="telegram_polling",
+            status=status,
+            expected_interval_seconds=60,
+            details=details,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to record telegram polling heartbeat")
+    finally:
+        db.close()

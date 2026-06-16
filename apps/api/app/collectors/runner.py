@@ -18,6 +18,7 @@ from app.collectors.public_sources import RSS_FEEDS, collect_rss_news
 from app.core.db import SessionLocal
 from app.core.logging import configure_logging
 from app.schemas.collectors import ManualPriceIngestRequest
+from app.services.runtime import record_runtime_heartbeat
 
 JOB_CHOICES = (
     "manual",
@@ -162,8 +163,28 @@ async def run_once(args: argparse.Namespace, job: str | None = None) -> bool:
 async def run_jobs(args: argparse.Namespace) -> bool:
     success = True
     for job in parse_collector_jobs(args.jobs, fallback_job=args.job):
-        success = (await run_once(args, job=job)) and success
+        job_success = await run_once(args, job=job)
+        _record_collector_heartbeat(args, job=job, success=job_success)
+        success = job_success and success
     return success
+
+
+def _record_collector_heartbeat(args: argparse.Namespace, *, job: str, success: bool) -> None:
+    db = SessionLocal()
+    try:
+        record_runtime_heartbeat(
+            db,
+            component="collector",
+            status="ok" if success else "degraded",
+            expected_interval_seconds=int(args.interval_seconds),
+            details={"job": job},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logging.getLogger("app.collectors.runner").exception("Failed to record collector heartbeat")
+    finally:
+        db.close()
 
 
 def parse_collector_jobs(value: str, *, fallback_job: str) -> list[str]:

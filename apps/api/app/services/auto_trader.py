@@ -36,16 +36,22 @@ ACTION_HOLD = "HOLD"
 BLOCKED_CONFIG_INVALID = "BLOCKED_CONFIG_INVALID"
 BLOCKED_REASON_CODES = {BLOCKED_CONFIG_INVALID}
 READINESS_BLOCK_REASONS = {
-    "DAILY_TREND_MISSING",
+    "DAILY_BAR_DELAYED",
+    "MARKET_CLOSED",
     "ENTRY_TIMEFRAME_STALE",
-    "ENTRY_TIMEFRAME_UNUSABLE",
     "EXECUTION_TIMEFRAME_STALE",
+    "INSUFFICIENT_HISTORY",
+    "DAILY_TREND_MISSING",
+    "ENTRY_TIMEFRAME_UNUSABLE",
     "EXECUTION_TIMEFRAME_UNUSABLE",
     "TIMEFRAME_SOURCE_MISMATCH",
     SOURCE_DIVERGENCE_BLOCK,
 }
 
 READINESS_REASON_LABELS = {
+    "DAILY_BAR_DELAYED": "Günlük COMEX barı grace süresi sonrası gecikti",
+    "MARKET_CLOSED": "COMEX piyasası kapalı",
+    "INSUFFICIENT_HISTORY": "Günlük trend verisi hazır değil; göstergeler için yeterli geçmiş bar yok",
     "DAILY_TREND_MISSING": "Günlük trend verisi hazır değil",
     "ENTRY_TIMEFRAME_STALE": "Saatlik giriş verisi güncel değil",
     "ENTRY_TIMEFRAME_UNUSABLE": "Saatlik giriş verisi kullanılamıyor",
@@ -411,10 +417,13 @@ def _select_block_reason(strategy_readiness_flags: list[str]) -> str | None:
     prioritized_block_flags = [
         SOURCE_DIVERGENCE_BLOCK,
         "TIMEFRAME_SOURCE_MISMATCH",
+        "MARKET_CLOSED",
+        "DAILY_BAR_DELAYED",
         "ENTRY_TIMEFRAME_STALE",
+        "EXECUTION_TIMEFRAME_STALE",
+        "INSUFFICIENT_HISTORY",
         "ENTRY_TIMEFRAME_UNUSABLE",
         "DAILY_TREND_MISSING",
-        "EXECUTION_TIMEFRAME_STALE",
         "EXECUTION_TIMEFRAME_UNUSABLE",
     ]
     return next((flag for flag in prioritized_block_flags if flag in strategy_readiness_flags), None)
@@ -469,7 +478,11 @@ async def _resolve_strategy_resolution(db: Session, context: DecisionContext) ->
     if block_reason is not None:
         confidence_map = {
             "TIMEFRAME_SOURCE_MISMATCH": Decimal("0.9900"),
+            "MARKET_CLOSED": Decimal("0.9900"),
+            "DAILY_BAR_DELAYED": Decimal("0.9900"),
             "ENTRY_TIMEFRAME_STALE": Decimal("0.9800"),
+            "EXECUTION_TIMEFRAME_STALE": Decimal("0.9800"),
+            "INSUFFICIENT_HISTORY": Decimal("0.9800"),
             "ENTRY_TIMEFRAME_UNUSABLE": Decimal("0.9800"),
             "DAILY_TREND_MISSING": Decimal("0.9900"),
             SOURCE_DIVERGENCE_BLOCK: Decimal("0.9900"),
@@ -779,7 +792,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         action=action,
         reason_code=reason_code,
         price_usd_oz=latest_snapshot.mid_price,
-        details_json={**details, "decision_envelope": decision_envelope},
+        details_json=to_jsonable({**details, "decision_envelope": decision_envelope}),
     )
     db.add(signal)
     db.flush()
@@ -803,7 +816,11 @@ async def _run_auto_trading_impl(db: Session, settings):
             stop_loss_price=resolution.stop_loss_price,
             take_profit_price=resolution.take_profit_price,
             expected_exit_price=resolution.expected_exit_price,
-            metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
+            metadata={
+                "signal_id": signal.id,
+                "trading_decision_run_id": decision_run.id,
+                "timeframe_policy": details["timeframe_policy"],
+            },
         )
         original_commit = db.commit
         db.commit = db.flush
@@ -835,7 +852,11 @@ async def _run_auto_trading_impl(db: Session, settings):
             action=ACTION_SELL,
             confidence=resolution.confidence,
             reason_code=reason_code,
-            metadata={"signal_id": signal.id, "timeframe_policy": details["timeframe_policy"]},
+            metadata={
+                "signal_id": signal.id,
+                "trading_decision_run_id": decision_run.id,
+                "timeframe_policy": details["timeframe_policy"],
+            },
         )
         original_commit = db.commit
         db.commit = db.flush
@@ -932,6 +953,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         strategy_name=active_strategy,
         notification_action=notification_data["action"],
         cooldown_minutes=settings.hold_notification_cooldown_minutes,
+        category=_notification_category(notification_data, reason_code),
     )
     should_notify = notification_decision["sent"]
     record_notification_audit(
@@ -1034,9 +1056,18 @@ def should_send_trade_notification(
     strategy_name: str,
     notification_action: str,
     cooldown_minutes: int,
+    category: str | None = None,
 ) -> dict:
     cooldown_seconds = cooldown_minutes * 60
-    if notification_action != "HOLD" or cooldown_seconds <= 0:
+    category = category or ("trade" if notification_action != "HOLD" else "block_change")
+    if category in {"trade", "critical"}:
+        return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
+    if category == "hourly_digest":
+        cooldown_seconds = 3600
+        notification_action = "hourly_digest"
+    if notification_action != "HOLD" and notification_action != "hourly_digest":
+        return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
+    if cooldown_seconds <= 0:
         return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
 
     current_time = signal.observed_at
@@ -1050,7 +1081,7 @@ def should_send_trade_notification(
             .where(
                 NotificationAudit.asset_symbol == asset_symbol,
                 NotificationAudit.strategy_name == strategy_name,
-                NotificationAudit.notification_action == "HOLD",
+                NotificationAudit.notification_action == notification_action,
                 NotificationAudit.reason_code == signal.reason_code,
                 NotificationAudit.sent.is_(True),
             )
@@ -1068,11 +1099,25 @@ def should_send_trade_notification(
         if previous_time.timestamp() > cutoff_time:
             return NotificationDecision(
                 sent=False,
-                skipped_reason="hold_cooldown",
+                skipped_reason="hourly_digest_cooldown" if category == "hourly_digest" else "hold_cooldown",
                 cooldown_seconds=cooldown_seconds,
             ).as_dict()
 
     return NotificationDecision(sent=True, skipped_reason=None, cooldown_seconds=cooldown_seconds).as_dict()
+
+
+def _notification_category(notification_data: dict, reason_code: str) -> str:
+    if notification_data.get("action") in {"paper_buy", "paper_sell", "BUY", "SELL"}:
+        return "trade"
+    if reason_code in {
+        SOURCE_DIVERGENCE_BLOCK,
+        "DAILY_BAR_DELAYED",
+        "ENTRY_TIMEFRAME_STALE",
+        "EXECUTION_TIMEFRAME_STALE",
+        BLOCKED_CONFIG_INVALID,
+    }:
+        return "critical"
+    return "block_change"
 
 
 def record_notification_audit(
@@ -1115,29 +1160,40 @@ def get_strategy_timeframe_contexts(db: Session, asset_symbol: str, *, strategy_
 
 
 def evaluate_timeframe_guardrails(timeframe_contexts: dict, ref_dt: datetime | None = None) -> list[str]:
-    from app.risk.service import is_comex_market_closed
-
-    if ref_dt is None:
-        ref_dt = datetime.now(UTC)
-
-    comex_closed = is_comex_market_closed(ref_dt)
-
     flags: list[str] = []
     daily_readiness = timeframe_contexts["1d"].readiness
     hourly_readiness = timeframe_contexts["1h"].readiness
     execution_readiness = timeframe_contexts["5m"].readiness
 
-    if not daily_readiness.usable or daily_readiness.indicator is None:
+    for readiness in (daily_readiness, hourly_readiness, execution_readiness):
+        for reason in readiness.reason_codes:
+            if reason in READINESS_BLOCK_REASONS and reason not in flags:
+                flags.append(reason)
+
+    if "MARKET_CLOSED" in flags:
+        return ["MARKET_CLOSED"]
+
+    if (not daily_readiness.usable or daily_readiness.indicator is None) and not any(
+        reason in flags for reason in ("DAILY_BAR_DELAYED", "INSUFFICIENT_HISTORY")
+    ):
         flags.append("DAILY_TREND_MISSING")
 
-    if hourly_readiness.status == "stale" and not comex_closed:
+    if hourly_readiness.status == "stale" and "ENTRY_TIMEFRAME_STALE" not in flags:
         flags.append("ENTRY_TIMEFRAME_STALE")
-    elif not hourly_readiness.usable or hourly_readiness.indicator is None:
+    elif (
+        (not hourly_readiness.usable or hourly_readiness.indicator is None)
+        and "ENTRY_TIMEFRAME_STALE" not in flags
+        and "INSUFFICIENT_HISTORY" not in flags
+    ):
         flags.append("ENTRY_TIMEFRAME_UNUSABLE")
 
-    if execution_readiness.status == "stale" and not comex_closed:
+    if execution_readiness.status == "stale" and "EXECUTION_TIMEFRAME_STALE" not in flags:
         flags.append("EXECUTION_TIMEFRAME_STALE")
-    elif not execution_readiness.usable or execution_readiness.indicator is None:
+    elif (
+        (not execution_readiness.usable or execution_readiness.indicator is None)
+        and "EXECUTION_TIMEFRAME_STALE" not in flags
+        and "INSUFFICIENT_HISTORY" not in flags
+    ):
         flags.append("EXECUTION_TIMEFRAME_UNUSABLE")
 
     aligned_sources = {
@@ -1174,5 +1230,10 @@ def summarize_timeframe_inputs(timeframe_contexts: dict) -> dict:
             "age_minutes": age_minutes,
             "indicator_id": readiness.indicator_id,
             "bar_timestamp": readiness.bar_timestamp.isoformat() if readiness.bar_timestamp is not None else None,
+            "market_state": readiness.market_state,
+            "expected_next_bar_at": readiness.expected_next_bar_at.isoformat()
+            if readiness.expected_next_bar_at is not None
+            else None,
+            "freshness_status": readiness.freshness_status,
         }
     return summary

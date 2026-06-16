@@ -8,7 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.collectors.service import collector_health
-from app.models import CollectorRun, RuntimeHeartbeat, Signal, TradingDecisionRun
+from app.models import AgentMemoryEvent, CollectorRun, RuntimeHeartbeat, Signal, TradingDecisionRun
 
 
 AUTO_TRADER_COMPONENT = "auto_trader"
@@ -154,6 +154,21 @@ def trading_status(db: Session, *, asset_symbol: str = "XAG_GRAM") -> dict:
         select(CollectorRun).order_by(desc(CollectorRun.started_at), desc(CollectorRun.id)).limit(1)
     ).scalar_one_or_none()
     heartbeats = db.execute(select(RuntimeHeartbeat).order_by(RuntimeHeartbeat.component.asc())).scalars().all()
+    latest_critical = db.execute(
+        select(TradingDecisionRun)
+        .where(TradingDecisionRun.asset_symbol == asset_symbol)
+        .where(TradingDecisionRun.action == "HOLD")
+        .where(TradingDecisionRun.reason_code.in_(_critical_hold_reasons()))
+        .order_by(desc(TradingDecisionRun.started_at), desc(TradingDecisionRun.id))
+        .limit(1)
+    ).scalar_one_or_none()
+    latest_hermes = db.execute(
+        select(AgentMemoryEvent)
+        .where(AgentMemoryEvent.agent_name == "hermes-agent")
+        .where(AgentMemoryEvent.event_type == "hermes_sentiment")
+        .order_by(desc(AgentMemoryEvent.created_at), desc(AgentMemoryEvent.id))
+        .limit(1)
+    ).scalar_one_or_none()
 
     try:
         health = collector_health(db)
@@ -176,6 +191,9 @@ def trading_status(db: Session, *, asset_symbol: str = "XAG_GRAM") -> dict:
             "status": _runtime_status(heartbeats, latest_decision),
             "heartbeats": [_heartbeat_payload(row) for row in heartbeats],
         },
+        "heartbeat_overdue": [_heartbeat_payload(row) for row in _overdue_heartbeats(heartbeats)],
+        "latest_critical_block": _decision_run_payload(latest_critical) if latest_critical else None,
+        "hermes_status": _hermes_status_payload(latest_hermes),
         "latest_decision": _decision_run_payload(latest_decision) if latest_decision else None,
         "latest_signal": _signal_payload(latest_signal) if latest_signal else None,
         "latest_collector_run": _collector_run_payload(latest_collector) if latest_collector else None,
@@ -185,13 +203,8 @@ def trading_status(db: Session, *, asset_symbol: str = "XAG_GRAM") -> dict:
 
 
 def _runtime_status(heartbeats: list[RuntimeHeartbeat], latest_decision: TradingDecisionRun | None) -> str:
-    now = utc_now()
     failing = [row for row in heartbeats if row.status in {"degraded", "failing", "failed", "error"}]
-    overdue = [
-        row
-        for row in heartbeats
-        if row.expected_next_at is not None and _aware(row.expected_next_at) < now and row.status == "ok"
-    ]
+    overdue = _overdue_heartbeats(heartbeats)
     if failing:
         return "degraded"
     if overdue:
@@ -199,6 +212,24 @@ def _runtime_status(heartbeats: list[RuntimeHeartbeat], latest_decision: Trading
     if latest_decision is not None and latest_decision.status in {"failed", "error"}:
         return "degraded"
     return "ok"
+
+
+def _overdue_heartbeats(heartbeats: list[RuntimeHeartbeat]) -> list[RuntimeHeartbeat]:
+    now = utc_now()
+    return [row for row in heartbeats if row.expected_next_at is not None and _aware(row.expected_next_at) < now]
+
+
+def _critical_hold_reasons() -> set[str]:
+    return {
+        "SOURCE_DIVERGENCE_BLOCK",
+        "DAILY_BAR_DELAYED",
+        "ENTRY_TIMEFRAME_STALE",
+        "EXECUTION_TIMEFRAME_STALE",
+        "PORTFOLIO_NOT_FOUND",
+        "ASSET_NOT_FOUND",
+        "PRICE_SNAPSHOT_MISSING",
+        "BLOCKED_CONFIG_INVALID",
+    }
 
 
 def _aware(value: datetime) -> datetime:
@@ -260,4 +291,18 @@ def _collector_run_payload(row: CollectorRun) -> dict:
         "error_message": row.error_message,
         "started_at": row.started_at,
         "finished_at": row.finished_at,
+    }
+
+
+def _hermes_status_payload(row: AgentMemoryEvent | None) -> dict | None:
+    if row is None:
+        return None
+    value = row.value_json or {}
+    return {
+        "event_id": row.id,
+        "created_at": row.created_at,
+        "llm_status": value.get("llm_status", "unknown"),
+        "fallback_reason": value.get("fallback_reason"),
+        "confidence": value.get("confidence"),
+        "source_coverage": value.get("source_coverage"),
     }

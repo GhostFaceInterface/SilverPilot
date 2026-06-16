@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.llm.gateway import DeepSeekGateway
 from app.models.entities import RawNews, AgentMemoryEvent
+from app.services.runtime import record_runtime_heartbeat
 from app.services.telegram import send_telegram_message
 
 logger = logging.getLogger("silverpilot.agents.hermes")
@@ -21,6 +22,8 @@ TARGET_SOURCES = {
     "investing-rss",
 }
 
+HERMES_EXPECTED_INTERVAL_SECONDS = 6 * 60 * 60
+
 
 async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     """
@@ -31,6 +34,8 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
     """
     now = datetime.now(timezone.utc)
     twenty_four_hours_ago = now - timedelta(hours=24)
+    llm_status = "ok"
+    fallback_reason = None
 
     # 1. Fetch recent news matching target sources from the last 24 hours
     stmt = (
@@ -112,6 +117,7 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
 
     if not news_items:
         logger.warning("No news articles found in the database at all.")
+        coverage = _source_coverage([])
         event = AgentMemoryEvent(
             agent_name="hermes-agent",
             event_type="hermes_sentiment",
@@ -122,9 +128,25 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
                 "articles": [],
                 "summary_markdown": "No news articles found in the database to analyze.",
                 "analyzed_at": now.isoformat(),
+                "llm_status": "fallback",
+                "fallback_reason": "no_news",
+                "source_coverage": coverage,
+                "confidence": 0.0,
             },
         )
         db.add(event)
+        record_runtime_heartbeat(
+            db,
+            component="hermes",
+            status="degraded",
+            expected_interval_seconds=HERMES_EXPECTED_INTERVAL_SECONDS,
+            details={
+                "llm_status": "fallback",
+                "fallback_reason": "no_news",
+                "confidence": 0.0,
+                "source_coverage": coverage,
+            },
+        )
         db.commit()
         db.refresh(event)
         return event
@@ -194,6 +216,8 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         )
 
         raw_content = response.get("content", "").strip()
+        if not raw_content:
+            fallback_reason = "empty_response"
 
         # Clean markdown block wrapping if LLM included them
         for prefix in ("```json", "```"):
@@ -208,20 +232,31 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
                 raw_content = "\n".join(lines[start:end]).strip()
 
         try:
-            parsed_list = json.loads(raw_content)
-            if not isinstance(parsed_list, list):
-                logger.warning("Parsed response is not a JSON array. Recovering to empty list.")
-                parsed_list = []
+            if raw_content:
+                parsed_list = json.loads(raw_content)
+                if not isinstance(parsed_list, list):
+                    logger.warning("Parsed response is not a JSON array. Recovering to empty list.")
+                    parsed_list = []
+                    fallback_reason = fallback_reason or "json_parse_error"
         except Exception as parse_err:
             logger.warning(
-                f"Failed to parse JSON from Hermes Agent LLM response. Raw content: {raw_content}. Error: {parse_err}"
+                "Failed to parse JSON from Hermes Agent LLM response; error_type=%s.",
+                type(parse_err).__name__,
             )
+            fallback_reason = "json_parse_error"
     except Exception as llm_err:
-        logger.error(f"Hermes Agent LLM call failed. Gracefully recovering to neutral fallback: {llm_err}")
-        llm_error_prefix = f"⚠️ **LLM call failed:** {llm_err}. Fallback neutral score applied.\n\n"
+        logger.error(
+            "Hermes Agent LLM call failed. Gracefully recovering to neutral fallback; error_type=%s.",
+            type(llm_err).__name__,
+        )
+        llm_status = "fallback"
+        fallback_reason = "llm_error"
+        llm_error_prefix = "⚠️ **LLM call failed:** Fallback neutral score applied.\n\n"
 
     # If parsing failed or returned empty list, recover by creating a neutral fallback entry for each article
     if not parsed_list:
+        llm_status = "fallback"
+        fallback_reason = fallback_reason or "empty_response"
         parsed_list = [
             {
                 "title": item.title,
@@ -234,6 +269,11 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         ]
 
     # 6. Calculate the Weighted Sentiment Score
+    coverage = _source_coverage(news_items)
+    if llm_status == "ok" and coverage["coverage_ratio"] < 0.5:
+        llm_status = "degraded"
+        fallback_reason = "low_source_coverage"
+
     total_weighted_score = 0.0
     total_source_weight = 0.0
     analyzed_articles = []
@@ -301,6 +341,9 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
 
     final_score = total_weighted_score / total_source_weight if total_source_weight > 0.0 else 0.0
     veto_threshold = float(settings.hermes_veto_threshold)
+    confidence = _confidence(
+        llm_status=llm_status, coverage_ratio=coverage["coverage_ratio"], article_count=len(analyzed_articles)
+    )
 
     # Determine final sentiment label based on thresholds
     if final_score < veto_threshold:
@@ -341,9 +384,25 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
             },
             "summary_markdown": summary_markdown,
             "analyzed_at": now.isoformat(),
+            "llm_status": llm_status,
+            "fallback_reason": fallback_reason,
+            "source_coverage": coverage,
+            "confidence": confidence,
         },
     )
     db.add(event)
+    record_runtime_heartbeat(
+        db,
+        component="hermes",
+        status="ok" if llm_status == "ok" else "degraded",
+        expected_interval_seconds=HERMES_EXPECTED_INTERVAL_SECONDS,
+        details={
+            "llm_status": llm_status,
+            "fallback_reason": fallback_reason,
+            "confidence": confidence,
+            "source_coverage": coverage,
+        },
+    )
     db.commit()
     db.refresh(event)
 
@@ -376,3 +435,28 @@ async def run_hermes_sentiment_analysis(db: Session) -> AgentMemoryEvent:
         f"Hermes weighted sentiment analysis completed and saved successfully. Event ID: {event.id}, Score: {final_score:.4f}"
     )
     return event
+
+
+def _source_coverage(news_items: list[RawNews]) -> dict:
+    found = {item.source for item in news_items if item.source in TARGET_SOURCES}
+    target_count = len(TARGET_SOURCES)
+    found_count = len(found)
+    return {
+        "target_source_count": target_count,
+        "found_source_count": found_count,
+        "coverage_ratio": found_count / target_count if target_count else 0.0,
+        "found_sources": sorted(found),
+    }
+
+
+def _confidence(*, llm_status: str, coverage_ratio: float, article_count: int) -> float:
+    base = min(1.0, max(0.0, coverage_ratio))
+    if article_count == 0:
+        base = 0.0
+    elif article_count < 3:
+        base *= 0.7
+    if llm_status == "fallback":
+        base *= 0.25
+    elif llm_status == "degraded":
+        base *= 0.6
+    return round(max(0.0, min(1.0, base)), 4)

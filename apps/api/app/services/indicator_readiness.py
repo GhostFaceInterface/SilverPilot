@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Asset, MarketBar, PriceSnapshot, TechnicalIndicator
+from app.services.market_calendar import comex_timeframe_freshness
 
 CURRENT_INDICATOR_CALCULATION_VERSION = "technical-indicators-v2"
 SUPPORTED_INDICATOR_CALCULATION_VERSIONS = (
@@ -82,6 +83,9 @@ class IndicatorReadiness:
     input_bar_count: int | None
     missing_required_fields: list[str]
     close_usd_oz: Decimal | None
+    market_state: str | None = None
+    expected_next_bar_at: datetime | None = None
+    freshness_status: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -104,6 +108,9 @@ class IndicatorReadiness:
             "input_bar_count": self.input_bar_count,
             "missing_required_fields": list(self.missing_required_fields),
             "close_usd_oz": self.close_usd_oz,
+            "market_state": self.market_state,
+            "expected_next_bar_at": self.expected_next_bar_at,
+            "freshness_status": self.freshness_status,
         }
 
 
@@ -197,11 +204,26 @@ def get_indicator_readiness(
         status = "degraded"
 
     age_seconds = None
+    calendar_freshness = comex_timeframe_freshness(
+        timeframe=timeframe,
+        latest_bar_at=indicator.bar_timestamp,
+        max_age_minutes=freshness_minutes,
+        now=now,
+    )
+
     if indicator.bar_timestamp is not None:
         aware_bar_ts = _aware(indicator.bar_timestamp)
         age_seconds = int((now - aware_bar_ts).total_seconds())
-        if age_seconds > freshness_minutes * 60:
-            reasons.append("INDICATOR_STALE")
+
+    if calendar_freshness.reason_code is not None:
+        reasons.append(calendar_freshness.reason_code)
+        if calendar_freshness.reason_code == "MARKET_CLOSED":
+            status = "market_closed"
+        elif calendar_freshness.reason_code in {
+            "DAILY_BAR_DELAYED",
+            "ENTRY_TIMEFRAME_STALE",
+            "EXECUTION_TIMEFRAME_STALE",
+        }:
             status = "stale"
 
     if indicator.input_bar_count < required_min_bar_count:
@@ -241,6 +263,9 @@ def get_indicator_readiness(
         input_bar_count=indicator.input_bar_count,
         missing_required_fields=missing_required_fields,
         close_usd_oz=indicator.close_usd_oz,
+        market_state=calendar_freshness.market_state,
+        expected_next_bar_at=calendar_freshness.expected_next_bar_at,
+        freshness_status=calendar_freshness.freshness_status,
     )
 
 
@@ -323,12 +348,28 @@ def _build_empty(
     reason_codes: list[str],
     status: str,
 ) -> IndicatorReadiness:
+    calendar_freshness = comex_timeframe_freshness(
+        timeframe=timeframe,
+        latest_bar_at=None,
+        max_age_minutes=freshness_minutes,
+    )
+    combined_reasons = list(reason_codes)
+    if "INDICATOR_NOT_FOUND" in combined_reasons and calendar_freshness.reason_code:
+        if calendar_freshness.reason_code not in combined_reasons:
+            combined_reasons.append(calendar_freshness.reason_code)
+    if "INDICATOR_NOT_FOUND" in combined_reasons:
+        if timeframe == "1d" and "DAILY_BAR_DELAYED" not in combined_reasons:
+            combined_reasons.append("DAILY_BAR_DELAYED")
+        elif timeframe == "1h" and calendar_freshness.reason_code != "MARKET_CLOSED":
+            combined_reasons.append("ENTRY_TIMEFRAME_STALE")
+        elif timeframe == "5m" and calendar_freshness.reason_code != "MARKET_CLOSED":
+            combined_reasons.append("EXECUTION_TIMEFRAME_STALE")
     return IndicatorReadiness(
         asset_symbol=asset_symbol,
         timeframe=timeframe,
         status=status,
         usable=False,
-        reason_codes=reason_codes,
+        reason_codes=combined_reasons,
         required_min_bar_count=required_min_bar_count,
         required_fields=DEFAULT_REQUIRED_FIELDS,
         indicator=None,
@@ -344,6 +385,9 @@ def _build_empty(
         input_bar_count=None,
         missing_required_fields=list(DEFAULT_REQUIRED_FIELDS),
         close_usd_oz=None,
+        market_state=calendar_freshness.market_state,
+        expected_next_bar_at=calendar_freshness.expected_next_bar_at,
+        freshness_status=calendar_freshness.freshness_status,
     )
 
 
