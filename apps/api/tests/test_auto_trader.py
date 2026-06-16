@@ -28,6 +28,7 @@ from app.services.auto_trader import (
     ACTION_BUY,
     ACTION_SELL,
     StrategyResolution,
+    _notification_category,
     run_auto_trading,
     should_send_trade_notification,
 )
@@ -509,6 +510,13 @@ async def test_auto_trading_blocks_on_source_divergence():
         assert db.execute(select(PaperTrade)).scalars().all() == []
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()
+        message_text = bot.send_message.call_args.kwargs["text"]
+        assert "SilverPilot Koruma Blok Raporu" in message_text
+        assert "Veri Kaynağı Ayrışması" in message_text
+        assert "Banka orta" in message_text
+        assert "Global dönüşüm" in message_text
+        assert "Ayrışma" in message_text
+        assert "işlem yapılmadı" in message_text
 
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -593,7 +601,7 @@ async def test_blended_readiness_block_does_not_require_strategy_metadata():
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()
         message_text = bot.send_message.call_args.kwargs["text"]
-        assert "SilverPilot İşlem Blok Raporu" in message_text
+        assert "SilverPilot Koruma Blok Raporu" in message_text
         assert "Günlük trend verisi hazır değil" in message_text
         assert "1d trend" in message_text
         assert "1h giriş" in message_text
@@ -802,6 +810,13 @@ def test_hold_notification_dedupes_same_reason_inside_cooldown():
     db.close()
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
+
+
+def test_source_divergence_notification_uses_hold_cooldown_category():
+    assert (
+        _notification_category({"action": "HOLD", "execution": {"status": "skipped"}}, "SOURCE_DIVERGENCE_BLOCK")
+        == "block_change"
+    )
 
 
 def test_hold_notification_sends_when_reason_changes():

@@ -170,6 +170,35 @@ def _position_context_line(trade_data: dict) -> str:
     return ""
 
 
+def _format_source_divergence_lines(source_divergence: dict | None) -> list[str]:
+    if not source_divergence:
+        return []
+    if source_divergence.get("status") not in {"blocked", "ok"}:
+        return []
+
+    threshold = _format_optional_float(source_divergence.get("threshold_percent"), precision=2)
+    divergence = _format_optional_float(source_divergence.get("divergence_percent"), precision=2)
+    bank_mid = _format_optional_float(source_divergence.get("bank_mid_try_gram"), precision=4)
+    converted = _format_optional_float(source_divergence.get("converted_try_gram"), precision=4)
+    global_xag = _format_optional_float(source_divergence.get("global_xag_usd_oz"), precision=4)
+    usd_try = _format_optional_float(source_divergence.get("usd_try"), precision=4)
+
+    bank_source = html.escape(str(source_divergence.get("bank_source") or "n/a"))
+    global_source = html.escape(str(source_divergence.get("global_source") or "n/a"))
+    fx_source = html.escape(str(source_divergence.get("fx_source") or "n/a"))
+    bank_age = source_divergence.get("bank_age_minutes")
+    global_age = source_divergence.get("global_age_minutes")
+    fx_age = source_divergence.get("fx_age_minutes")
+
+    return [
+        f"• <b>Banka orta:</b> {bank_mid} TRY/gram (<code>{bank_source}</code>, yaş: {html.escape(str(bank_age if bank_age is not None else 'n/a'))} dk)",
+        f"• <b>Global dönüşüm:</b> {converted} TRY/gram = {global_xag} USD/ons × {usd_try} USD/TRY / 31.1034768",
+        f"• <b>Global/FX kaynak:</b> <code>{global_source}</code> ({html.escape(str(global_age if global_age is not None else 'n/a'))} dk), "
+        f"<code>{fx_source}</code> ({html.escape(str(fx_age if fx_age is not None else 'n/a'))} dk)",
+        f"• <b>Ayrışma:</b> {divergence}% / eşik {threshold}%",
+    ]
+
+
 def build_timeframe_indicator_summary(timeframe_contexts: dict) -> dict:
     summary = {}
     for timeframe, context in timeframe_contexts.items():
@@ -224,16 +253,26 @@ def format_readiness_block_report(trade_data: dict) -> str:
     if not indicator_lines:
         indicator_lines.append("• Kullanılabilir 1h/5m teknik değer bulunamadı.")
 
+    divergence_lines = _format_source_divergence_lines(trade_data.get("source_divergence"))
+    divergence_section = ""
+    if divergence_lines:
+        divergence_section = (
+            "<b>Veri Kaynağı Ayrışması:</b>\n"
+            f"{chr(10).join(divergence_lines)}\n"
+            "• Teknik timeframe readiness hazır olabilir; bu blok banka/global/FX fiyat tutarlılığı korumasıdır.\n\n"
+        )
+
     msg = (
-        "⚠️ <b>SilverPilot İşlem Blok Raporu</b>\n\n"
+        "⚠️ <b>SilverPilot Koruma Blok Raporu</b>\n\n"
         f"🥈 <b>Gümüş (XAG_GRAM):</b> {trade_data['price']:,.4f} USD/gram\n"
         f"🔒 <b>Ana Gerekçe:</b> {html.escape(reason_label)}\n"
         f"🔍 <b>Neden Kodu:</b> <code>{html.escape(str(reason_code or 'UNKNOWN'))}</code>\n\n"
+        f"{divergence_section}"
         "<b>Readiness Durumu:</b>\n"
         f"{chr(10).join(timeframe_lines)}\n\n"
         "<b>Bilgi Amaçlı Teknik Değerler:</b>\n"
         f"{chr(10).join(indicator_lines)}\n\n"
-        f"🔄 <b>İşlem Durumu:</b> ⚪️ BEKLE (HOLD)\n"
+        f"⏸️ <b>Uygulama:</b> işlem yapılmadı (<code>{html.escape(str(reason_code or 'UNKNOWN'))}</code>)\n"
         f"💵 <b>Nakit Bakiyesi:</b> {trade_data.get('cash_balance', 0.0):,.2f} USD\n"
     )
     if "xag_balance" in trade_data:
@@ -966,6 +1005,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         "notification_kind": "readiness_block"
         if reason_code in READINESS_BLOCK_REASONS or strategy_readiness_flags
         else "trade_report",
+        "source_divergence": source_divergence_payload,
         "execution": execution_result.as_dict(),
         "candidate_action": resolution.candidate_action,
         "final_action": action,
@@ -1154,7 +1194,6 @@ def _notification_category(notification_data: dict, reason_code: str) -> str:
     if notification_data.get("action") in {"BUY", "SELL"}:
         return "block_change"
     if reason_code in {
-        SOURCE_DIVERGENCE_BLOCK,
         "DAILY_BAR_DELAYED",
         "ENTRY_TIMEFRAME_STALE",
         "EXECUTION_TIMEFRAME_STALE",

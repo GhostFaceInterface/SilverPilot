@@ -675,7 +675,7 @@ def test_telegram_canli_readiness_block_skips_collectors_and_arbiter():
         settings = MagicMock()
         report = asyncio.run(run_canli_analysis_report(db, settings))
 
-        assert "SilverPilot İşlem Blok Raporu" in report
+        assert "SilverPilot Koruma Blok Raporu" in report
         assert "Günlük trend verisi hazır değil" in report
         assert "INSUFFICIENT_HISTORY" in report
         assert "30.0000" in report
