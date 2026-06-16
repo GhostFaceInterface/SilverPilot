@@ -38,6 +38,7 @@ class SourceDivergenceResult:
     bank_age_minutes: int | None
     global_age_minutes: int | None
     fx_age_minutes: int | None
+    stale_reasons: list[str]
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +62,7 @@ class SourceDivergenceResult:
             "bank_age_minutes": self.bank_age_minutes,
             "global_age_minutes": self.global_age_minutes,
             "fx_age_minutes": self.fx_age_minutes,
+            "stale_reasons": list(self.stale_reasons),
         }
 
 
@@ -137,6 +139,7 @@ def evaluate_source_divergence(db: Session, *, policy: ResolvedStrategyPolicy | 
         bank_age_minutes=bank_age,
         global_age_minutes=global_age,
         fx_age_minutes=fx_age,
+        stale_reasons=stale_reasons,
     )
 
 

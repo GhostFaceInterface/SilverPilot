@@ -25,7 +25,11 @@ from app.services.runtime import (
     to_jsonable,
 )
 from app.services.policy_resolver import resolve_strategy_policy
-from app.services.source_divergence import SOURCE_DIVERGENCE_BLOCK, evaluate_source_divergence
+from app.services.source_divergence import (
+    SOURCE_DIVERGENCE_BLOCK,
+    SOURCE_DIVERGENCE_STALE_DATA,
+    evaluate_source_divergence,
+)
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
@@ -46,6 +50,7 @@ READINESS_BLOCK_REASONS = {
     "EXECUTION_TIMEFRAME_UNUSABLE",
     "TIMEFRAME_SOURCE_MISMATCH",
     SOURCE_DIVERGENCE_BLOCK,
+    SOURCE_DIVERGENCE_STALE_DATA,
 }
 
 READINESS_REASON_LABELS = {
@@ -59,6 +64,7 @@ READINESS_REASON_LABELS = {
     "EXECUTION_TIMEFRAME_UNUSABLE": "5 dakikalık uygulama verisi kullanılamıyor",
     "TIMEFRAME_SOURCE_MISMATCH": "Zaman dilimi veri kaynakları uyumsuz",
     SOURCE_DIVERGENCE_BLOCK: "Banka fiyatı ile global XAG/USD dönüşümü ayrıştı",
+    SOURCE_DIVERGENCE_STALE_DATA: "Banka/global/FX fiyat tutarlılığı için gereken kaynaklardan biri güncel değil",
 }
 
 
@@ -173,7 +179,7 @@ def _position_context_line(trade_data: dict) -> str:
 def _format_source_divergence_lines(source_divergence: dict | None) -> list[str]:
     if not source_divergence:
         return []
-    if source_divergence.get("status") not in {"blocked", "ok"}:
+    if source_divergence.get("status") not in {"blocked", "ok", "stale_data"}:
         return []
 
     threshold = _format_optional_float(source_divergence.get("threshold_percent"), precision=2)
@@ -189,14 +195,18 @@ def _format_source_divergence_lines(source_divergence: dict | None) -> list[str]
     bank_age = source_divergence.get("bank_age_minutes")
     global_age = source_divergence.get("global_age_minutes")
     fx_age = source_divergence.get("fx_age_minutes")
+    stale_reasons = source_divergence.get("stale_reasons") or []
 
-    return [
+    lines = [
         f"• <b>Banka orta:</b> {bank_mid} TRY/gram (<code>{bank_source}</code>, yaş: {html.escape(str(bank_age if bank_age is not None else 'n/a'))} dk)",
         f"• <b>Global dönüşüm:</b> {converted} TRY/gram = {global_xag} USD/ons × {usd_try} USD/TRY / 31.1034768",
         f"• <b>Global/FX kaynak:</b> <code>{global_source}</code> ({html.escape(str(global_age if global_age is not None else 'n/a'))} dk), "
         f"<code>{fx_source}</code> ({html.escape(str(fx_age if fx_age is not None else 'n/a'))} dk)",
         f"• <b>Ayrışma:</b> {divergence}% / eşik {threshold}%",
     ]
+    if stale_reasons:
+        lines.append(f"• <b>Stale nedenleri:</b> <code>{html.escape(', '.join(stale_reasons))}</code>")
+    return lines
 
 
 def build_timeframe_indicator_summary(timeframe_contexts: dict) -> dict:
@@ -557,6 +567,7 @@ async def _resolve_strategy_resolution(db: Session, context: DecisionContext) ->
             "ENTRY_TIMEFRAME_UNUSABLE": Decimal("0.9800"),
             "DAILY_TREND_MISSING": Decimal("0.9900"),
             SOURCE_DIVERGENCE_BLOCK: Decimal("0.9900"),
+            SOURCE_DIVERGENCE_STALE_DATA: Decimal("0.9900"),
         }
         return _blocked_strategy_resolution(
             context,
@@ -737,8 +748,10 @@ async def _run_auto_trading_impl(db: Session, settings):
     strategy_readiness_flags = evaluate_timeframe_guardrails(timeframe_contexts, ref_dt=datetime.now(UTC))
     source_divergence = evaluate_source_divergence(db, policy=resolved_policy)
     source_divergence_payload = to_jsonable(source_divergence.to_dict())
-    if source_divergence.blocked and SOURCE_DIVERGENCE_BLOCK not in strategy_readiness_flags:
-        strategy_readiness_flags.append(SOURCE_DIVERGENCE_BLOCK)
+    if source_divergence.blocked:
+        source_divergence_reason = source_divergence.reason_code or SOURCE_DIVERGENCE_BLOCK
+        if source_divergence_reason not in strategy_readiness_flags:
+            strategy_readiness_flags.append(source_divergence_reason)
 
     latest_indicator = hourly_context.readiness.indicator
     execution_indicator = execution_context.readiness.indicator

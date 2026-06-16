@@ -1214,7 +1214,7 @@ def _execution_critical_bank_price_status(db: Session, *, stale_after_seconds: i
 
 def _execution_critical_global_xag_status(db: Session, *, stale_after_seconds: int, now: datetime) -> dict:
     settings = get_settings()
-    asset = db.execute(select(Asset).where(Asset.symbol.in_(["XAG_GRAM", "XAG"]))).scalars().first()
+    asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
     if asset is None:
         latest_global_price = None
     else:

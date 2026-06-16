@@ -47,7 +47,12 @@ def make_client():
     Base.metadata.create_all(bind=engine)
 
     db = testing_session()
-    db.add(Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True))
+    db.add_all(
+        [
+            Asset(symbol="XAG", name="Silver Ounce", asset_type="metal", is_active=True),
+            Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True),
+        ]
+    )
     db.add(
         Portfolio(
             name="gram-paper",
@@ -109,6 +114,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
     db = testing_session()
     try:
         asset = db.query(Asset).filter(Asset.symbol == "XAG_GRAM").one()
+        xag_asset = db.query(Asset).filter(Asset.symbol == "XAG").one()
         bank_run = CollectorRun(
             collector_name="kuveyt_public_silver",
             source="kuveyt-public-silver-page",
@@ -123,8 +129,8 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
             collector_name="global_xag_usd",
             source="gold-api-xag-usd",
             status="success",
-            records_seen=1,
-            records_inserted=1,
+            records_seen=2,
+            records_inserted=2,
             started_at=fetched_at,
             finished_at=fetched_at,
             details_json={"selected_global_xag_source": "gold-api-xag-usd"},
@@ -158,7 +164,7 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
                 ),
                 RawGlobalPrice(
                     collector_run_id=global_run.id,
-                    asset_id=asset.id,
+                    asset_id=xag_asset.id,
                     source="gold-api-xag-usd",
                     buy_price=Decimal("32.000000"),
                     sell_price=Decimal("32.000000"),
@@ -166,6 +172,19 @@ def seed_execution_critical_data(testing_session, *, observed_at: datetime | Non
                     observed_at=observed_at,
                     fetched_at=fetched_at,
                     raw_payload_hash="global-hash",
+                    parser_version="gold-api-xag-usd-v1",
+                    payload_json={},
+                ),
+                RawGlobalPrice(
+                    collector_run_id=global_run.id,
+                    asset_id=asset.id,
+                    source="gold-api-xag-usd",
+                    buy_price=Decimal("32.000000"),
+                    sell_price=Decimal("32.000000"),
+                    currency="USD",
+                    observed_at=observed_at,
+                    fetched_at=fetched_at,
+                    raw_payload_hash="global-gram-hash",
                     parser_version="gold-api-xag-usd-v1",
                     payload_json={},
                 ),

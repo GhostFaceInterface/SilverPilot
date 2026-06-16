@@ -33,6 +33,10 @@ from app.services.auto_trader import (
     should_send_trade_notification,
 )
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
+from app.services.source_divergence import (
+    SOURCE_DIVERGENCE_STALE_DATA,
+    evaluate_source_divergence,
+)
 
 
 def _make_context(
@@ -137,6 +141,11 @@ def _seed_runtime_state():
 
 def _seed_divergent_sources(db, asset: Asset) -> None:
     now = datetime.datetime.now(datetime.timezone.utc)
+    xag_asset = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one_or_none()
+    if xag_asset is None:
+        xag_asset = Asset(symbol="XAG", name="Silver Ounce", asset_type="metal", is_active=True)
+        db.add(xag_asset)
+        db.flush()
     bank_run = CollectorRun(
         collector_name="kuveyt_public_silver",
         source="kuveyt-public-silver-page",
@@ -189,7 +198,7 @@ def _seed_divergent_sources(db, asset: Asset) -> None:
             ),
             RawGlobalPrice(
                 collector_run_id=global_run.id,
-                asset_id=asset.id,
+                asset_id=xag_asset.id,
                 source="yahoo-si-f",
                 buy_price=Decimal("31.103477"),
                 sell_price=Decimal("31.103477"),
@@ -215,6 +224,195 @@ def _seed_divergent_sources(db, asset: Asset) -> None:
         ]
     )
     db.flush()
+
+
+def test_source_divergence_uses_xag_ounce_not_xag_gram_replica():
+    engine, db, xag_gram, _, _, _ = _seed_runtime_state()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    xag = Asset(symbol="XAG", name="Silver Ounce", asset_type="metal", is_active=True)
+    db.add(xag)
+    db.flush()
+
+    bank_run = CollectorRun(
+        collector_name="kuveyt_public_silver",
+        source="kuveyt-public-silver-page",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    global_run = CollectorRun(
+        collector_name="global_xag_usd",
+        source="yahoo-si-f",
+        status="success",
+        records_seen=2,
+        records_inserted=2,
+        duplicates=0,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    fx_run = CollectorRun(
+        collector_name="tcmb_usd_try",
+        source="tcmb-today-xml",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    db.add_all([bank_run, global_run, fx_run])
+    db.flush()
+    db.add_all(
+        [
+            RawBankPrice(
+                collector_run_id=bank_run.id,
+                asset_id=xag_gram.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("40.000000"),
+                sell_price=Decimal("40.000000"),
+                currency="TRY",
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="bank",
+                parser_version="kuveyt-public-finance-portal-v2",
+                payload_json={},
+            ),
+            RawGlobalPrice(
+                collector_run_id=global_run.id,
+                asset_id=xag.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("31.1034768"),
+                sell_price=Decimal("31.1034768"),
+                currency="USD",
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="global-ounce",
+                parser_version="yahoo-finance-chart-v1",
+                payload_json={},
+            ),
+            RawGlobalPrice(
+                collector_run_id=global_run.id,
+                asset_id=xag_gram.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("1.000000"),
+                sell_price=Decimal("1.000000"),
+                currency="USD",
+                observed_at=now + datetime.timedelta(seconds=1),
+                fetched_at=now + datetime.timedelta(seconds=1),
+                raw_payload_hash="global-gram-replica",
+                parser_version="yahoo-finance-chart-v1",
+                payload_json={},
+            ),
+            RawFxRate(
+                collector_run_id=fx_run.id,
+                source="tcmb-today-xml",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("40.000000"),
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="fx",
+                parser_version="tcmb-today-xml-v1",
+                payload_json={},
+            ),
+        ]
+    )
+    db.flush()
+
+    result = evaluate_source_divergence(db).to_dict()
+
+    assert result["status"] == "ok"
+    assert result["blocked"] is False
+    assert result["global_asset_symbol"] == "XAG"
+    assert result["bank_asset_symbol"] == "XAG_GRAM"
+    assert result["global_xag_usd_oz"] == Decimal("31.103477")
+    assert abs(result["converted_try_gram"] - Decimal("40.000000")) < Decimal("0.000001")
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+def test_source_divergence_stale_data_has_dedicated_reason():
+    engine, db, xag_gram, _, _, _ = _seed_runtime_state()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stale = now - datetime.timedelta(hours=3)
+    xag = Asset(symbol="XAG", name="Silver Ounce", asset_type="metal", is_active=True)
+    db.add(xag)
+    db.flush()
+    run = CollectorRun(
+        collector_name="global_xag_usd",
+        source="yahoo-si-f",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=stale,
+        finished_at=stale,
+        details_json={},
+    )
+    db.add(run)
+    db.flush()
+    db.add_all(
+        [
+            RawBankPrice(
+                collector_run_id=run.id,
+                asset_id=xag_gram.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("40.000000"),
+                sell_price=Decimal("40.000000"),
+                currency="TRY",
+                observed_at=stale,
+                fetched_at=stale,
+                raw_payload_hash="bank-stale",
+                parser_version="kuveyt-public-finance-portal-v2",
+                payload_json={},
+            ),
+            RawGlobalPrice(
+                collector_run_id=run.id,
+                asset_id=xag.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("31.1034768"),
+                sell_price=Decimal("31.1034768"),
+                currency="USD",
+                observed_at=stale,
+                fetched_at=stale,
+                raw_payload_hash="global-stale",
+                parser_version="yahoo-finance-chart-v1",
+                payload_json={},
+            ),
+            RawFxRate(
+                collector_run_id=run.id,
+                source="tcmb-today-xml",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("40.000000"),
+                observed_at=stale,
+                fetched_at=stale,
+                raw_payload_hash="fx-stale",
+                parser_version="tcmb-today-xml-v1",
+                payload_json={},
+            ),
+        ]
+    )
+    db.flush()
+
+    result = evaluate_source_divergence(db)
+
+    assert result.status == "stale_data"
+    assert result.blocked is True
+    assert result.reason_code == SOURCE_DIVERGENCE_STALE_DATA
+    assert set(result.stale_reasons) == {"bank_price_stale", "global_xag_stale", "usd_try_stale"}
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 def test_strategy_v2_is_default_for_auto_trading():
