@@ -1,11 +1,13 @@
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base
 from app.models import AccountLedgerEntry, Asset, PaperTrade, Portfolio, TradeIntentRecord
+from app.paper_trading.service import PaperTradingError
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 
@@ -94,6 +96,33 @@ def test_risk_blocked_intent_leaves_balances_unchanged():
     assert intent_record.status == "blocked"
     assert intent_record.reason_code == "STRATEGY_V2_BUY_CONFIRMED"
     assert db.execute(select(PaperTrade)).scalar_one().trade_intent_id == intent_record.id
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+
+
+def test_sell_intent_without_open_position_rejected_before_mutation():
+    engine, db, portfolio = _seed_db()
+
+    with pytest.raises(PaperTradingError, match="No open position"):
+        execute_trade_intent(
+            db,
+            intent=TradeIntent(
+                portfolio_name="gram-paper",
+                asset_symbol="XAG_GRAM",
+                action="SELL",
+                confidence=Decimal("0.8000"),
+                reason_code="TEST_SELL",
+            ),
+            buy_price=Decimal("30.000000"),
+            sell_price=Decimal("29.900000"),
+            fee_amount=Decimal("0.050000"),
+        )
+
+    assert portfolio.cash_balance == Decimal("600.000000")
+    assert db.execute(select(TradeIntentRecord)).scalars().all() == []
+    assert db.execute(select(PaperTrade)).scalars().all() == []
+    assert db.execute(select(AccountLedgerEntry)).scalars().all() == []
 
     db.close()
     Base.metadata.drop_all(bind=engine)

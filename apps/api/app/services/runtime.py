@@ -178,10 +178,14 @@ def trading_status(db: Session, *, asset_symbol: str = "XAG_GRAM") -> dict:
     no_trade_reason = None
     if latest_decision is None:
         no_trade_reason = "NO_DECISION_RUNS"
-    elif latest_decision.action == "HOLD":
-        no_trade_reason = latest_decision.reason_code or "HOLD"
     elif latest_decision.status in {"failed", "error"}:
         no_trade_reason = latest_decision.error_message or latest_decision.reason_code or "DECISION_FAILED"
+    elif (
+        latest_decision.action in {"BUY", "SELL"} and latest_decision.execution_result_json.get("status") != "executed"
+    ):
+        no_trade_reason = latest_decision.execution_result_json.get("skipped_reason") or latest_decision.reason_code
+    elif latest_decision.action == "HOLD":
+        no_trade_reason = latest_decision.reason_code or "HOLD"
     elif latest_decision.execution_result_json.get("status") != "executed":
         no_trade_reason = latest_decision.execution_result_json.get("skipped_reason") or latest_decision.reason_code
 

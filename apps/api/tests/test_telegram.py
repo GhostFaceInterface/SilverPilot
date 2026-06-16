@@ -558,6 +558,8 @@ def test_telegram_canli_report_html_safety_merciless():
             assert "is &lt; 30" in report
             assert "<b>BUY</b>" in report
             assert "<b>bb_lower</b>" in report
+            assert "Yüce Hakem Duruşu" in report
+            assert "alım yönlü piyasa duruşu" in report
 
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -726,6 +728,43 @@ async def test_send_telegram_notification_retry():
 
         assert mock_bot_instance.send_message.call_count == 2
         mock_sleep.assert_called_once_with(2.0)  # e.retry_after (1.0) + 1.0
+
+
+@pytest.mark.anyio
+async def test_send_telegram_notification_labels_skipped_buy_as_candidate():
+    settings = Settings(telegram_bot_token="test_token_123", telegram_chat_id=987654)
+    trade_data = {
+        "action": "BUY",
+        "candidate_action": "BUY",
+        "final_action": "BUY",
+        "mode": "diagnostic",
+        "execution": {"status": "skipped", "skipped_reason": "diagnostic_mode", "trade_id": None},
+        "price": 32.50,
+        "quantity": 0.0,
+        "net_amount": 0.0,
+        "fees": 0.0,
+        "cash_balance": 2175.0,
+        "xag_balance": 0.0,
+        "has_open_position": False,
+        "strategy_name": "strategy_v2",
+        "indicators": {},
+        "risk_decision": None,
+    }
+
+    with patch("app.services.telegram.Bot") as MockBot:
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.send_message = AsyncMock()
+        MockBot.return_value = mock_bot_instance
+
+        from app.services.auto_trader import send_telegram_notification
+
+        await send_telegram_notification(trade_data, settings)
+
+        message_text = mock_bot_instance.send_message.call_args.kwargs["text"]
+        assert "ALIM ADAYI (BUY)" in message_text
+        assert "işlem yapılmadı" in message_text
+        assert "diagnostic_mode" in message_text
+        assert "paper trade gerçekleşti" not in message_text
 
 
 @pytest.mark.anyio

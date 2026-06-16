@@ -684,9 +684,17 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
     bb_vote = format_vote(strategy_votes.get("bollinger"))
     sma_vote = format_vote(strategy_votes.get("sma_cross"))
 
-    arbiter_emoji = (
-        "🟢 AL" if resolved_stance == "BULLISH" else ("🔴 SAT" if resolved_stance == "BEARISH" else "⚪️ BEKLE")
-    )
+    arbiter_emoji = "🟢" if resolved_stance == "BULLISH" else ("🔴" if resolved_stance == "BEARISH" else "⚪️")
+    stance_label = {
+        "BULLISH": "alım yönlü piyasa duruşu",
+        "BEARISH": "satış yönlü piyasa duruşu",
+        "NEUTRAL": "nötr piyasa duruşu",
+    }.get(resolved_stance, f"{resolved_stance.lower()} piyasa duruşu")
+    position_note = ""
+    if resolved_stance == "BEARISH" and not has_open_position:
+        position_note = "ℹ️ <b>Pozisyon Notu:</b> satılacak pozisyon yok, işlem emri değildir.\n"
+    elif resolved_stance == "BULLISH" and has_open_position:
+        position_note = "ℹ️ <b>Pozisyon Notu:</b> zaten açık pozisyon var, ek alım emri değildir.\n"
     arbiter_reason = escape_html_response(resolution_markdown)
     indicator_details = (
         f"\n📊 <b>Teknik Göstergeler:</b>\n"
@@ -707,7 +715,8 @@ async def run_canli_analysis_report(db: Session, settings) -> str:
         f"• RSI (14): {rsi_vote}\n"
         f"• Bollinger Bands: {bb_vote}\n"
         f"• SMA Cross (20/50): {sma_vote}\n\n"
-        f"👑 <b>Yüce Hakem Kararı:</b> {arbiter_emoji}\n"
+        f"👑 <b>Yüce Hakem Duruşu:</b> {arbiter_emoji} {stance_label}\n"
+        f"{position_note}"
         f"📝 <b>Gerekçe:</b> {arbiter_reason}\n\n"
         f"💵 <b>Nakit Bakiyesi:</b> {cash_balance:,.2f} USD\n"
         f"🥈 <b>Gümüş Portföyü:</b> {xag_balance:,.4f} XAG_GRAM\n"

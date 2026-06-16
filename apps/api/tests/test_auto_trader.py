@@ -24,7 +24,13 @@ from app.models import (
     TechnicalIndicator,
     TradingDecisionRun,
 )
-from app.services.auto_trader import run_auto_trading, should_send_trade_notification
+from app.services.auto_trader import (
+    ACTION_BUY,
+    ACTION_SELL,
+    StrategyResolution,
+    run_auto_trading,
+    should_send_trade_notification,
+)
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
 
 
@@ -337,6 +343,128 @@ async def test_diagnostic_mode_does_not_execute_buy_or_sell():
         assert db.execute(select(PaperTrade)).scalars().all() == []
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()
+        message_text = bot.send_message.call_args.kwargs["text"]
+        assert "ALIM ADAYI (BUY)" in message_text
+        assert "işlem yapılmadı" in message_text
+        assert "diagnostic_mode" in message_text
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_skips_buy_when_position_already_open():
+    engine, db, asset, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="strategy_v2",
+        auto_trading_mode="paper",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    db.add(
+        PaperTrade(
+            portfolio_id=portfolio.id,
+            asset_id=asset.id,
+            action="paper_buy",
+            quantity=Decimal("1.000000"),
+            price=Decimal("30.000000"),
+            gross_amount=Decimal("30.000000"),
+            fees=Decimal("0.000000"),
+            taxes=Decimal("0.000000"),
+            net_amount=Decimal("30.000000"),
+        )
+    )
+    db.flush()
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+    resolution = StrategyResolution(
+        action=ACTION_BUY,
+        candidate_action=ACTION_BUY,
+        reason_code="TEST_BUY_CANDIDATE",
+        confidence=Decimal("0.9000"),
+        details={"strategy_name": "strategy_v2", "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"}},
+        stop_loss_price=Decimal("29.000000"),
+        take_profit_price=Decimal("32.000000"),
+        expected_exit_price=Decimal("32.000000"),
+        resolved_strategy="strategy_v2",
+    )
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.auto_trader._resolve_strategy_resolution", new_callable=AsyncMock) as mock_resolve,
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        mock_resolve.return_value = resolution
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        run = db.execute(select(TradingDecisionRun).order_by(TradingDecisionRun.id.desc())).scalar_one()
+        assert run.execution_result_json["status"] == "skipped"
+        assert run.execution_result_json["skipped_reason"] == "position_already_open"
+        assert db.execute(select(PaperTrade).where(PaperTrade.action == "paper_buy")).scalars().all()
+        assert db.execute(select(PaperTrade).where(PaperTrade.action == "paper_sell")).scalars().all() == []
+        message_text = bot.send_message.call_args.kwargs["text"]
+        assert "position_already_open" in message_text
+        assert "ek alım emri değildir" in message_text
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_skips_sell_when_no_open_position():
+    engine, db, _, portfolio, _, indicators = _seed_runtime_state()
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="strategy_v2",
+        auto_trading_mode="paper",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+    resolution = StrategyResolution(
+        action=ACTION_SELL,
+        candidate_action=ACTION_SELL,
+        reason_code="TEST_SELL_CANDIDATE",
+        confidence=Decimal("0.9000"),
+        details={"strategy_name": "strategy_v2", "timeframe_policy": {"trend": "1d", "entry": "1h", "execution": "5m"}},
+        resolved_strategy="strategy_v2",
+    )
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.auto_trader._resolve_strategy_resolution", new_callable=AsyncMock) as mock_resolve,
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        mock_resolve.return_value = resolution
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        run = db.execute(select(TradingDecisionRun).order_by(TradingDecisionRun.id.desc())).scalar_one()
+        assert run.execution_result_json["status"] == "skipped"
+        assert run.execution_result_json["skipped_reason"] == "no_open_position"
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        message_text = bot.send_message.call_args.kwargs["text"]
+        assert "SATIM ADAYI (SELL)" in message_text
+        assert "no_open_position" in message_text
+        assert "satış emri değildir" in message_text
 
     db.close()
     Base.metadata.drop_all(bind=engine)

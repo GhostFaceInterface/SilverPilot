@@ -17,7 +17,7 @@
 | Phase 2 | `complete` | `technical-indicators-v2` persists the additive V2 indicator fields. |
 | Phase 3 | `complete` | Runtime guardrails enforce `1d -> 1h -> 5m` roles and fail closed on missing, stale, or misaligned inputs. |
 | Phase 4 | `partial` | Deterministic Strategy V2 exists, but it does not yet fully consume persisted V2 fields and the SELL guard set remains incomplete. |
-| Phase 5 | `partial` | Signal-to-intent bridge exists in code, but there is no persisted `trade_intents` audit chain and the risk layer still lacks exposure/cooldown/cash-reserve/age/drawdown guards. |
+| Phase 5 | `partial` | Signal-to-intent bridge and persisted `trade_intents` audit chain exist; remaining Phase 5 work is risk policy breadth and production hardening. |
 | Phase 6 | `out-of-plan` | Dashboard, agent, and orchestration surfaces exist only as exploratory/non-canonical extensions. |
 | Phase 7 | `out-of-plan` | ML inference audits and runtime agent expansion exist, but they are not allowed to redefine the deterministic core baseline. |
 | Phase 8 | `out-of-plan` | Backtest, historical agent cache, and dataset work exist as exploratory/offline tooling, not canonical execution routing. |
@@ -34,6 +34,8 @@
   execution freshness.
 - A deterministic Strategy V2 skeleton exists.
 - A signal-to-intent bridge exists between strategy output and paper execution.
+- Trade intents persist through `TradeIntentRecord` and link decision runs,
+  signals, risk decisions, and paper trades in the paper path.
 
 ### Partial
 
@@ -43,8 +45,6 @@
   decision logic.
 - Strategy V2 SELL logic is still narrower than the intended deterministic
   guard set.
-- Trade intents are runtime objects, not a persisted audit artifact linked to
-  `signals`, `risk_decisions`, and `paper_trades`.
 - Risk policy does not yet enforce max order percent, max position percent,
   min cash reserve, cooldown, min hold, max position age, or total drawdown
   blocks.
@@ -66,9 +66,8 @@
 
 ## Locked Execution Order
 
-1. Slice 1: Add a persisted `trade_intents` table and link it to `signals`,
-   `risk_decisions`, and `paper_trades`; close the direct
-   strategy-to-paper-trade shortcut.
+1. Slice 1: Keep the persisted `trade_intents` audit chain as the canonical
+   strategy-to-paper execution path; no real-money execution is enabled.
 2. Slice 2: Finish Strategy V2 with the already-persisted V2 indicator fields
    and make BUY/SELL rules deterministic and explainable.
 3. Slice 3: Add risk guards for max order percent, max position percent, min

@@ -180,6 +180,9 @@ def _intent_to_request(
             taxes=Decimal("0"),
         )
 
+    if position.quantity <= 0:
+        raise PaperTradingError("No open position to execute sell intent")
+
     return PaperTradeRequest(
         portfolio_name=intent.portfolio_name,
         asset_symbol=intent.asset_symbol,

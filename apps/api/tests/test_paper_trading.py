@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db import Base, get_db
 from app.main import create_app
 from app.models import (
+    AccountLedgerEntry,
     Asset,
     CollectorRun,
     PaperTrade,
@@ -793,6 +794,42 @@ def test_risk_engine_does_not_create_synthetic_volatility_across_sources():
     assert metrics["global_xag_volatility_24h_source"] == "gold-api-xag-usd"
     assert metrics["global_xag_volatility_24h_percent"] == "3.076923"
     assert status_response.json()["global_xag_diagnostics"][0]["range_percent"] == "33.766234"
+
+
+def test_paper_sell_without_holdings_does_not_mutate_cash_or_ledger():
+    client, testing_session = make_client()
+    seed_execution_critical_data(testing_session)
+
+    db = testing_session()
+    try:
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        starting_cash = portfolio.cash_balance
+    finally:
+        db.close()
+
+    response = client.post(
+        "/paper-trades",
+        json={
+            "action": "paper_sell",
+            "quantity": "1",
+            "buy_price": "10.00",
+            "sell_price": "9.80",
+            "fees": "0",
+            "taxes": "0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trade"]["action"] == "blocked"
+    assert response.json()["risk_decision"]["reason_code"] == "POSITION_LIMIT_REACHED"
+
+    db = testing_session()
+    try:
+        portfolio = db.query(Portfolio).filter(Portfolio.name == "gram-paper").one()
+        assert portfolio.cash_balance == starting_cash
+        assert db.query(AccountLedgerEntry).all() == []
+    finally:
+        db.close()
 
 
 def test_risk_status_reports_runtime_blocking_thresholds():

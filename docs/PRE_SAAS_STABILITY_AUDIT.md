@@ -18,9 +18,10 @@ work.
 - Auto-trader execution already consumes the canonical `1d -> 1h -> 5m`
   policy and records it in signal details. This audit made that same policy
   visible through `/indicators/readiness?include_policy=true`.
-- Trade intents are runtime objects only. There is no persisted
-  `trade_intents` table linked to `signals`, `risk_decisions`, and
-  `paper_trades`.
+- Current code has a persisted `TradeIntentRecord`/`trade_intents` audit
+  chain linked to decision runs, signals, risk decisions, and paper trades.
+  Earlier notes in this audit about a missing table are stale 2026-06-12
+  findings retained as historical context.
 - ML is mostly advisory by default, but `risk_ml_decision_mode="hard_veto"` is
   supported by code and must remain explicitly gated out of the canonical path
   until Phase Plan Slice 4 is accepted.
@@ -68,26 +69,25 @@ request.
 
 Test status: PASS. Added route regression for `include_policy=true`.
 
-### F2. Trade Intent Audit Chain Is Not Persisted
+### F2. Trade Intent Audit Chain Was Not Persisted In The 2026-06-12 Snapshot
 
-Severity: HIGH for Phase 5/SaaS readiness.
+Severity: HISTORICAL. Current code has since added a persisted trade-intent
+audit chain.
 
-Evidence:
+Historical evidence from this audit snapshot:
 
 - `apps/api/app/services/trade_intents.py` defines `TradeIntent` as a dataclass
   and executes through `execute_trade_intent`.
-- `apps/api/app/models/entities.py` has `Signal`, `RiskDecision`,
-  `PaperTrade`, and `NotificationAudit`, but no `TradeIntent` model/table.
-- `apps/api/alembic/versions/` contains no migration creating
-  `trade_intents`.
+- At the time of this audit snapshot, `apps/api/app/models/entities.py` had
+  `Signal`, `RiskDecision`, `PaperTrade`, and `NotificationAudit`, but no
+  persisted trade-intent model/table.
 
-Recommended fix: implement Phase Plan Slice 1 as a separate migration-backed
-slice: persisted `trade_intents`, FKs to `signals`, `risk_decisions`, and
-`paper_trades`, plus migration downgrade and SQLite/PostgreSQL validation.
+Current status: `TradeIntentRecord` exists and the auto-trader executes
+through `execute_trade_intent`; real-money execution remains disabled and the
+system does not auto-promote `diagnostic` mode to `paper`.
 
-Test status: Runtime trade-intent regression suite passed. The persisted
-`trade_intents` table itself remains unimplemented and untested because it
-requires a schema change.
+Recommended follow-up: keep the audit chain covered while finishing remaining
+Phase 5 risk policy breadth.
 
 ### F3. Mutating Endpoint Auth Is Incomplete
 

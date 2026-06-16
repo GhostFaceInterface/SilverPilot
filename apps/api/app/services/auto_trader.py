@@ -149,6 +149,27 @@ def _format_optional_float(value, *, precision: int = 4) -> str:
         return "n/a"
 
 
+def _execution_summary_line(trade_data: dict) -> str:
+    execution = trade_data.get("execution") or {}
+    status = execution.get("status") or "unknown"
+    skipped_reason = execution.get("skipped_reason")
+    trade_id = execution.get("trade_id")
+    if status == "executed":
+        return f"✅ <b>Uygulama:</b> paper trade gerçekleşti (trade_id: <code>{html.escape(str(trade_id))}</code>)\n"
+    if skipped_reason:
+        return f"⏸️ <b>Uygulama:</b> işlem yapılmadı (<code>{html.escape(str(skipped_reason))}</code>)\n"
+    return f"⏸️ <b>Uygulama:</b> {html.escape(str(status))}\n"
+
+
+def _position_context_line(trade_data: dict) -> str:
+    has_open_position = bool(trade_data.get("has_open_position"))
+    if trade_data.get("final_action") == ACTION_SELL and not has_open_position:
+        return "ℹ️ <b>Pozisyon Notu:</b> satılacak açık pozisyon yok; satış emri değildir.\n"
+    if trade_data.get("final_action") == ACTION_BUY and has_open_position:
+        return "ℹ️ <b>Pozisyon Notu:</b> zaten açık pozisyon var; ek alım emri değildir.\n"
+    return ""
+
+
 def build_timeframe_indicator_summary(timeframe_contexts: dict) -> dict:
     summary = {}
     for timeframe, context in timeframe_contexts.items():
@@ -276,9 +297,12 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         sma_vote = format_vote(votes.get("sma_cross"))
 
         arbiter_stance = trade_data.get("arbiter_decision", "NEUTRAL")
-        arbiter_emoji = (
-            "🟢 AL" if arbiter_stance == "BULLISH" else ("🔴 SAT" if arbiter_stance == "BEARISH" else "⚪️ BEKLE")
-        )
+        arbiter_emoji = "🟢" if arbiter_stance == "BULLISH" else ("🔴" if arbiter_stance == "BEARISH" else "⚪️")
+        arbiter_label = {
+            "BULLISH": "alım yönlü piyasa duruşu",
+            "BEARISH": "satış yönlü piyasa duruşu",
+            "NEUTRAL": "nötr piyasa duruşu",
+        }.get(arbiter_stance, f"{str(arbiter_stance).lower()} piyasa duruşu")
         arbiter_reason = escape_html_response(trade_data.get("arbiter_reason", "Gerekçe belirtilmedi."))
         if not arbiter_reason.strip():
             arbiter_reason = "Arbiter gerekçesi boş döndü; teknik oylar ve rejim üzerinden beklemede kalındı."
@@ -296,14 +320,17 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         msg = (
             f"📊 <b>SilverPilot Canlı Analiz Raporu</b>\n\n"
             f"🥈 <b>Gümüş (XAG_GRAM):</b> {trade_data['price']:,.4f} USD/gram\n"
+            f"⚙️ <b>Mod:</b> <code>{html.escape(str(trade_data.get('mode', 'unknown')))}</code>\n"
             f"📈 <b>Piyasa Rejimi:</b> {regime_label}\n\n"
             f"🗳️ <b>Strateji Oylaması:</b>\n"
             f"• RSI (14): {rsi_vote}\n"
             f"• Bollinger Bands: {bb_vote}\n"
             f"• SMA Cross (20/50): {sma_vote}\n\n"
-            f"👑 <b>Yüce Hakem Kararı:</b> {arbiter_emoji}\n"
+            f"👑 <b>Yüce Hakem Duruşu:</b> {arbiter_emoji} {arbiter_label}\n"
             f"📝 <b>Gerekçe:</b> {arbiter_reason}\n\n"
-            f"🔄 <b>İşlem Durumu:</b> {status_emoji} {action_str}\n"
+            f"🔄 <b>Sinyal:</b> {status_emoji} {action_str}\n"
+            f"{_execution_summary_line(trade_data)}"
+            f"{_position_context_line(trade_data)}"
         )
 
         if action in ("paper_buy", "paper_sell"):
@@ -357,7 +384,12 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
 
         msg = (
             f"{status_emoji} <b>SilverPilot Auto-Trading Raporu</b>\n\n"
-            f"🔄 <b>İşlem Tipi:</b> {action_str}\n"
+            f"🔄 <b>Sinyal:</b> {action_str}\n"
+            f"🎯 <b>Aday/Final:</b> <code>{html.escape(str(trade_data.get('candidate_action', action)))}</code> → "
+            f"<code>{html.escape(str(trade_data.get('final_action', action)))}</code>\n"
+            f"⚙️ <b>Mod:</b> <code>{html.escape(str(trade_data.get('mode', 'unknown')))}</code>\n"
+            f"{_execution_summary_line(trade_data)}"
+            f"{_position_context_line(trade_data)}"
             f"🥈 <b>Varlık:</b> XAG_GRAM (Gümüş)\n"
             f"🏷️ <b>Fiyat:</b> {trade_data['price']:,.4f} USD/gram\n"
             f"{regime_details}"
@@ -890,6 +922,8 @@ async def _run_auto_trading_impl(db: Session, settings):
             skipped_reason = "config_invalid"
         execution_result = ExecutionOutcome(status="skipped", skipped_reason=skipped_reason, trade_id=None)
 
+    display_position = calculate_position(db, portfolio.id, asset.id)
+
     # 7. Extract notification data prior to commit/close to avoid DetachedInstanceError
     notification_data = {
         "action": trade.action if trade else ("blocked" if reason_code in BLOCKED_REASON_CODES else action),
@@ -898,7 +932,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         "net_amount": float(trade.net_amount) if trade else 0.0,
         "fees": float(trade.fees) if trade else 0.0,
         "cash_balance": float(portfolio.cash_balance),
-        "xag_balance": float(current_position.quantity),
+        "xag_balance": float(display_position.quantity),
         "strategy_name": active_strategy,
         "indicators": {
             "rsi": float(latest_indicator.rsi_14)
@@ -932,6 +966,13 @@ async def _run_auto_trading_impl(db: Session, settings):
         "notification_kind": "readiness_block"
         if reason_code in READINESS_BLOCK_REASONS or strategy_readiness_flags
         else "trade_report",
+        "execution": execution_result.as_dict(),
+        "candidate_action": resolution.candidate_action,
+        "final_action": action,
+        "mode": settings.auto_trading_mode,
+        "has_open_position": has_open_position,
+        "trade_id": execution_result.trade_id,
+        "skipped_reason": execution_result.skipped_reason,
     }
 
     if (
@@ -1107,8 +1148,11 @@ def should_send_trade_notification(
 
 
 def _notification_category(notification_data: dict, reason_code: str) -> str:
-    if notification_data.get("action") in {"paper_buy", "paper_sell", "BUY", "SELL"}:
+    execution = notification_data.get("execution") or {}
+    if notification_data.get("action") in {"paper_buy", "paper_sell"} and execution.get("status") == "executed":
         return "trade"
+    if notification_data.get("action") in {"BUY", "SELL"}:
+        return "block_change"
     if reason_code in {
         SOURCE_DIVERGENCE_BLOCK,
         "DAILY_BAR_DELAYED",

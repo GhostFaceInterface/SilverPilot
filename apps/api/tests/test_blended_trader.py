@@ -327,7 +327,8 @@ async def test_auto_trading_blended_bullish_consensus():
             called_args = mock_bot_instance.send_message.call_args[1]
             assert called_args["disable_notification"] is False
             assert "SilverPilot Canlı Analiz Raporu" in called_args["text"]
-            assert "Yüce Hakem Kararı:" in called_args["text"]
+            assert "Yüce Hakem Duruşu:" in called_args["text"]
+            assert "alım yönlü piyasa duruşu" in called_args["text"]
 
     finally:
         db.close()

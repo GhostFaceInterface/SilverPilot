@@ -140,6 +140,49 @@ def test_runtime_routes_expose_decision_runs(db_session):
     assert proof_payload["mode"] == "paper_proof"
     assert proof_payload["real_money_enabled"] is False
     assert proof_payload["block_reason_distribution"]["DAILY_TREND_MISSING"] == 1
+    assert proof_payload["skipped_execution_distribution"]["not_actionable"] == 1
+
+    client.close()
+    app.dependency_overrides.clear()
+
+
+def test_runtime_status_and_proof_report_surface_non_executed_actions(db_session):
+    signal, _collector_run = _seed_signal(db_session)
+    run = start_trading_decision_run(
+        db_session,
+        mode="diagnostic",
+        asset_symbol="XAG_GRAM",
+        strategy_name="strategy_v2",
+    )
+    finish_trading_decision_run(
+        db_session,
+        run,
+        status="completed",
+        action="BUY",
+        reason_code="STRATEGY_V2_BUY_CONFIRMED",
+        signal_id=signal.id,
+        execution_result={"status": "skipped", "skipped_reason": "diagnostic_mode", "trade_id": None},
+        notification_result={"sent": True},
+    )
+    db_session.commit()
+
+    status_payload = trading_status(db_session)
+    assert status_payload["why_no_trade"] == "diagnostic_mode"
+    assert status_payload["latest_decision"]["execution_result"]["skipped_reason"] == "diagnostic_mode"
+
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    proof_response = client.get("/runtime/proof-report", params={"window_days": 30})
+    assert proof_response.status_code == 200
+    proof_payload = proof_response.json()
+    assert proof_payload["skipped_execution_distribution"]["diagnostic_mode"] == 1
+    assert proof_payload["acceptance_gate"]["non_executed_actions_48h"] is True
+    assert proof_payload["acceptance_gate"]["non_executed_action_distribution"]["diagnostic_mode"] == 1
 
     client.close()
     app.dependency_overrides.clear()

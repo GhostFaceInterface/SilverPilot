@@ -40,6 +40,7 @@ def runtime_proof_report(db: Session, *, window_days: int = 30, asset_symbol: st
     net_pnl = realized_pnl + unrealized_pnl
     benchmark = _buy_and_hold_benchmark(trades, latest_snapshot)
     block_distribution = _block_distribution(db, since=since, asset_symbol=asset_symbol)
+    skipped_execution_distribution = _skipped_execution_distribution(db, since=since, asset_symbol=asset_symbol)
     audit_chain = _audit_chain_summary(db, trades=trades, since=since, asset_symbol=asset_symbol)
     acceptance_gate = _acceptance_gate(db, since=now - timedelta(hours=48), audit_chain=audit_chain)
 
@@ -67,6 +68,7 @@ def runtime_proof_report(db: Session, *, window_days: int = 30, asset_symbol: st
         },
         "buy_and_hold_benchmark": benchmark,
         "block_reason_distribution": block_distribution,
+        "skipped_execution_distribution": skipped_execution_distribution,
         "audit_chain_summary": audit_chain,
         "acceptance_gate": acceptance_gate,
     }
@@ -168,6 +170,25 @@ def _block_distribution(db: Session, *, since: datetime, asset_symbol: str) -> d
     return dict(Counter(reason or "UNKNOWN" for reason in rows))
 
 
+def _skipped_execution_distribution(db: Session, *, since: datetime, asset_symbol: str) -> dict[str, int]:
+    rows = (
+        db.execute(
+            select(TradingDecisionRun.execution_result_json)
+            .where(TradingDecisionRun.asset_symbol == asset_symbol)
+            .where(TradingDecisionRun.started_at >= since)
+        )
+        .scalars()
+        .all()
+    )
+    reasons = []
+    for execution in rows:
+        execution = execution or {}
+        if execution.get("status") == "executed":
+            continue
+        reasons.append(execution.get("skipped_reason") or execution.get("status") or "UNKNOWN")
+    return dict(Counter(reasons))
+
+
 def _audit_chain_summary(
     db: Session, *, trades: list[PaperTrade], since: datetime, asset_symbol: str
 ) -> dict[str, int]:
@@ -257,6 +278,21 @@ def _acceptance_gate(db: Session, *, since: datetime, audit_chain: dict[str, int
         .where(TradingDecisionRun.reason_code == "EXECUTION_TIMEFRAME_STALE")
         .limit(1)
     ).scalar_one_or_none()
+    non_executed_action_runs = (
+        db.execute(
+            select(TradingDecisionRun.execution_result_json)
+            .where(TradingDecisionRun.started_at >= since)
+            .where(TradingDecisionRun.action.in_(("BUY", "SELL")))
+        )
+        .scalars()
+        .all()
+    )
+    non_executed_action_distribution = Counter()
+    for execution in non_executed_action_runs:
+        execution = execution or {}
+        if execution.get("status") == "executed":
+            continue
+        non_executed_action_distribution[execution.get("skipped_reason") or execution.get("status") or "UNKNOWN"] += 1
     now = datetime.now(UTC)
     overdue = db.execute(select(RuntimeHeartbeat)).scalars().all()
     heartbeat_overdue = [
@@ -281,10 +317,12 @@ def _acceptance_gate(db: Session, *, since: datetime, audit_chain: dict[str, int
         "heartbeat_overdue": bool(heartbeat_overdue),
         "hermes_degraded_48h": hermes_degraded,
         "audit_chain_gaps": audit_gaps > 0,
+        "non_executed_actions_48h": bool(non_executed_action_distribution),
     }
     return {
         **blockers,
         "heartbeat_overdue_components": heartbeat_overdue,
+        "non_executed_action_distribution": dict(non_executed_action_distribution),
         "paper_mode_eligible": not any(blockers.values()),
         "real_money_eligible": False,
     }
