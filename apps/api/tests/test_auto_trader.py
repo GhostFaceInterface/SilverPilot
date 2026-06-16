@@ -11,13 +11,18 @@ from app.core.config import Settings
 from app.core.db import Base
 from app.models import (
     Asset,
+    CollectorRun,
     NotificationAudit,
     PaperTrade,
     Portfolio,
     PriceSnapshot,
+    RawBankPrice,
+    RawFxRate,
+    RawGlobalPrice,
     RiskDecision,
     Signal,
     TechnicalIndicator,
+    TradingDecisionRun,
 )
 from app.services.auto_trader import run_auto_trading, should_send_trade_notification
 from app.services.indicator_readiness import IndicatorContext, IndicatorReadiness
@@ -121,6 +126,88 @@ def _seed_runtime_state():
 
     db.commit()
     return engine, db, asset, portfolio, snapshots, indicators
+
+
+def _seed_divergent_sources(db, asset: Asset) -> None:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    bank_run = CollectorRun(
+        collector_name="kuveyt_public_silver",
+        source="kuveyt-public-silver-page",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    global_run = CollectorRun(
+        collector_name="global_xag_usd",
+        source="yahoo-si-f",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    fx_run = CollectorRun(
+        collector_name="tcmb_usd_try",
+        source="tcmb-today-xml",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        duplicates=0,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    db.add_all([bank_run, global_run, fx_run])
+    db.flush()
+    db.add_all(
+        [
+            RawBankPrice(
+                collector_run_id=bank_run.id,
+                asset_id=asset.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("150.000000"),
+                sell_price=Decimal("148.000000"),
+                currency="TRY",
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="bank-divergent",
+                parser_version="kuveyt-public-finance-portal-v2",
+                payload_json={},
+            ),
+            RawGlobalPrice(
+                collector_run_id=global_run.id,
+                asset_id=asset.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("31.103477"),
+                sell_price=Decimal("31.103477"),
+                currency="USD",
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="global-divergent",
+                parser_version="yahoo-finance-chart-v1",
+                payload_json={},
+            ),
+            RawFxRate(
+                collector_run_id=fx_run.id,
+                source="tcmb-today-xml",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("40.000000"),
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="fx-divergent",
+                parser_version="tcmb-today-xml-v1",
+                payload_json={},
+            ),
+        ]
+    )
+    db.flush()
 
 
 def test_strategy_v2_is_default_for_auto_trading():
@@ -247,6 +334,50 @@ async def test_diagnostic_mode_does_not_execute_buy_or_sell():
             "skipped_reason": "diagnostic_mode",
             "trade_id": None,
         }
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        bot.send_message.assert_called_once()
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_blocks_on_source_divergence():
+    engine, db, asset, portfolio, _, indicators = _seed_runtime_state()
+    _seed_divergent_sources(db, asset)
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="strategy_v2",
+        auto_trading_mode="paper",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "HOLD"
+        assert signal.reason_code == "SOURCE_DIVERGENCE_BLOCK"
+        assert "SOURCE_DIVERGENCE_BLOCK" in signal.details_json["readiness_block_flags"]
+        assert signal.details_json["source_divergence"]["blocked"] is True
+        run = db.execute(select(TradingDecisionRun).order_by(TradingDecisionRun.id.desc())).scalar_one()
+        assert run.reason_code == "SOURCE_DIVERGENCE_BLOCK"
+        assert run.source_health_json["source_divergence"]["status"] == "blocked"
         assert db.execute(select(PaperTrade)).scalars().all() == []
         assert portfolio.cash_balance == Decimal("600.00")
         bot.send_message.assert_called_once()

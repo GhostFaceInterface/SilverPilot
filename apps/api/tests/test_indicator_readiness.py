@@ -181,9 +181,13 @@ def test_indicator_readiness_route_includes_strategy_policy(db_session):
     assert response.status_code == 200
     payload = response.json()
     assert payload["timeframe_policy"] == {"trend": "1d", "entry": "1h", "execution": "5m"}
+    assert payload["policy_source"] == "db"
+    assert payload["policy_details"]["strategy_name"] == "strategy_v2"
+    assert payload["policy_details"]["details"]["source_divergence_threshold_percent"] == 3.0
     policy_payload = {item["role"]: item for item in payload["policy_readiness"]}
     assert set(policy_payload) == {"trend", "entry", "execution"}
     assert policy_payload["trend"]["timeframe"] == "1d"
+    assert policy_payload["trend"]["policy_source"] == "db"
     assert policy_payload["trend"]["max_age_minutes"] == 96 * 60
     assert policy_payload["entry"]["timeframe"] == "1h"
     assert policy_payload["entry"]["max_age_minutes"] == 3 * 60

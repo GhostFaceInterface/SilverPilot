@@ -164,6 +164,43 @@ class RuntimeHeartbeat(Base):
     )
 
 
+class SourceProfile(Base):
+    __tablename__ = "source_profiles"
+    __table_args__ = (UniqueConstraint("source_key", name="uq_source_profiles_source_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_key: Mapped[str] = mapped_column(String(128), index=True)
+    role: Mapped[str] = mapped_column(String(64), index=True)
+    priority: Mapped[int] = mapped_column(default=100, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    stale_after_minutes: Mapped[int] = mapped_column(default=60)
+    market_calendar: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reliability_weight: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=Decimal("1.0000"))
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+
+
+class StrategyPolicy(Base):
+    __tablename__ = "strategy_policies"
+    __table_args__ = (UniqueConstraint("strategy_name", name="uq_strategy_policies_strategy_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    strategy_name: Mapped[str] = mapped_column(String(128), index=True)
+    execution_mode: Mapped[str] = mapped_column(String(32), default="diagnostic", index=True)
+    timeframe_roles: Mapped[dict] = mapped_column(JSON, default=dict)
+    freshness_policy: Mapped[dict] = mapped_column(JSON, default=dict)
+    min_history: Mapped[dict] = mapped_column(JSON, default=dict)
+    notification_policy: Mapped[dict] = mapped_column(JSON, default=dict)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+
+
 class TradingDecisionRun(Base):
     __tablename__ = "trading_decision_runs"
 

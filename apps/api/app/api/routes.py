@@ -35,12 +35,13 @@ from app.models import (
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.services.account_holdings import compute_account_holdings
-from app.services.runtime import latest_decision_runs, trading_status
+from app.services.runtime import latest_decision_runs, to_jsonable, trading_status
+from app.services.proof_report import runtime_proof_report
 from app.services.indicator_readiness import (
     STRATEGY_TIMEFRAME_ROLES,
     get_indicator_readiness,
-    get_strategy_timeframe_policy,
 )
+from app.services.policy_resolver import resolve_strategy_policy
 from app.agents.hermes import run_hermes_sentiment_analysis
 from app.agents.risk import run_signal_critique
 from app.agents.report import run_daily_performance_report
@@ -340,13 +341,17 @@ def get_indicator_readiness_status(
     )
     response_payload = payload.to_dict()
     if include_policy:
-        strategy_timeframe_policy = get_strategy_timeframe_policy()
+        resolved_policy = resolve_strategy_policy(db)
+        strategy_timeframe_policy = resolved_policy.freshness_policy
         response_payload["timeframe_policy"] = dict(STRATEGY_TIMEFRAME_ROLES)
+        response_payload["policy_source"] = resolved_policy.policy_source
+        response_payload["policy_details"] = resolved_policy.to_dict()
         response_payload["policy_readiness"] = [
             {
                 "role": role,
                 "timeframe": policy_timeframe,
                 "max_age_minutes": strategy_timeframe_policy[policy_timeframe],
+                "policy_source": resolved_policy.policy_source,
                 "readiness": get_indicator_readiness(
                     db,
                     asset_symbol=asset_symbol,
@@ -524,6 +529,15 @@ def get_runtime_decision_runs(
     db: Session = Depends(get_db),
 ):
     return {"decision_runs": latest_decision_runs(db, limit=limit, asset_symbol=asset_symbol)}
+
+
+@router.get("/runtime/proof-report")
+def get_runtime_proof_report(
+    window_days: int = 30,
+    asset_symbol: str = "XAG_GRAM",
+    db: Session = Depends(get_db),
+):
+    return to_jsonable(runtime_proof_report(db, window_days=window_days, asset_symbol=asset_symbol))
 
 
 @router.get("/reports/daily/latest")

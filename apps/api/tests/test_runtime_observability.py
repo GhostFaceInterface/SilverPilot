@@ -134,6 +134,13 @@ def test_runtime_routes_expose_decision_runs(db_session):
     assert runs_response.status_code == 200
     assert runs_response.json()["decision_runs"][0]["signal_id"] == signal.id
 
+    proof_response = client.get("/runtime/proof-report", params={"window_days": 30})
+    assert proof_response.status_code == 200
+    proof_payload = proof_response.json()
+    assert proof_payload["mode"] == "paper_proof"
+    assert proof_payload["real_money_enabled"] is False
+    assert proof_payload["block_reason_distribution"]["DAILY_TREND_MISSING"] == 1
+
     client.close()
     app.dependency_overrides.clear()
 

@@ -238,6 +238,12 @@ def test_manual_price_duplicate_is_counted_without_new_snapshot():
     finally:
         db.close()
 
+    health = client.get("/collectors/health?stale_after_minutes=60")
+    assert health.status_code == 200
+    collector = health.json()["collectors"][0]
+    assert collector["status"] == "degraded"
+    assert collector["duplicate_without_new_price"] is True
+
 
 def test_manual_price_rejects_inverted_spread():
     client, _ = make_client()

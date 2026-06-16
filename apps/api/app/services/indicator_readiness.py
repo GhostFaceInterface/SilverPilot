@@ -46,7 +46,12 @@ DEFAULT_ALLOWED_SOURCES = (
 DEFAULT_REQUIRED_MIN_BAR_COUNT = 50
 
 
-def get_strategy_timeframe_policy() -> dict[str, int]:
+def get_strategy_timeframe_policy(db: Session | None = None, *, strategy_name: str | None = None) -> dict[str, int]:
+    if db is not None:
+        from app.services.policy_resolver import resolve_strategy_policy
+
+        return resolve_strategy_policy(db, strategy_name=strategy_name).freshness_policy
+
     settings = get_settings()
     return {
         "1d": settings.strategy_trend_max_age_minutes,

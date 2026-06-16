@@ -954,14 +954,19 @@ def collector_health(db: Session, stale_after_minutes: int = 60, *, now: datetim
         reference_time = _aware(run.finished_at or run.started_at)
         age_seconds = int((now - reference_time).total_seconds()) if reference_time is not None else None
         stale = age_seconds is None or age_seconds > stale_after_seconds
+        duplicate_without_new_price = (
+            run.status == "success" and run.records_seen > 0 and run.records_inserted == 0 and run.duplicates > 0
+        )
+        effective_status = "degraded" if duplicate_without_new_price else run.status
         collectors.append(
             {
                 "collector_name": run.collector_name,
                 "source": run.source,
-                "status": run.status,
+                "status": effective_status,
                 "records_seen": run.records_seen,
                 "records_inserted": run.records_inserted,
                 "duplicates": run.duplicates,
+                "duplicate_without_new_price": duplicate_without_new_price,
                 "age_seconds": age_seconds,
                 "stale": stale,
                 "error_message": run.error_message,
@@ -976,7 +981,7 @@ def collector_health(db: Session, stale_after_minutes: int = 60, *, now: datetim
     execution_critical_status = _execution_critical_status(bank_price, global_xag, usd_try)
     context_status = _context_status(collectors)
     any_problem = any(
-        (item["stale"] or item["status"] == "failed")
+        (item["stale"] or item["status"] in {"failed", "degraded"})
         and not _ignore_inactive_manual_fallback(item, bank_price=bank_price)
         for item in collectors
     )

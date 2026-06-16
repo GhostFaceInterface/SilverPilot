@@ -22,7 +22,10 @@ from app.services.runtime import (
     record_runtime_heartbeat,
     source_health_snapshot,
     start_trading_decision_run,
+    to_jsonable,
 )
+from app.services.policy_resolver import resolve_strategy_policy
+from app.services.source_divergence import SOURCE_DIVERGENCE_BLOCK, evaluate_source_divergence
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
@@ -39,6 +42,7 @@ READINESS_BLOCK_REASONS = {
     "EXECUTION_TIMEFRAME_STALE",
     "EXECUTION_TIMEFRAME_UNUSABLE",
     "TIMEFRAME_SOURCE_MISMATCH",
+    SOURCE_DIVERGENCE_BLOCK,
 }
 
 READINESS_REASON_LABELS = {
@@ -48,6 +52,7 @@ READINESS_REASON_LABELS = {
     "EXECUTION_TIMEFRAME_STALE": "5 dakikalık uygulama verisi güncel değil",
     "EXECUTION_TIMEFRAME_UNUSABLE": "5 dakikalık uygulama verisi kullanılamıyor",
     "TIMEFRAME_SOURCE_MISMATCH": "Zaman dilimi veri kaynakları uyumsuz",
+    SOURCE_DIVERGENCE_BLOCK: "Banka fiyatı ile global XAG/USD dönüşümü ayrıştı",
 }
 
 
@@ -64,6 +69,7 @@ class DecisionContext:
     execution_context: object
     timeframe_contexts: dict
     readiness_block_flags: list[str]
+    source_divergence: dict | None
     has_open_position: bool
     news_sentiment: str
     latest_event: AgentMemoryEvent | None
@@ -403,6 +409,7 @@ async def run_auto_trading(db: Session = None):
 
 def _select_block_reason(strategy_readiness_flags: list[str]) -> str | None:
     prioritized_block_flags = [
+        SOURCE_DIVERGENCE_BLOCK,
         "TIMEFRAME_SOURCE_MISMATCH",
         "ENTRY_TIMEFRAME_STALE",
         "ENTRY_TIMEFRAME_UNUSABLE",
@@ -421,6 +428,7 @@ def _base_strategy_details(context: DecisionContext) -> dict:
         "timeframe_indicators": build_timeframe_indicator_summary(context.timeframe_contexts),
         "agent_sentiment": context.news_sentiment,
         "readiness_block_flags": context.readiness_block_flags,
+        "source_divergence": context.source_divergence,
     }
 
 
@@ -464,6 +472,7 @@ async def _resolve_strategy_resolution(db: Session, context: DecisionContext) ->
             "ENTRY_TIMEFRAME_STALE": Decimal("0.9800"),
             "ENTRY_TIMEFRAME_UNUSABLE": Decimal("0.9800"),
             "DAILY_TREND_MISSING": Decimal("0.9900"),
+            SOURCE_DIVERGENCE_BLOCK: Decimal("0.9900"),
         }
         return _blocked_strategy_resolution(
             context,
@@ -635,11 +644,17 @@ async def _run_auto_trading_impl(db: Session, settings):
         db.commit()
         return
 
-    timeframe_contexts = get_strategy_timeframe_contexts(db, asset.symbol)
+    requested_strategy = settings.strategy_name or "strategy_v2"
+    resolved_policy = resolve_strategy_policy(db, requested_strategy)
+    timeframe_contexts = get_strategy_timeframe_contexts(db, asset.symbol, strategy_name=requested_strategy)
     daily_context = timeframe_contexts["1d"]
     hourly_context = timeframe_contexts["1h"]
     execution_context = timeframe_contexts["5m"]
     strategy_readiness_flags = evaluate_timeframe_guardrails(timeframe_contexts, ref_dt=datetime.now(UTC))
+    source_divergence = evaluate_source_divergence(db, policy=resolved_policy)
+    source_divergence_payload = to_jsonable(source_divergence.to_dict())
+    if source_divergence.blocked and SOURCE_DIVERGENCE_BLOCK not in strategy_readiness_flags:
+        strategy_readiness_flags.append(SOURCE_DIVERGENCE_BLOCK)
 
     latest_indicator = hourly_context.readiness.indicator
     execution_indicator = execution_context.readiness.indicator
@@ -687,7 +702,6 @@ async def _run_auto_trading_impl(db: Session, settings):
     if latest_event and latest_event.value_json:
         news_sentiment = latest_event.value_json.get("sentiment", "NEUTRAL")
 
-    requested_strategy = settings.strategy_name or "strategy_v2"
     active_strategy = requested_strategy
     decision_context = DecisionContext(
         requested_strategy=requested_strategy,
@@ -701,6 +715,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         execution_context=execution_context,
         timeframe_contexts=timeframe_contexts,
         readiness_block_flags=strategy_readiness_flags,
+        source_divergence=source_divergence_payload,
         has_open_position=has_open_position,
         news_sentiment=news_sentiment,
         latest_event=latest_event,
@@ -941,6 +956,8 @@ async def _run_auto_trading_impl(db: Session, settings):
         }
     refreshed_details["decision_envelope"] = refreshed_envelope
     signal.details_json = refreshed_details
+    source_health = source_health_snapshot(db)
+    source_health["source_divergence"] = source_divergence_payload
     finish_trading_decision_run(
         db,
         decision_run,
@@ -948,7 +965,7 @@ async def _run_auto_trading_impl(db: Session, settings):
         action=action,
         reason_code=reason_code,
         signal_id=signal.id,
-        source_health=source_health_snapshot(db),
+        source_health=source_health,
         indicator_readiness=summarize_timeframe_inputs(timeframe_contexts),
         execution_result=execution_result.as_dict(),
         notification_result=notification_decision,
@@ -958,6 +975,7 @@ async def _run_auto_trading_impl(db: Session, settings):
             "candidate_action": resolution.candidate_action,
             "readiness_block_flags": strategy_readiness_flags,
             "filter_reason": filter_reason,
+            "policy": resolved_policy.to_dict(),
         },
     )
 
@@ -1084,7 +1102,7 @@ def record_notification_audit(
     return audit
 
 
-def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
+def get_strategy_timeframe_contexts(db: Session, asset_symbol: str, *, strategy_name: str | None = None) -> dict:
     return {
         timeframe: get_latest_indicator_context(
             db,
@@ -1092,7 +1110,7 @@ def get_strategy_timeframe_contexts(db: Session, asset_symbol: str) -> dict:
             timeframe=timeframe,
             max_age_minutes=max_age_minutes,
         )
-        for timeframe, max_age_minutes in get_strategy_timeframe_policy().items()
+        for timeframe, max_age_minutes in get_strategy_timeframe_policy(db, strategy_name=strategy_name).items()
     }
 
 

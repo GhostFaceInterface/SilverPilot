@@ -20,6 +20,7 @@ from app.models.entities import (
     RawNews,
     Report,
     RuntimeHeartbeat,
+    SourceProfile,
     RiskDecision,
     RiskRule,
     Signal,
@@ -36,6 +37,7 @@ from app.models.entities import (
     Provider,
     TenantPortfolio,
     StrategyParameter,
+    StrategyPolicy,
     AssetConversion,
     ProviderCostRule,
 )
@@ -62,6 +64,7 @@ __all__ = [
     "RawNews",
     "Report",
     "RuntimeHeartbeat",
+    "SourceProfile",
     "RiskDecision",
     "RiskRule",
     "Signal",
@@ -78,6 +81,7 @@ __all__ = [
     "Provider",
     "TenantPortfolio",
     "StrategyParameter",
+    "StrategyPolicy",
     "AssetConversion",
     "ProviderCostRule",
 ]

@@ -71,6 +71,7 @@ class CollectorHealthItem(BaseModel):
     records_seen: int
     records_inserted: int
     duplicates: int
+    duplicate_without_new_price: bool = False
     age_seconds: int | None
     stale: bool
     error_message: str | None

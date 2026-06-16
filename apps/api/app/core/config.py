@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     strategy_trend_max_age_minutes: int = Field(default=96 * 60, ge=1)
     strategy_entry_max_age_minutes: int = Field(default=3 * 60, ge=1)
     strategy_execution_max_age_minutes: int = Field(default=20, ge=1)
+    source_divergence_threshold_percent: Decimal = Field(default=Decimal("3.0"), gt=0)
     hold_notification_cooldown_minutes: int = Field(default=360, ge=0)
     default_provider_name: str = "kuveyt_turk"
 
