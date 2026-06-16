@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.models import Asset, PaperTrade, Portfolio, AgentMemoryEvent, PriceSnapshot
 from app.paper_trading.service import calculate_position
+from app.services.runtime import trading_status
 
 logger = logging.getLogger("silverpilot.telegram.bot")
 
@@ -44,6 +45,8 @@ def handle_telegram_command(command: str, db: Session) -> str:
 
     if cmd == "/durum":
         return get_durum_text(db)
+    elif cmd in ("/sistem", "/status"):
+        return get_sistem_text(db)
     elif cmd == "/cuzdan":
         return get_cuzdan_text(db)
     elif cmd == "/karzarar":
@@ -55,12 +58,62 @@ def handle_telegram_command(command: str, db: Session) -> str:
             "🤖 <b>SilverPilot Telegram Portföy & Teşhis Botuna Hoş Geldiniz!</b>\n\n"
             "Aşağıdaki komutları kullanabilirsiniz:\n"
             "📊 <b>/durum</b> - Gümüş & Portföy bakiyelerini ve dağılımını gösterir.\n"
+            "🩺 <b>/sistem</b> - Motor, heartbeat, son karar ve neden trade yok özetini gösterir.\n"
             "💼 <b>/cuzdan</b> - $2500 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir.\n"
             "📈 <b>/karzarar</b> - Açık pozisyon PNL ve son 5 paper-trade işlemini özetler.\n"
             "🤖 <b>/ajanlar</b> - Son Supreme Arbiter uyuşmazlık ve çözümlenmiş kararları listeler."
         )
     else:
         return f"Bilinmeyen komut: {html.escape(cmd)}\nYardım için /help yazabilirsiniz."
+
+
+def get_sistem_text(db: Session) -> str:
+    status = trading_status(db)
+    runtime = status.get("runtime") or {}
+    latest_decision = status.get("latest_decision") or {}
+    latest_collector = status.get("latest_collector_run") or {}
+    heartbeats = runtime.get("heartbeats") or []
+    auto_heartbeat = next((item for item in heartbeats if item.get("component") == "auto_trader"), None)
+
+    def fmt_dt(value):
+        if value is None:
+            return "n/a"
+        if hasattr(value, "strftime"):
+            return value.strftime("%Y-%m-%d %H:%M")
+        return html.escape(str(value))
+
+    decision_text = "Karar kaydı yok"
+    if latest_decision:
+        decision_text = (
+            f"{html.escape(str(latest_decision.get('action') or 'n/a'))} / "
+            f"<code>{html.escape(str(latest_decision.get('reason_code') or 'n/a'))}</code> "
+            f"({html.escape(str(latest_decision.get('mode') or 'n/a'))})"
+        )
+
+    collector_text = "Collector kaydı yok"
+    if latest_collector:
+        collector_text = (
+            f"{html.escape(str(latest_collector.get('collector_name') or 'n/a'))} "
+            f"{html.escape(str(latest_collector.get('status') or 'n/a'))} "
+            f"({fmt_dt(latest_collector.get('finished_at') or latest_collector.get('started_at'))})"
+        )
+
+    heartbeat_text = "n/a"
+    if auto_heartbeat:
+        heartbeat_text = (
+            f"{html.escape(str(auto_heartbeat.get('status') or 'n/a'))} ({fmt_dt(auto_heartbeat.get('last_seen_at'))})"
+        )
+
+    why_no_trade = status.get("why_no_trade") or "Son karar trade engeli bildirmiyor"
+
+    return (
+        "🩺 <b>SilverPilot Sistem Özeti</b>\n\n"
+        f"⚙️ <b>Runtime:</b> {html.escape(str(runtime.get('status') or 'unknown'))}\n"
+        f"💓 <b>Auto-trader heartbeat:</b> {heartbeat_text}\n"
+        f"🧠 <b>Son karar:</b> {decision_text}\n"
+        f"📡 <b>Son collector:</b> {collector_text}\n"
+        f"🚦 <b>Neden trade yok?:</b> <code>{html.escape(str(why_no_trade))}</code>"
+    )
 
 
 def get_durum_text(db: Session) -> str:
@@ -765,6 +818,7 @@ async def register_bot_commands(bot: Bot) -> None:
     """Programmatically registers the bot commands in the Telegram API so they show up in the Telegram UI menu."""
     commands = [
         BotCommand("durum", "Gümüş & Portföy bakiyelerini ve dağılımını gösterir"),
+        BotCommand("sistem", "Motor, heartbeat, son karar ve trade blok nedenini özetler"),
         BotCommand("cuzdan", "$2500 başlangıç bakiyesine göre cüzdan PNL ve değişim oranını gösterir"),
         BotCommand("karzarar", "Açık pozisyon PNL ve son 5 paper-trade işlemini özetler"),
         BotCommand("ajanlar", "Son Supreme Arbiter uyuşmazlık ve çözümlenmiş kararları listeler"),

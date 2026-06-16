@@ -473,3 +473,15 @@ Phase 5.5, 6, 8, 9, 10, and 11 implementation completed.
 - **Phase 9 (ML Dataset Automation):** Constructed time-series ML feature-label dataset generator (`scripts/build_dataset.py`) ensuring zero data-leakage and token security.
 - **Phase 10 (First ML Model & Live Inference):** Trained LightGBM models locally (Off-VPS Training Rule). Integrated FastAPI real-time O(1) inference from pickled model weights, accompanied by pre-trade risk vetoes.
 - **Phase 11 (Model Registry & Scheduled Training):** Fully integrated local MLflow training and model registration tracking. Created automatic evaluation script (`scripts/evaluate_challenger.py`) comparing challenger vs champion. Implemented manual promotion CLI (`scripts/promote_model.py`) generating `champion_metadata.json` and git staging. Implemented token-secured `GET /api/v1/ml/model/active` API visibility endpoint. Fortified full E2E test suite to 133/133 passing green tests and pushed changes to main branch.
+
+## 2026-06-16
+
+Runtime trading observability foundation implemented locally.
+
+- Added additive `runtime_heartbeats` and `trading_decision_runs` persistence for auto-trader heartbeat and decision audit evidence.
+- Added read-only `GET /runtime/trading-status` and `GET /runtime/decision-runs` for engine status, latest decision, latest collector, source health, and "why no trade" diagnosis.
+- Auto-trader now records heartbeat plus completed/skipped/failed decision runs while preserving diagnostic/paper modes and existing risk/paper-trade boundaries.
+- Added Telegram `/sistem` and `/status` aliases for compact runtime status; HOLD Telegram cooldown does not remove DB decision evidence.
+- Validation passed: `pytest tests/test_runtime_observability.py tests/test_auto_trader.py tests/test_telegram.py`, isolated Alembic upgrade from `8c2f6b7a9d10` to `d4a1b9c7e8f2`, and `docker compose config`.
+- Full SQLite Alembic chain is still blocked by an older SQLite-incompatible `0003_add_collector_audit_fields` operation; the new migration itself was validated in isolation.
+- No real-money execution, bank automation, threshold relaxation, LLM decision ownership, or paid data source was added.

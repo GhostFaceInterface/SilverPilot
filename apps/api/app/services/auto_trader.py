@@ -16,6 +16,13 @@ from app.services.indicator_readiness import (
     get_latest_indicator_context,
     get_strategy_timeframe_policy,
 )
+from app.services.runtime import (
+    AUTO_TRADER_COMPONENT,
+    finish_trading_decision_run,
+    record_runtime_heartbeat,
+    source_health_snapshot,
+    start_trading_decision_run,
+)
 from app.services.trade_intents import TradeIntent, execute_trade_intent
 
 logger = logging.getLogger("silverpilot.services.auto_trader")
@@ -548,10 +555,34 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     et_tz = ZoneInfo("America/New_York")
     now_et = datetime.now(timezone.utc).astimezone(et_tz)
+    record_runtime_heartbeat(
+        db,
+        component=AUTO_TRADER_COMPONENT,
+        status="ok",
+        expected_interval_seconds=settings.collector_interval_seconds,
+        details={"mode": settings.auto_trading_mode, "strategy_name": settings.strategy_name},
+    )
+    decision_run = start_trading_decision_run(
+        db,
+        mode=settings.auto_trading_mode,
+        asset_symbol=settings.auto_trading_asset_symbol,
+        strategy_name=settings.strategy_name or "strategy_v2",
+        details={"trigger": "auto_trader_loop"},
+    )
     if now_et.weekday() == 6 and now_et.hour == 18 and now_et.minute < 5:
         logger.info(
             "COMEX market opening warmup window active (Sunday 18:00-18:05 ET). Holding trading to let indicators heat up."
         )
+        finish_trading_decision_run(
+            db,
+            decision_run,
+            status="skipped",
+            action=ACTION_HOLD,
+            reason_code="MARKET_OPEN_WARMUP",
+            execution_result={"status": "skipped", "skipped_reason": "market_open_warmup", "trade_id": None},
+            notification_result={"sent": False, "skipped_reason": "market_open_warmup"},
+        )
+        db.commit()
         return
 
     # 1. Fetch configured auto-trading portfolio
@@ -560,12 +591,48 @@ async def _run_auto_trading_impl(db: Session, settings):
     ).scalar_one_or_none()
     if not portfolio:
         logger.error("Auto-trading portfolio %r not found", settings.auto_trading_portfolio_name)
+        record_runtime_heartbeat(
+            db,
+            component=AUTO_TRADER_COMPONENT,
+            status="failing",
+            expected_interval_seconds=settings.collector_interval_seconds,
+            details={"error": "portfolio_not_found", "portfolio_name": settings.auto_trading_portfolio_name},
+        )
+        finish_trading_decision_run(
+            db,
+            decision_run,
+            status="failed",
+            action=ACTION_HOLD,
+            reason_code="PORTFOLIO_NOT_FOUND",
+            execution_result={"status": "skipped", "skipped_reason": "portfolio_not_found", "trade_id": None},
+            notification_result={"sent": False, "skipped_reason": "portfolio_not_found"},
+            error_message=f"Portfolio {settings.auto_trading_portfolio_name!r} not found",
+        )
+        db.commit()
         return
 
     # 2. Fetch configured auto-trading asset
     asset = db.execute(select(Asset).where(Asset.symbol == settings.auto_trading_asset_symbol)).scalar_one_or_none()
     if not asset:
         logger.error("Auto-trading asset %r not found", settings.auto_trading_asset_symbol)
+        record_runtime_heartbeat(
+            db,
+            component=AUTO_TRADER_COMPONENT,
+            status="failing",
+            expected_interval_seconds=settings.collector_interval_seconds,
+            details={"error": "asset_not_found", "asset_symbol": settings.auto_trading_asset_symbol},
+        )
+        finish_trading_decision_run(
+            db,
+            decision_run,
+            status="failed",
+            action=ACTION_HOLD,
+            reason_code="ASSET_NOT_FOUND",
+            execution_result={"status": "skipped", "skipped_reason": "asset_not_found", "trade_id": None},
+            notification_result={"sent": False, "skipped_reason": "asset_not_found"},
+            error_message=f"Asset {settings.auto_trading_asset_symbol!r} not found",
+        )
+        db.commit()
         return
 
     timeframe_contexts = get_strategy_timeframe_contexts(db, asset.symbol)
@@ -589,6 +656,19 @@ async def _run_auto_trading_impl(db: Session, settings):
 
     if not latest_snapshot:
         logger.error("PriceSnapshot not found for strategy execution.")
+        finish_trading_decision_run(
+            db,
+            decision_run,
+            status="failed",
+            action=ACTION_HOLD,
+            reason_code="PRICE_SNAPSHOT_MISSING",
+            source_health=source_health_snapshot(db),
+            indicator_readiness=summarize_timeframe_inputs(timeframe_contexts),
+            execution_result={"status": "skipped", "skipped_reason": "price_snapshot_missing", "trade_id": None},
+            notification_result={"sent": False, "skipped_reason": "price_snapshot_missing"},
+            error_message="PriceSnapshot not found for strategy execution.",
+        )
+        db.commit()
         return
 
     # Get position status
@@ -861,6 +941,25 @@ async def _run_auto_trading_impl(db: Session, settings):
         }
     refreshed_details["decision_envelope"] = refreshed_envelope
     signal.details_json = refreshed_details
+    finish_trading_decision_run(
+        db,
+        decision_run,
+        status="completed",
+        action=action,
+        reason_code=reason_code,
+        signal_id=signal.id,
+        source_health=source_health_snapshot(db),
+        indicator_readiness=summarize_timeframe_inputs(timeframe_contexts),
+        execution_result=execution_result.as_dict(),
+        notification_result=notification_decision,
+        details={
+            "requested_strategy": requested_strategy,
+            "resolved_strategy": resolved_strategy,
+            "candidate_action": resolution.candidate_action,
+            "readiness_block_flags": strategy_readiness_flags,
+            "filter_reason": filter_reason,
+        },
+    )
 
     # Commit transactions
     db.commit()

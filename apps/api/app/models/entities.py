@@ -148,6 +148,53 @@ class CollectorRun(Base):
     details_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class RuntimeHeartbeat(Base):
+    __tablename__ = "runtime_heartbeats"
+    __table_args__ = (UniqueConstraint("component", name="uq_runtime_heartbeats_component"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component: Mapped[str] = mapped_column(String(64), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expected_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="ok", index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+
+
+class TradingDecisionRun(Base):
+    __tablename__ = "trading_decision_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trigger_collector_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("collector_runs.id"), nullable=True, index=True
+    )
+    signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), nullable=True, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    asset_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    source_health_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    indicator_readiness_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    action: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    execution_result_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    notification_result_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+
+    trigger_collector_run: Mapped["CollectorRun | None"] = relationship()
+    signal: Mapped["Signal | None"] = relationship()
+
+
 class RawBankPrice(Base):
     __tablename__ = "raw_bank_prices"
     __table_args__ = (

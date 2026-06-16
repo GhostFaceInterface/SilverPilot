@@ -468,6 +468,28 @@ Policy:
 - Global XAG diagnostics are tuning metadata only; they do not select sources or override the collector validation gate.
 - Source-aware risk metrics prevent fallback/source-mix price differences from creating synthetic volatility or FOMO blocks.
 
+## Runtime Trading Observability
+
+Tables:
+
+- `runtime_heartbeats`: one row per runtime component such as `auto_trader`, with `last_seen_at`, optional `expected_next_at`, `status`, and compact `details_json`.
+- `trading_decision_runs`: one row per auto-trading evaluation, including trigger collector reference when known, start/finish timestamps, mode, strategy, asset, source health snapshot, indicator readiness snapshot, final action, reason code, execution result, notification result, status, and error message.
+
+Endpoints:
+
+- `GET /runtime/trading-status`: read-only operational summary for "is the engine running?" and "why was there no trade?". It returns latest heartbeat state, latest decision run, latest signal, latest collector run, collector health, and `why_no_trade`.
+- `GET /runtime/decision-runs`: read-only paginated recent decision-run list, filterable by `asset_symbol`.
+
+Telegram:
+
+- `/sistem` and `/status` return the same runtime status contract in a compact operator-readable format.
+- HOLD notification cooldown must not hide persisted decision runs. Repeated HOLDs may be skipped in Telegram, but the DB decision-run audit remains complete.
+
+Policy:
+
+- Runtime observability is audit-only and must not enable real-money execution.
+- Decision runs may reference `signals`, paper-trade execution results, and notification audits, but deterministic risk policy remains the owner of trade allow/block decisions.
+
 Phase 5 dashboard should consume this endpoint for the risk summary, `threshold_headroom`, `would_block_now`, 24-hour and 7-day global XAG volatility, recent blocked-decision counts, reason-code distribution, volatility sample metadata, and selected global XAG source.
 
 The initial Streamlit dashboard is read-only. It may call `/health`, `/portfolio`, `/paper-trades/position`, `/prices/latest`, `/collectors/health`, `/collectors/validation-gate`, and `/risk/status`; it must not call `POST /paper-trades` or collector mutation endpoints.

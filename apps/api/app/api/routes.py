@@ -35,6 +35,7 @@ from app.models import (
 from app.paper_trading.service import PaperTradingError, calculate_position, execute_paper_trade
 from app.risk.service import RiskStatusError, risk_policy_status
 from app.services.account_holdings import compute_account_holdings
+from app.services.runtime import latest_decision_runs, trading_status
 from app.services.indicator_readiness import (
     STRATEGY_TIMEFRAME_ROLES,
     get_indicator_readiness,
@@ -509,6 +510,20 @@ def get_latest_signal(db: Session = Depends(get_db)):
             "created_at": signal.created_at,
         }
     }
+
+
+@router.get("/runtime/trading-status")
+def get_runtime_trading_status(asset_symbol: str = "XAG_GRAM", db: Session = Depends(get_db)):
+    return trading_status(db, asset_symbol=asset_symbol)
+
+
+@router.get("/runtime/decision-runs")
+def get_runtime_decision_runs(
+    asset_symbol: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    return {"decision_runs": latest_decision_runs(db, limit=limit, asset_symbol=asset_symbol)}
 
 
 @router.get("/reports/daily/latest")
