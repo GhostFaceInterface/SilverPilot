@@ -8,7 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Asset, RawBankPrice, RawFxRate, RawGlobalPrice
+from app.models import Asset, CollectorRun, RawBankPrice, RawFxRate, RawGlobalPrice
 from app.services.policy_resolver import ResolvedStrategyPolicy
 
 TROY_OUNCE_GRAMS = Decimal("31.1034768")
@@ -93,7 +93,7 @@ def evaluate_source_divergence(db: Session, *, policy: ResolvedStrategyPolicy | 
 
     bank_age = _age_minutes(bank.observed_at, now) if bank is not None else None
     global_age = _age_minutes(global_price.observed_at, now) if global_price is not None else None
-    fx_age = _age_minutes(fx_rate.observed_at, now) if fx_rate is not None else None
+    fx_age = _age_minutes(_fx_freshness_reference_time(db, fx_rate), now) if fx_rate is not None else None
     stale_reasons = _stale_reasons(
         bank_age=bank_age,
         global_age=global_age,
@@ -104,19 +104,19 @@ def evaluate_source_divergence(db: Session, *, policy: ResolvedStrategyPolicy | 
     )
 
     if bank_mid is not None and global_mid is not None and usd_try is not None and global_mid > 0 and usd_try > 0:
+        converted = (global_mid * usd_try) / TROY_OUNCE_GRAMS
+        if converted > 0:
+            divergence = (abs(bank_mid - converted) / converted) * Decimal("100")
         if stale_reasons:
             status = "stale_data"
             blocked = True
             reason_code = SOURCE_DIVERGENCE_STALE_DATA
-        else:
-            converted = (global_mid * usd_try) / TROY_OUNCE_GRAMS
-            if converted > 0:
-                divergence = (abs(bank_mid - converted) / converted) * Decimal("100")
-                status = "ok"
-                if divergence > threshold:
-                    status = "blocked"
-                    blocked = True
-                    reason_code = SOURCE_DIVERGENCE_BLOCK
+        elif converted is not None and converted > 0:
+            status = "ok"
+            if divergence is not None and divergence > threshold:
+                status = "blocked"
+                blocked = True
+                reason_code = SOURCE_DIVERGENCE_BLOCK
 
     return SourceDivergenceResult(
         status=status,
@@ -173,6 +173,27 @@ def _latest_global_price(db: Session, asset_id: int | None) -> RawGlobalPrice | 
     ).scalar_one_or_none()
 
 
+def _fx_freshness_reference_time(db: Session, fx_rate: RawFxRate | None) -> datetime | None:
+    if fx_rate is None:
+        return None
+    latest_success = db.execute(
+        select(CollectorRun)
+        .where(
+            CollectorRun.collector_name.in_({"tcmb_usd_try", "yahoo_usd_try", "kuveyt_usd_try"}),
+            CollectorRun.source == fx_rate.source,
+            CollectorRun.status == "success",
+        )
+        .order_by(desc(CollectorRun.finished_at), desc(CollectorRun.started_at))
+        .limit(1)
+    ).scalar_one_or_none()
+    candidates = [
+        _aware(fx_rate.fetched_at or fx_rate.observed_at),
+        _aware(latest_success.finished_at or latest_success.started_at) if latest_success is not None else None,
+    ]
+    valid_candidates = [value for value in candidates if value is not None]
+    return max(valid_candidates) if valid_candidates else None
+
+
 def _stale_reasons(
     *,
     bank_age: int | None,
@@ -206,6 +227,13 @@ def _mid(buy_price, sell_price) -> Decimal | None:
 def _age_minutes(value: datetime | None, now: datetime) -> int | None:
     if value is None:
         return None
+    value = _aware(value)
+    return max(int((now - value).total_seconds() // 60), 0)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return max(int((now - value.astimezone(UTC)).total_seconds() // 60), 0)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

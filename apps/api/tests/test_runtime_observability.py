@@ -146,6 +146,53 @@ def test_runtime_routes_expose_decision_runs(db_session):
     app.dependency_overrides.clear()
 
 
+def test_runtime_status_and_proof_report_surface_source_divergence_stale_block(db_session):
+    signal, _collector_run = _seed_signal(db_session)
+    run = start_trading_decision_run(
+        db_session,
+        mode="diagnostic",
+        asset_symbol="XAG_GRAM",
+        strategy_name="blended",
+    )
+    finish_trading_decision_run(
+        db_session,
+        run,
+        status="completed",
+        action="HOLD",
+        reason_code="SOURCE_DIVERGENCE_STALE_DATA",
+        signal_id=signal.id,
+        execution_result={"status": "skipped", "skipped_reason": "diagnostic_mode", "trade_id": None},
+        notification_result={"sent": True},
+    )
+    db_session.commit()
+
+    status_payload = trading_status(db_session)
+    assert status_payload["why_no_trade"] == "SOURCE_DIVERGENCE_STALE_DATA"
+    assert status_payload["latest_critical_block"]["reason_code"] == "SOURCE_DIVERGENCE_STALE_DATA"
+    assert status_payload["latest_decision"]["execution_result"]["skipped_reason"] == "diagnostic_mode"
+
+    app = create_app()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    status_response = client.get("/runtime/trading-status")
+    proof_response = client.get("/runtime/proof-report", params={"window_days": 30})
+
+    assert status_response.status_code == 200
+    assert status_response.json()["latest_critical_block"]["reason_code"] == "SOURCE_DIVERGENCE_STALE_DATA"
+    assert proof_response.status_code == 200
+    proof_payload = proof_response.json()
+    assert proof_payload["block_reason_distribution"]["SOURCE_DIVERGENCE_STALE_DATA"] == 1
+    assert proof_payload["skipped_execution_distribution"]["diagnostic_mode"] == 1
+    assert proof_payload["acceptance_gate"]["critical_block_48h"] is True
+
+    client.close()
+    app.dependency_overrides.clear()
+
+
 def test_runtime_status_and_proof_report_surface_non_executed_actions(db_session):
     signal, _collector_run = _seed_signal(db_session)
     run = start_trading_decision_run(

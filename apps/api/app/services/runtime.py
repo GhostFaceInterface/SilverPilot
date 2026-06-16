@@ -226,6 +226,7 @@ def _overdue_heartbeats(heartbeats: list[RuntimeHeartbeat]) -> list[RuntimeHeart
 def _critical_hold_reasons() -> set[str]:
     return {
         "SOURCE_DIVERGENCE_BLOCK",
+        "SOURCE_DIVERGENCE_STALE_DATA",
         "DAILY_BAR_DELAYED",
         "ENTRY_TIMEFRAME_STALE",
         "EXECUTION_TIMEFRAME_STALE",

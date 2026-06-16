@@ -26,13 +26,14 @@ from app.collectors.public_sources import (
     collect_kuveyt_usd_try,
     parse_kuveyt_public_silver_html,
 )
-from app.collectors.service import _try_compute_and_store_indicator, ingest_fx_rate
+from app.collectors.service import DEFAULT_COLLECTOR_JOBS, _try_compute_and_store_indicator, ingest_fx_rate
 from app.collectors.runner import parse_collector_jobs, resolve_jobs_argument, run_jobs
 from app.core.config import Settings
 from app.core.db import Base, get_db
 from app.main import create_app
 from app.models import Asset, CollectorRun, PriceSnapshot, RawBankPrice, RawEvent, RawFxRate, RawGlobalPrice, RawNews
 from app.services.indicator_readiness import get_indicator_readiness
+from app.services.source_divergence import evaluate_source_divergence
 
 
 def make_client():
@@ -729,6 +730,16 @@ def test_runner_parse_collector_jobs_preserves_multiple_fx_order_before_global_x
     )
 
     assert jobs == ["yahoo-usd-try", "kuveyt-usd-try", "tcmb-usd-try", "global-xag-usd"]
+
+
+def test_default_collector_jobs_include_all_fx_before_global_xag():
+    jobs = parse_collector_jobs(DEFAULT_COLLECTOR_JOBS, fallback_job="manual")
+
+    assert {"yahoo-usd-try", "kuveyt-usd-try", "tcmb-usd-try"}.issubset(jobs)
+    global_idx = jobs.index("global-xag-usd")
+    assert jobs.index("yahoo-usd-try") < global_idx
+    assert jobs.index("kuveyt-usd-try") < global_idx
+    assert jobs.index("tcmb-usd-try") < global_idx
 
 
 def test_runner_rejects_removed_kitco_rss_job():
@@ -1986,6 +1997,116 @@ def test_collector_health_reports_fresh_with_kuveyt_usd_try_fallback():
     body = response.json()
     assert body["execution_critical"]["usd_try"] == "fresh"
     assert body["execution_critical"]["usd_try_source"] == "kuveyt-public-silver-page"
+
+
+def test_source_divergence_treats_same_day_tcmb_duplicate_success_as_fresh():
+    client, testing_session = make_client()
+    now = datetime.now(UTC)
+    official_rate_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    db = testing_session()
+    try:
+        xag = db.execute(select(Asset).where(Asset.symbol == "XAG")).scalar_one()
+        xag_gram = Asset(symbol="XAG_GRAM", name="Gram Silver", asset_type="metal", is_active=True)
+        db.add(xag_gram)
+        bank_run = CollectorRun(
+            collector_name="kuveyt_public_silver",
+            source="kuveyt-public-silver-page",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            started_at=now - timedelta(minutes=5),
+            finished_at=now - timedelta(minutes=5),
+            details_json={},
+        )
+        global_run = CollectorRun(
+            collector_name="global_xag_usd",
+            source="yahoo-si-f",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            started_at=now - timedelta(minutes=5),
+            finished_at=now - timedelta(minutes=5),
+            details_json={},
+        )
+        first_fx_run = CollectorRun(
+            collector_name="tcmb_usd_try",
+            source="tcmb-today-xml",
+            status="success",
+            records_seen=1,
+            records_inserted=1,
+            started_at=official_rate_time,
+            finished_at=official_rate_time,
+            details_json={},
+        )
+        duplicate_fx_run = CollectorRun(
+            collector_name="tcmb_usd_try",
+            source="tcmb-today-xml",
+            status="success",
+            records_seen=1,
+            records_inserted=0,
+            duplicates=1,
+            started_at=now - timedelta(minutes=2),
+            finished_at=now - timedelta(minutes=2),
+            details_json={"duplicate_rate_date": official_rate_time.date().isoformat()},
+        )
+        db.add_all([bank_run, global_run, first_fx_run, duplicate_fx_run])
+        db.flush()
+        db.add_all(
+            [
+                RawBankPrice(
+                    collector_run_id=bank_run.id,
+                    asset_id=xag_gram.id,
+                    source="kuveyt-public-silver-page",
+                    buy_price=Decimal("40.000000"),
+                    sell_price=Decimal("40.000000"),
+                    currency="TRY",
+                    observed_at=now - timedelta(minutes=5),
+                    fetched_at=now - timedelta(minutes=5),
+                    raw_payload_hash="bank-tcmb-freshness",
+                    parser_version="kuveyt-public-finance-portal-v2",
+                    payload_json={},
+                ),
+                RawGlobalPrice(
+                    collector_run_id=global_run.id,
+                    asset_id=xag.id,
+                    source="yahoo-si-f",
+                    buy_price=Decimal("31.1034768"),
+                    sell_price=Decimal("31.1034768"),
+                    currency="USD",
+                    observed_at=now - timedelta(minutes=5),
+                    fetched_at=now - timedelta(minutes=5),
+                    raw_payload_hash="global-tcmb-freshness",
+                    parser_version="yahoo-finance-chart-v1",
+                    payload_json={},
+                ),
+                RawFxRate(
+                    collector_run_id=first_fx_run.id,
+                    source="tcmb-today-xml",
+                    base_currency="USD",
+                    quote_currency="TRY",
+                    rate=Decimal("40.000000"),
+                    observed_at=official_rate_time,
+                    fetched_at=official_rate_time,
+                    raw_payload_hash="fx-tcmb-official-date",
+                    parser_version="tcmb-today-xml-v1",
+                    payload_json={},
+                ),
+            ]
+        )
+        db.flush()
+
+        result = evaluate_source_divergence(db)
+
+        assert result.status == "ok"
+        assert result.blocked is False
+        assert result.fx_observed_at.replace(tzinfo=UTC) == official_rate_time
+        assert result.fx_age_minutes is not None
+        assert result.fx_age_minutes < 10
+        assert result.stale_reasons == []
+        assert abs(result.converted_try_gram - Decimal("40.000000")) < Decimal("0.000001")
+    finally:
+        db.close()
+        client.close()
 
 
 def test_kuveyt_hardening_successful_run():

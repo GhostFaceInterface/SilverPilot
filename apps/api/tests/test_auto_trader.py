@@ -409,6 +409,8 @@ def test_source_divergence_stale_data_has_dedicated_reason():
     assert result.blocked is True
     assert result.reason_code == SOURCE_DIVERGENCE_STALE_DATA
     assert set(result.stale_reasons) == {"bank_price_stale", "global_xag_stale", "usd_try_stale"}
+    assert abs(result.converted_try_gram - Decimal("40.000000")) < Decimal("0.000001")
+    assert result.divergence_percent < Decimal("0.000001")
 
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -715,6 +717,136 @@ async def test_auto_trading_blocks_on_source_divergence():
         assert "Global dönüşüm" in message_text
         assert "Ayrışma" in message_text
         assert "işlem yapılmadı" in message_text
+
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_auto_trading_stale_source_divergence_blocks_before_strategy_evaluation():
+    engine, db, asset, portfolio, _, indicators = _seed_runtime_state()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stale = now - datetime.timedelta(hours=3)
+    xag = Asset(symbol="XAG", name="Silver Ounce", asset_type="metal", is_active=True)
+    db.add(xag)
+    bank_run = CollectorRun(
+        collector_name="kuveyt_public_silver",
+        source="kuveyt-public-silver-page",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    global_run = CollectorRun(
+        collector_name="global_xag_usd",
+        source="yahoo-si-f",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=stale,
+        finished_at=stale,
+        details_json={},
+    )
+    fx_run = CollectorRun(
+        collector_name="tcmb_usd_try",
+        source="tcmb-today-xml",
+        status="success",
+        records_seen=1,
+        records_inserted=1,
+        started_at=now,
+        finished_at=now,
+        details_json={},
+    )
+    db.add_all([bank_run, global_run, fx_run])
+    db.flush()
+    db.add_all(
+        [
+            RawBankPrice(
+                collector_run_id=bank_run.id,
+                asset_id=asset.id,
+                source="kuveyt-public-silver-page",
+                buy_price=Decimal("40.000000"),
+                sell_price=Decimal("40.000000"),
+                currency="TRY",
+                observed_at=now,
+                fetched_at=now,
+                raw_payload_hash="bank-stale-block",
+                parser_version="kuveyt-public-finance-portal-v2",
+                payload_json={},
+            ),
+            RawGlobalPrice(
+                collector_run_id=global_run.id,
+                asset_id=xag.id,
+                source="yahoo-si-f",
+                buy_price=Decimal("31.1034768"),
+                sell_price=Decimal("31.1034768"),
+                currency="USD",
+                observed_at=stale,
+                fetched_at=stale,
+                raw_payload_hash="global-stale-block",
+                parser_version="yahoo-finance-chart-v1",
+                payload_json={},
+            ),
+            RawFxRate(
+                collector_run_id=fx_run.id,
+                source="tcmb-today-xml",
+                base_currency="USD",
+                quote_currency="TRY",
+                rate=Decimal("40.000000"),
+                observed_at=stale.replace(hour=0, minute=0, second=0, microsecond=0),
+                fetched_at=stale,
+                raw_payload_hash="fx-stale-block",
+                parser_version="tcmb-today-xml-v1",
+                payload_json={},
+            ),
+        ]
+    )
+    db.flush()
+    settings = Settings(
+        auto_trading_enabled=True,
+        strategy_name="strategy_v2",
+        auto_trading_mode="paper",
+        telegram_bot_token="token",
+        telegram_chat_id=1,
+    )
+    contexts = {
+        "1d": _make_context(indicators["1d"], timeframe="1d"),
+        "1h": _make_context(indicators["1h"], timeframe="1h"),
+        "5m": _make_context(indicators["5m"], timeframe="5m"),
+    }
+    strategy = AsyncMock()
+
+    with (
+        patch("app.services.auto_trader.get_settings", return_value=settings),
+        patch("app.services.auto_trader.get_strategy_timeframe_contexts", return_value=contexts),
+        patch("app.services.auto_trader.STRATEGY_REGISTRY", {"strategy_v2": strategy}),
+        patch("app.services.telegram.Bot") as bot_cls,
+    ):
+        bot = AsyncMock()
+        bot_cls.return_value = bot
+
+        await run_auto_trading(db)
+
+        strategy.evaluate.assert_not_called()
+        signal = db.execute(select(Signal).order_by(Signal.id.desc())).scalar_one()
+        assert signal.action == "HOLD"
+        assert signal.reason_code == SOURCE_DIVERGENCE_STALE_DATA
+        assert signal.details_json["source_divergence"]["converted_try_gram"] is not None
+        assert signal.details_json["source_divergence"]["divergence_percent"] is not None
+        run = db.execute(select(TradingDecisionRun).order_by(TradingDecisionRun.id.desc())).scalar_one()
+        assert run.reason_code == SOURCE_DIVERGENCE_STALE_DATA
+        assert run.source_health_json["source_divergence"]["status"] == "stale_data"
+        assert db.execute(select(PaperTrade)).scalars().all() == []
+        assert portfolio.cash_balance == Decimal("600.00")
+        message_text = bot.send_message.call_args.kwargs["text"]
+        assert "Banka/global/FX fiyat tutarlılığı için gereken kaynaklardan biri güncel değil" in message_text
+        assert "REGIME_DEGRADED" not in message_text
+        assert "Global dönüşüm: n/a" not in message_text
+        assert "Ayrışma: n/a" not in message_text
+        assert "Global XAG kaynağı taze değil" in message_text
 
     db.close()
     Base.metadata.drop_all(bind=engine)

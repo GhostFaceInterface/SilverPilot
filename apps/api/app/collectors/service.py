@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 PRICE_QUANT = Decimal("0.000001")
 CONTEXT_COLLECTORS = {"fed_rss", "fred_macro"}
 DEFAULT_COLLECTOR_JOBS = (
-    "kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss,fred-macro,"
+    "kuveyt-silver,yahoo-usd-try,kuveyt-usd-try,tcmb-usd-try,global-xag-usd,fed-rss,fred-macro,"
     "hermes-agent,bloomberght-rss,fxstreet-rss,investing-rss"
 )
 GLOBAL_XAG_SOURCE_ALIASES = {

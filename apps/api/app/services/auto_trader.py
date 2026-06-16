@@ -67,6 +67,12 @@ READINESS_REASON_LABELS = {
     SOURCE_DIVERGENCE_STALE_DATA: "Banka/global/FX fiyat tutarlılığı için gereken kaynaklardan biri güncel değil",
 }
 
+SOURCE_DIVERGENCE_STALE_REASON_LABELS = {
+    "bank_price_stale": "Banka fiyat kaynağı taze değil",
+    "global_xag_stale": "Global XAG kaynağı taze değil",
+    "usd_try_stale": "USD/TRY kaynağı taze değil",
+}
+
 
 @dataclass(frozen=True)
 class DecisionContext:
@@ -205,7 +211,8 @@ def _format_source_divergence_lines(source_divergence: dict | None) -> list[str]
         f"• <b>Ayrışma:</b> {divergence}% / eşik {threshold}%",
     ]
     if stale_reasons:
-        lines.append(f"• <b>Stale nedenleri:</b> <code>{html.escape(', '.join(stale_reasons))}</code>")
+        stale_text = ", ".join(SOURCE_DIVERGENCE_STALE_REASON_LABELS.get(reason, reason) for reason in stale_reasons)
+        lines.append(f"• <b>Güncellik nedenleri:</b> {html.escape(stale_text)}")
     return lines
 
 
@@ -497,6 +504,7 @@ async def run_auto_trading(db: Session = None):
 def _select_block_reason(strategy_readiness_flags: list[str]) -> str | None:
     prioritized_block_flags = [
         SOURCE_DIVERGENCE_BLOCK,
+        SOURCE_DIVERGENCE_STALE_DATA,
         "TIMEFRAME_SOURCE_MISMATCH",
         "MARKET_CLOSED",
         "DAILY_BAR_DELAYED",

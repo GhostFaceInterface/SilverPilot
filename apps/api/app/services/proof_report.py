@@ -257,6 +257,7 @@ def _audit_chain_summary(
 def _acceptance_gate(db: Session, *, since: datetime, audit_chain: dict[str, int]) -> dict:
     critical_reasons = {
         "SOURCE_DIVERGENCE_BLOCK",
+        "SOURCE_DIVERGENCE_STALE_DATA",
         "DAILY_BAR_DELAYED",
         "ENTRY_TIMEFRAME_STALE",
         "EXECUTION_TIMEFRAME_STALE",
