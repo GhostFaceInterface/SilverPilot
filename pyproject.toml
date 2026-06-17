@@ -25,6 +25,9 @@ dev = [
   "ruff>=0.6.0",
 ]
 
+[project.scripts]
+silverpilot-collect-kuveyt = "silverpilot.app.collectors.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/silverpilot"]
 

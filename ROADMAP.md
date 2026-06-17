@@ -534,11 +534,17 @@ Deliverables: collector service, quote tables, bar builder.
 Acceptance: duplicate handling, freshness, and quote-count bars tested.
 Do not include: strategies.
 
-Status as of 2026-06-17: started. `PriceCollector` persists provider quote
-candidates into `price_quotes` with service-level duplicate handling, and
-`QuoteBarBuilder` creates/upserts execution OHLC bars from persisted quotes.
-Remaining Phase 3 work: scheduled collection, broader freshness status
-classification, and production retention/archive policy.
+Status as of 2026-06-17: completed for the Phase 3 slice. `PriceCollector`
+persists provider quote candidates into `price_quotes` with service-level
+duplicate handling and freshness classification. `QuoteBarBuilder`
+creates/upserts execution OHLC bars from fresh persisted quotes with tested
+quote counts. The first manual collection entrypoint is
+`silverpilot-collect-kuveyt`, which collects one configured bank instrument by
+ID and commits it to the selected database; it supports bounded repeated
+collection with explicit interval configuration, not an always-on daemon.
+Retention is implemented as tested cutoff-based pruning for old
+`price_quotes`; cold archive storage is deferred until a production storage
+target is chosen.
 
 ### Phase 4: Indicator service
 
