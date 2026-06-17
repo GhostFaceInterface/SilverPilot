@@ -482,9 +482,40 @@ Do not include: trading strategies.
 ### Phase 2A: Kuveyt Turk source feasibility spike
 
 Goal: prove whether public Kuveyt Turk silver quotes can be fetched legally, technically, and reliably before provider implementation starts.
-Deliverables: `docs/providers/kuveyt_turk.md` feasibility note covering source URL, format, robots/terms notes, executable-vs-indicative status, timestamp availability, safe fetch frequency, stale states, weekends, holidays, maintenance, and known limitations.
-Acceptance: feasibility note exists, source assumptions are explicit, and provider implementation is either approved with constraints or blocked with reasons.
+Deliverables: the canonical feasibility note in this ROADMAP section covering source URL, format, robots/terms notes, executable-vs-indicative status, timestamp availability, safe fetch frequency, stale states, weekends, holidays, maintenance, and known limitations. Do not create a separate provider markdown file unless Phase 2B needs a narrow parser fixture note.
+Acceptance: this roadmap contains explicit source assumptions, and provider implementation is either approved with constraints or blocked with reasons.
 Do not include: provider implementation, scraping code, scheduled collectors, other banks.
+
+Feasibility result as of 2026-06-17: conditionally approved for Phase 2B, with constraints.
+
+Official sources inspected:
+
+- Robots: `https://www.kuveytturk.com.tr/robots.txt`
+- Silver page: `https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama`
+- Finance portal page: `https://www.kuveytturk.com.tr/finans-portali`
+- Public JSON endpoint discovered from official site JavaScript: `/ck0d84?B83A1EF44DD940F2FEC85646BDB25EA0`
+- Public parities endpoint discovered from official site JavaScript: `/ck0d84?EB770F761E1233CCE1588AFFCAEBABFC`
+
+Findings:
+
+- `robots.txt` allows `/` and only disallows `/blog/etiket/*`; this is not legal permission by itself, but it does not block the finance/silver pages.
+- The official silver page exists and describes live silver prices, digital silver account access, BSMV handling, weekend/night spread widening, and ounce-to-gram conversion.
+- The public finance portal endpoint currently returns JSON rows including `GMS (gr)` / `Gümüş` with `BuyRate`, `SellRate`, `ChangeRate`, and `ChangeRateNegative`.
+- The public parities endpoint currently returns reference-style rows including `GÜMÜŞ (ONS/$)` with `LastValue`, `Difference`, `Daily`, and `Yearly`.
+- The finance portal states that displayed exchange/gold rates are indicative and not binding; transactions use internet or mobile branch rates. Therefore these quotes must be treated as public indicative bank quotes, not guaranteed executable prices.
+- The JSON response does not expose a clear provider timestamp. The provider must set `fetched_at`, `observed_at`, and `stored_at`; `provider_reported_at` must remain null unless a reliable source timestamp is later found.
+- No official safe polling frequency was found. Phase 2B must start with conservative, bounded polling and explicit rate-limit configuration; no high-frequency or seconds-level polling is allowed.
+- Weekend and holiday operation is not a hard closed state: the silver page says mobile/internet branch orders can be placed 7/24, but spreads may widen during weekends, holidays, nights, or international market closures. This must become a risk/freshness/spread rule, not an assumption that the market is always normally tradable.
+
+Phase 2B constraints:
+
+- Implement only the public finance portal JSON path first.
+- Do not bypass login, captcha, private banking, mobile-only, or authenticated endpoints.
+- Treat `/ck0d84?...` endpoint identifiers as volatile implementation details discovered from official JavaScript; provider tests must fail visibly if the endpoint, schema, or field names change.
+- Parse `GMS (gr)` as the first Kuveyt Turk silver gram/TRY execution quote candidate.
+- Store raw provider response hashes for debugging, but do not retain raw payloads long-term in production by default.
+- Because quotes are public indicative values, reports must label them as indicative bank quotes until executable parity with internet/mobile branch order screens can be manually verified.
+- Phase 2B may proceed only with parser fixtures, data quality checks, stale-data handling, and schema-change failure tests.
 
 ### Phase 2B: Kuveyt Turk provider implementation
 
@@ -1018,7 +1049,7 @@ It must answer:
 - How often can it be fetched safely?
 - What happens during maintenance, weekends, holidays, or stale price states?
 
-Provider implementation cannot start until this feasibility note exists under `docs/providers/kuveyt_turk.md`.
+For this rebuild, the Phase 2A feasibility note is kept in Section 21 of `ROADMAP.md` to avoid markdown sprawl. Provider implementation cannot start until that canonical note conditionally approves Phase 2B.
 
 ### 29.2 Reference Market Instrument vs Execution Instrument
 
