@@ -34,7 +34,7 @@ It is not:
 - An ML-first system.
 - A Telegram-first system.
 
-The first supported asset is silver. The first supported bank is Kuveyt Turk. Nothing else is added until that path is stable and tested.
+Only silver and Kuveyt Turk are implemented in the first vertical slice. However, domain models, interfaces, value objects, and service boundaries must remain bank-agnostic and metal-agnostic from Phase 0. Nothing else is implemented until that path is stable and tested.
 
 ## 3. Core Domain Model
 
@@ -46,7 +46,7 @@ The first supported asset is silver. The first supported bank is Kuveyt Turk. No
 - Metal: precious metal such as silver or gold; key fields are code, name, default_unit.
 - Currency: ISO-style currency entity; key fields are code, name, decimal_places.
 - PriceQuote: raw executable bank quote; links BankInstrument; key fields are bank_buy_price, bank_sell_price, observed_at, fetched_at, source, freshness_status.
-- MarketBar: OHLC-like aggregate from quotes or historical data; key fields are instrument, timeframe, open, high, low, close, quote_count, start_at, end_at.
+- MarketBar: OHLC-like aggregate from quotes or historical data; key fields are instrument_type (`reference` or `execution`), instrument_id, source, timeframe, open, high, low, close, quote_count, bar_start_at, bar_end_at.
 - IndicatorSnapshot: calculated indicator values for one instrument/timeframe/bar; key fields are indicator_name, parameters, value, calculated_at, source_bar_end_at.
 - MarketRegime: detected market state; key fields are regime, confidence, evidence, starts_at, confirmed_at.
 - Strategy: deterministic rule set that reads bars, indicators, and regimes; key fields are name, version, parameters, enabled.
@@ -71,8 +71,14 @@ Use PostgreSQL. Do not use a single-table design. All money and quantity fields 
 - bank_instruments: stores bank-specific metal/currency/unit quote definitions; unique index on bank_id/metal_id/currency_id/unit.
 - metals: silver, gold, and future metals; unique index on code.
 - currencies: TRY, USD, EUR, etc.; unique index on code.
+- units: stores gram, ounce, and future units; unique index on unit code.
+- unit_conversion_rules: versioned Decimal conversion rules such as ounce-to-gram; indexes on from_unit_id, to_unit_id, effective_from.
+- execution_venues: stores venues where paper execution is simulated, initially banks; indexes on venue_type and status.
+- reference_market_instruments: stores signal/reference instruments such as XAGUSD or SI=F; unique index on symbol/source.
+- execution_instruments: stores executable paper instruments tied to an execution venue, unit, metal, and currency; unique index on execution_venue_id/metal_id/currency_id/unit_id.
+- instrument_mappings: maps reference instruments to execution instruments and required FX/unit conversion assumptions; indexes on reference_market_instrument_id and execution_instrument_id.
 - price_quotes: append-only executable bank quotes; indexes on bank_instrument_id/observed_at and fetched_at; retain raw quotes long-term or archive by age.
-- market_bars: aggregated bars; unique index on instrument/timeframe/start_at; retain long-term for backtests.
+- market_bars: aggregated bars for reference or execution instruments; unique index on instrument_type/instrument_id/timeframe/bar_start_at; retain long-term for backtests.
 - indicator_snapshots: calculated indicators; unique index on instrument/timeframe/indicator/parameters/bar_end_at; retain as reproducible cache.
 - market_regime_snapshots: detected regimes; indexes on instrument/timeframe/confirmed_at/regime; retain long-term for audit.
 - strategies: strategy definitions and versions; unique index on name/version.
@@ -87,6 +93,10 @@ Use PostgreSQL. Do not use a single-table design. All money and quantity fields 
 - macro_events: macro calendar and observed macro data; indexes on country, event_type, expected_at.
 - risk_decisions: every risk decision; indexes on trade_intent_id, decision, created_at.
 - portfolio_snapshots: valuation history; indexes on account_id and captured_at; retain long-term for PnL/backtests.
+- execution_premium_snapshots: records converted reference price versus account-bound bank buy/sell prices; indexes on reference_market_instrument_id, execution_instrument_id, captured_at.
+- cost_rules: cost rule families by venue/instrument; indexes on execution_venue_id and status.
+- cost_rule_versions: date-effective spread, commission, tax, slippage, rounding, and conversion-cost rules; indexes on cost_rule_id/effective_from.
+- backtest_dataset_snapshots: immutable dataset identities for reproducible backtests; indexes on instrument, source, start_at, end_at, data_hash.
 - system_health_events: collector, scheduler, API, and worker health; indexes on component, status, created_at; archive older noisy data.
 
 ## 5. Service Architecture
@@ -96,14 +106,21 @@ Use PostgreSQL. Do not use a single-table design. All money and quantity fields 
 - FXRateProvider: fetches FX context; output currency pair quote; must not decide trades; test stale/missing data.
 - HistoricalMarketDataProvider: fetches historical bars; output normalized bars; must not mix provider data without provenance.
 - PriceCollector: schedules providers and persists quotes; must not create signals.
+- DataQualityService: validates freshness, duplicates, impossible values, source divergence, and provider failure states before data reaches strategies.
 - BarBuilder: converts quotes to bars; must not fetch remote data.
+- UnitConversionService: performs all unit conversions with Decimal and configured conversion rules; must not hide ad-hoc conversions inside strategies or brokers.
+- CostModelService: calculates detailed date-effective cost breakdowns; must not return only an opaque total.
 - IndicatorService: calculates requested indicators and caches snapshots; must not run strategies.
 - RegimeDetector: classifies market regime from indicators and bars; must not create orders.
 - StrategyEngine: runs enabled strategies and creates TradeIntent; must not execute trades.
+- AccountBoundExecutionResolver: resolves a TradeIntent into the account's own execution venue and allowed instrument; must not choose a different bank because its spread is better.
 - RiskManager: approves, reduces, or rejects every TradeIntent; must not be bypassed.
 - PaperBroker: executes approved paper orders at realistic executable prices; must not call real banks.
 - PortfolioService: computes positions and valuations; must not mutate ledger directly except through approved services.
 - LedgerService: writes immutable ledger entries; must not edit old entries.
+- Clock / RealClock / SimulatedClock: provides time to live and backtest workflows; backtests must not call wall-clock time directly.
+- ExecutionPremiumService: records and reports reference-vs-execution premium/discount after explicit FX and unit conversion.
+- BacktestDatasetSnapshotService: creates immutable dataset identities so backtest results can be reproduced.
 - NewsCollector: collects news events; must not interpret beyond source metadata.
 - NewsInterpreter: converts news to structured risk context; must not place trades.
 - MacroEventService: stores macro calendar and actual values; must not trade.
@@ -451,7 +468,7 @@ Use docker-compose for development and VPS deployment. Do not introduce Kubernet
 
 Goal: create a clean Python backend skeleton.
 Deliverables: pyproject.toml, FastAPI app, settings module, domain models, tests.
-Create: silverpilot/app, tests, pyproject.toml.
+Create: src/silverpilot, tests, pyproject.toml.
 Acceptance: tests pass; app imports; no trading logic.
 Do not include: Docker, DB, bank scraping, Telegram, ML, Hermes.
 
@@ -462,12 +479,19 @@ Deliverables: SQLAlchemy models, Alembic baseline, schema tests.
 Acceptance: migration applies locally; relationships and constraints tested.
 Do not include: trading strategies.
 
-### Phase 2: Kuveyt Turk price provider
+### Phase 2A: Kuveyt Turk source feasibility spike
 
-Goal: prove public Kuveyt Turk silver quotes can be fetched legally and reliably.
-Deliverables: provider interface, Kuveyt implementation, parser fixtures.
-Acceptance: parser detects buy/sell/timestamp and fails visibly on bad fixtures.
-Do not include: other banks.
+Goal: prove whether public Kuveyt Turk silver quotes can be fetched legally, technically, and reliably before provider implementation starts.
+Deliverables: `docs/providers/kuveyt_turk.md` feasibility note covering source URL, format, robots/terms notes, executable-vs-indicative status, timestamp availability, safe fetch frequency, stale states, weekends, holidays, maintenance, and known limitations.
+Acceptance: feasibility note exists, source assumptions are explicit, and provider implementation is either approved with constraints or blocked with reasons.
+Do not include: provider implementation, scraping code, scheduled collectors, other banks.
+
+### Phase 2B: Kuveyt Turk provider implementation
+
+Goal: implement the first provider only after Phase 2A approves a source-backed path.
+Deliverables: provider interface, Kuveyt Turk implementation, sanitized parser fixtures, freshness checks, parser failure tests.
+Acceptance: parser detects buy/sell/timestamp when available, fails visibly on bad fixtures, respects feasibility constraints, and does not bypass login/captcha/private endpoints.
+Do not include: other banks, best-bank routing, trading strategies.
 
 ### Phase 3: Price storage and bar builder
 
@@ -556,50 +580,55 @@ Do not include: ML authority over trades.
 ## 22. Suggested New Folder Structure
 
 ```text
-silverpilot/
-  app/
-    main.py
-    core/
-    domain/
-    db/
-    providers/
-    collectors/
-    indicators/
-    regimes/
-    strategies/
-    risk/
-    paper_trading/
-    portfolio/
-    news/
-    backtesting/
-    reporting/
-    api/
-    notifications/
-  tests/
-  migrations/
-  scripts/
-  docs/
+src/
+  silverpilot/
+    __init__.py
+    app/
+      __init__.py
+      main.py
+      core/
+      domain/
+      db/
+      providers/
+      collectors/
+      indicators/
+      regimes/
+      strategies/
+      risk/
+      paper_trading/
+      portfolio/
+      news/
+      backtesting/
+      reporting/
+      api/
+      notifications/
+tests/
+migrations/
+scripts/
+docs/
 ```
 
-- app/main.py: FastAPI entrypoint.
-- core: settings, logging, common utilities.
-- domain: pure domain models and value objects.
-- db: SQLAlchemy session and persistence helpers.
-- providers: external source interfaces and implementations.
-- collectors: scheduled collection workflows.
-- indicators: indicator calculation and cache logic.
-- regimes: market regime detection.
-- strategies: deterministic strategy implementations.
-- risk: risk policies and decisions.
-- paper_trading: paper orders, executions, positions, ledger integration.
-- portfolio: valuation and snapshots.
-- news: news collection and interpretation.
-- backtesting: historical replay.
-- reporting: PnL, audit, and portfolio reports.
-- api: REST routes and schemas.
-- notifications: Telegram and future adapters.
+Use `src/silverpilot/` as the canonical package layout. Early phases create only the folders they need; future folders are listed here to show intended ownership boundaries, not to encourage empty directory scaffolding.
+
+- src/silverpilot/app/main.py: FastAPI entrypoint.
+- src/silverpilot/app/core: settings, logging, common utilities.
+- src/silverpilot/app/domain: pure domain models and value objects.
+- src/silverpilot/app/db: SQLAlchemy session and persistence helpers.
+- src/silverpilot/app/providers: external source interfaces and implementations.
+- src/silverpilot/app/collectors: scheduled collection workflows.
+- src/silverpilot/app/indicators: indicator calculation and cache logic.
+- src/silverpilot/app/regimes: market regime detection.
+- src/silverpilot/app/strategies: deterministic strategy implementations.
+- src/silverpilot/app/risk: risk policies and decisions.
+- src/silverpilot/app/paper_trading: paper orders, executions, positions, ledger integration.
+- src/silverpilot/app/portfolio: valuation and snapshots.
+- src/silverpilot/app/news: news collection and interpretation.
+- src/silverpilot/app/backtesting: historical replay.
+- src/silverpilot/app/reporting: PnL, audit, and portfolio reports.
+- src/silverpilot/app/api: REST routes and schemas.
+- src/silverpilot/app/notifications: Telegram and future adapters.
 - tests: unit and integration tests.
-- migrations: Alembic revisions.
+- migrations: Alembic revisions, added only when database work begins.
 - scripts: small operational scripts only.
 - docs: durable design documents only after canonical files exist.
 
@@ -609,22 +638,102 @@ Use this exact prompt next:
 
 ```text
 Create the clean SilverPilot project skeleton only.
+This is Phase 0. Do not implement trading logic.
 
 Requirements:
 
-1. Create pyproject.toml for a Python FastAPI project.
-2. Create a basic FastAPI app under silverpilot/app with a health endpoint.
-3. Create a settings module with environment-based configuration, but do not read or print secrets.
-4. Create initial domain models as plain Python dataclasses or Pydantic models for:
-   User, VirtualAccount, Wallet, Bank, BankInstrument, Metal, Currency, PriceQuote, MarketBar,
-   IndicatorSnapshot, MarketRegime, Strategy, TradeIntent, PaperOrder, PaperTrade, Position,
-   LedgerEntry, NewsEvent, MacroEvent, RiskDecision, PortfolioSnapshot.
-5. Add focused tests for domain model construction, Decimal money/quantity handling, and basic health endpoint behavior.
-6. Run the tests.
-7. Commit the skeleton with:
+1. Use one stable package layout:
+   - Prefer `src/silverpilot/`
+   - Put tests under `tests/`
+2. Create `pyproject.toml` for a Python FastAPI project.
+3. Add dependencies for:
+   - FastAPI
+   - Pydantic
+   - pytest
+   - httpx or FastAPI TestClient support
+   - ruff
+   - mypy or pyright
+4. Create a basic FastAPI app with:
+   - `/health`
+   - versioned API prefix preparation for `/api/v1`
+   - no financial logic in routes
+5. Create a settings module with environment-based configuration.
+   - Do not read or print secrets.
+   - Add `.env.example` with placeholder names only.
+   - Ensure `.env` remains ignored.
+6. Create only the minimum Phase 0 domain/value models:
+   - Money
+   - Quantity
+   - Currency
+   - Metal
+   - Unit
+   - Bank
+   - BankInstrument
+   - PriceQuote
+   - MarketBar
+   - User
+   - VirtualAccount
+7. These models must:
+   - use Decimal for money and quantities
+   - avoid float arithmetic
+   - include basic validation
+   - avoid fake business methods
+   - avoid TODO-driven placeholder behavior
+   - remain bank-agnostic
+   - remain metal-agnostic
+8. Add minimal interfaces or placeholders only when needed for type clarity:
+   - Clock
+   - RealClock
+   - SimulatedClock
+   - PriceProvider Protocol
+   - UnitConversionService Protocol
+9. Add tests for:
+   - health endpoint
+   - Money construction and Decimal behavior
+   - Quantity construction and Decimal behavior
+   - Currency precision
+   - Unit identity
+   - BankInstrument construction
+   - PriceQuote buy/sell validation
+   - MarketBar timestamp validation
+   - VirtualAccount bound bank/execution context
+10. Add code quality setup:
+   - ruff check
+   - ruff format
+   - type checking with mypy or pyright
+   - pytest
+11. Add GitHub Actions CI for:
+   - ruff check
+   - ruff format --check
+   - type checking
+   - pytest
+12. Create initial ADR files under `docs/adr/`:
+   - ADR-001: paper trading first
+   - ADR-002: Python + FastAPI
+   - ADR-003: Decimal/numeric for money and quantity
+   - ADR-004: Telegram as adapter only
+   - ADR-005: account-bound execution, no best-bank routing
+13. Run all tests and quality checks.
+14. Commit the skeleton with:
    chore: create clean SilverPilot skeleton
 
-Do not implement trading logic, bank scraping, indicators, ML, Hermes, Telegram, Docker, database migrations, deployment, or dashboard code in this first rebuild step.
+Do not implement:
+- database models
+- Alembic migrations
+- Docker
+- bank scraping/fetching
+- indicators
+- strategies
+- risk manager
+- paper broker
+- ledger
+- backtest engine
+- Telegram
+- Hermes
+- ML
+- dashboard
+- multi-bank provider implementations
+- real-money trading
 ```
 
 ## 24. Engineering Hardening Addendum
@@ -1286,6 +1395,8 @@ Do not add other banks or metals until this vertical slice is stable, tested, an
 ## 31. Account-Bound Execution Correction
 
 SilverPilot must not assume that virtual money can freely move between banks. Each virtual account is bound to its own bank/execution venue. If a user's virtual money is in Kuveyt Turk, the account trades only under Kuveyt Turk pricing, spread, fee, tax, freshness, and availability rules. If another account is in Ziraat, that account trades only under Ziraat rules.
+
+Section 31 supersedes any earlier language that could be interpreted as best-bank routing, dynamic cross-bank execution selection, or automatic movement of funds between banks.
 
 ### 31.1 No Cross-Bank Execution Selection
 
