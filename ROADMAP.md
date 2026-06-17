@@ -626,3 +626,267 @@ Requirements:
 
 Do not implement trading logic, bank scraping, indicators, ML, Hermes, Telegram, Docker, database migrations, deployment, or dashboard code in this first rebuild step.
 ```
+
+## 24. Engineering Hardening Addendum
+
+This addendum is mandatory. It exists to prevent the clean rebuild from becoming another uncontrolled implementation pile. Product scope is not enough; correctness, repeatability, and failure behavior must be locked from Phase 0.
+
+### 24.1 Lookahead Bias Prevention
+
+Backtests and strategy evaluations must only use data that would have been available at the simulated decision timestamp.
+
+- A bar is usable only after its close time plus any configured ingestion delay.
+- Indicators may only be calculated from closed bars that were available at `indicator_calculated_at`.
+- News may not be used before the later of `published_at`, `fetched_at`, and interpreter availability.
+- Macro expectations may be known before release, but actual values may only be used after the official release timestamp.
+- Intraday decisions must not use final daily high, low, close, volume, or derived indicators from an unfinished day.
+- Future regime labels, future trade outcomes, future drawdowns, and final backtest results must never be used as strategy inputs.
+- Historical replay must fail closed if timestamp ordering is ambiguous.
+
+### 24.2 Timestamp Model
+
+Every time-sensitive record must distinguish when something happened, when a provider reported it, when SilverPilot saw it, and when SilverPilot used it.
+
+- `source_event_time`: when the market, news, or macro event actually occurred, if knowable.
+- `provider_reported_at`: timestamp reported by the source/provider.
+- `observed_at`: quote or value observation time used by the provider.
+- `fetched_at`: when SilverPilot fetched the source data.
+- `stored_at`: when SilverPilot persisted the normalized record.
+- `bar_start_at`: first instant covered by a market bar.
+- `bar_end_at`: closing instant of a market bar.
+- `indicator_calculated_at`: when the indicator snapshot was calculated.
+- `decision_at`: when a strategy or risk decision was made.
+- `order_created_at`: when a paper order was created.
+- `executed_at`: when a paper order was simulated as executed.
+
+All timestamps are stored in UTC. Provider-local timezones must be normalized before persistence. Backtests must use a clock abstraction and compare against these fields, not wall-clock time.
+
+### 24.3 Data Quality Gate
+
+Add `DataQualityService` before strategies are allowed to consume market data.
+
+It must validate:
+
+- stale data.
+- duplicate quotes.
+- missing quotes.
+- zero or negative prices.
+- impossible spread.
+- buy/sell field inversion.
+- source divergence.
+- parsing failures.
+- timezone normalization.
+- weekend, holiday, maintenance, and bank-unavailable states.
+
+No strategy may run on data that fails the data quality gate. Failed data quality is a first-class observable state, not an empty success.
+
+### 24.4 Ledger Invariants
+
+Ledger correctness is core product correctness.
+
+- Ledger entries are append-only and immutable.
+- Every successful paper trade produces ledger entries.
+- Cash balances must reconcile with ledger history.
+- Positions must reconcile with trades and ledger entries.
+- Position quantity must never become negative.
+- Buy decreases cash and increases metal position.
+- Sell decreases metal position and increases cash.
+- One order cannot execute twice.
+- One trade cannot be posted to the ledger twice.
+- Buy then immediate sell at the same quote must lose money after spread and costs.
+- Paper trade creation, position update, wallet update, and ledger posting must happen in one database transaction.
+
+### 24.5 Idempotency Rules
+
+Every rerunnable workflow needs an idempotency key or equivalent unique constraint.
+
+Required idempotency surfaces:
+
+- price collection.
+- bar building.
+- indicator calculation.
+- regime detection.
+- strategy runs.
+- paper order execution.
+- ledger posting.
+- notification sending.
+
+Use explicit fields such as `idempotency_key`, `job_run_id`, `strategy_run_id`, `source_message_hash`, and order execution locks. The same job or order rerun must not create duplicate financial state. One approved `PaperOrder` can produce at most one successful `PaperTrade`.
+
+### 24.6 Concurrency and Locking
+
+Financial mutations require explicit concurrency boundaries.
+
+- Use account-level locks for account-affecting paper execution.
+- Use instrument-level locks for instrument/timeframe aggregation where needed.
+- Use scheduler locks so one scheduled job cannot overlap itself.
+- Permit only one active strategy run per account/instrument/timeframe.
+- `PaperBroker`, `LedgerService`, wallet updates, and position updates share one transaction boundary.
+- A failed transaction must leave no partial trade, ledger, wallet, or position state.
+
+### 24.7 Backtest and Live Paper Consistency
+
+Backtest and live paper trading must share the same core logic.
+
+Shared components:
+
+- `StrategyEngine`
+- `RiskManager`
+- cost model
+- `PaperBroker` execution rules
+- `LedgerService` rules
+- indicator calculations
+- regime detection logic
+
+Only data source and clock implementation may differ. Backtest uses historical replay sources and simulated clocks. Live paper uses current providers and real clocks.
+
+### 24.8 No-Trade Decision Audit
+
+The system must persist why no trade happened, not only what happened when a trade executed.
+
+Track at minimum:
+
+- no signal.
+- stale data.
+- high spread.
+- high volatility.
+- event risk.
+- daily loss limit.
+- drawdown limit.
+- insufficient balance.
+- regime uncertainty.
+- cooldown active.
+
+Use `strategy_runs.decision_summary`, `risk_decisions`, or a dedicated decision audit log. Reports must answer: "Why did the bot not trade?"
+
+### 24.9 Security and Secrets
+
+- `.env` must never be committed.
+- `.env.example` must exist once Phase 0 creates runtime configuration.
+- Secrets must not appear in logs, Telegram messages, roadmap/docs, test fixtures, screenshots, or error responses.
+- Use separate dev, staging, and production configuration.
+- Document a secret rotation procedure before production deployment.
+- Enable GitHub secret scanning if possible.
+- Mutating API endpoints require authentication before SaaS or remote deployment.
+
+### 24.10 CI and Code Quality
+
+Phase 0 must introduce CI and code-quality checks.
+
+Required checks:
+
+- `pytest`
+- `ruff check`
+- `ruff format --check`
+- type checking with `mypy` or `pyright`
+- GitHub Actions workflow on pull request and push
+
+Pre-commit is optional but recommended. No phase is accepted unless tests pass locally and in CI, unless the failure is explicitly documented as unrelated infrastructure failure.
+
+### 24.11 Architecture Decision Records
+
+Create `docs/adr/` and record durable architecture decisions.
+
+Initial ADRs:
+
+- Paper trading first.
+- Python + FastAPI.
+- PostgreSQL + Decimal/numeric for money and quantity.
+- Telegram as adapter only.
+- Rule-based regime before ML.
+- Backtest/live paper shared core.
+- No real-money execution in v1.
+
+ADRs must explain the decision, context, consequences, and alternatives considered.
+
+### 24.12 Definition of Done
+
+A feature is not complete unless:
+
+- it has tests.
+- it has deterministic fixtures where relevant.
+- failure modes are handled.
+- logs are structured.
+- database constraints exist if stateful.
+- API schemas are tested if exposed.
+- no business logic is hidden in routes.
+- no TODO-driven fake implementation remains.
+- no generated slop files are added without purpose.
+- docs or ADRs are updated when behavior or architecture changes.
+
+## 25. Data Quality & Backtest Correctness Rules
+
+Data quality and backtest truthfulness are release blockers.
+
+- Backtests must be reproducible from stored inputs, configuration, strategy version, risk version, and cost model version.
+- Backtest reports must include PnL before costs and PnL after costs.
+- Reports must include max consecutive losses, average trade duration, exposure time, turnover, cost as percentage of gross profit, missed trades due to risk rejection, and final PnL.
+- Historical data fixtures must include missing data, duplicate data, stale data, outliers, weekend/holiday gaps, and source disagreement cases.
+- Daily bars cannot be used for intraday decisions until the daily bar is complete.
+- News and macro events must be replayed by availability time, not merely event date.
+- Any data repair, interpolation, or fallback must be recorded in provenance and visible in reports.
+- If bank prices are unavailable, the system records a bank-unavailable state and does not pretend that exchange prices are executable bank prices.
+
+## 26. Security / Secrets / Repo Hygiene Rules
+
+The clean rebuild must stay small and intentional.
+
+- Keep `.env` local and ignored.
+- Add `.env.example` in Phase 0 with placeholder names only.
+- Do not commit generated caches, local databases, model binaries, notebooks with outputs, screenshots with secrets, or raw provider payloads containing sensitive data.
+- Add `.gitignore` entries before introducing new tools that generate files.
+- Keep docs canonical: one durable source per decision or contract.
+- Use `docs/adr/` for major decisions and avoid long duplicate planning files.
+- Add API authentication, authorization, account ownership checks, CORS policy, rate limiting, and audit logs before exposing SaaS-like remote access.
+- Separate public read endpoints from mutating endpoints.
+- Never log tokens, cookies, authorization headers, `.env` values, Telegram tokens, or provider credentials.
+
+## 27. Global Definition of Done
+
+Every phase must satisfy this checklist before moving forward:
+
+- The scope is the smallest vertical slice that proves the phase goal.
+- Tests cover happy path, failure path, and at least one edge case.
+- Financial formulas use Decimal and deterministic expected values.
+- Stateful behavior has database constraints or explicit idempotency controls.
+- Concurrency and transaction boundaries are documented for mutations.
+- Observability exists for success, failure, stale, blocked, and skipped states.
+- API behavior is covered by schema tests when exposed.
+- Docs or ADRs are updated for architecture-relevant changes.
+- CI passes.
+- No Hermes, ML, Telegram, Docker, dashboard, or multi-bank scope leaks into the first four rebuild phases.
+
+## 28. First 4 Sprint Execution Plan
+
+The first 30 days should prove one narrow vertical slice: Kuveyt Turk + silver + TRY + one virtual account + one simple strategy + paper trading + backtest.
+
+### Sprint 1: Skeleton and domain discipline
+
+- Create `src/silverpilot/` or another single chosen package layout and keep it stable.
+- Add FastAPI health endpoint, settings, `.env.example`, pytest, ruff, type checking, and CI.
+- Add only minimal domain/value models needed for the first slice: User, VirtualAccount, Currency, Metal, Bank, BankInstrument, Money, Quantity, PriceQuote, and MarketBar.
+- Do not add fake business methods; use fields, validation, enums, and minimal constructors only.
+
+### Sprint 2: Kuveyt Turk price feasibility and data quality
+
+- Verify public source, robots/terms considerations, endpoint shape, rate limit risk, and whether prices are executable or indicative.
+- Implement provider fixtures before live fetching.
+- Add `DataQualityService` with stale, duplicate, invalid price, impossible spread, inversion, and timezone checks.
+- Persist quotes only after passing quality rules.
+
+### Sprint 3: Bars, indicators, and regime foundation
+
+- Build quote-to-bar aggregation.
+- Add EMA 50, EMA 200, RSI 14, ATR 14, ADX 14, and Bollinger Band Width only as requested calculations.
+- Add timestamp-safe indicator snapshots.
+- Add rule-based regime snapshots with hysteresis and NO_TRADE on uncertainty.
+
+### Sprint 4: Shared strategy, risk, paper broker, ledger, and backtest slice
+
+- Implement one simple strategy that creates TradeIntent only.
+- Implement RiskManager guards for stale data, spread, max order size, and insufficient balance.
+- Implement PaperBroker and LedgerService with transaction-safe invariants.
+- Implement BacktestEngine using the same strategy, risk, cost, broker, ledger, indicator, and regime logic as live paper trading.
+- Produce a first report with PnL before costs, PnL after costs, rejected/no-trade reasons, drawdown, and portfolio curve.
+
+Nothing from Hermes, ML, Telegram, dashboard, Docker, multi-user SaaS, multi-bank support, or mobile/web UI enters these first four sprints.
