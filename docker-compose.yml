@@ -19,7 +19,7 @@ services:
       RISK_MAX_WEEKLY_LOSS_USD: ${RISK_MAX_WEEKLY_LOSS_USD:-60.0}
       RISK_MIN_EXPECTED_NET_GAIN_PERCENT: ${RISK_MIN_EXPECTED_NET_GAIN_PERCENT:-0.0}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://silverpilot:change_me@postgres:5432/silverpilot}
-      COLLECTOR_JOBS: ${COLLECTOR_JOBS:-kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss,fred-macro,hermes-agent,bloomberght-rss,fxstreet-rss,investing-rss}
+      COLLECTOR_JOBS: ${COLLECTOR_JOBS:-kuveyt-silver,yahoo-usd-try,kuveyt-usd-try,tcmb-usd-try,global-xag-usd,fed-rss,fred-macro,hermes-agent,bloomberght-rss,fxstreet-rss,investing-rss}
       COLLECTOR_USER_AGENT: ${COLLECTOR_USER_AGENT:-SilverPilot/0.1 public-source paper-trading collector}
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}
       GLOBAL_XAG_SOURCE_PRIORITY: ${GLOBAL_XAG_SOURCE_PRIORITY:-yahoo-si-f,gold-api-xag-usd,metals-dev}
@@ -84,7 +84,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://silverpilot:change_me@postgres:5432/silverpilot}
       COLLECTOR_INTERVAL_SECONDS: ${COLLECTOR_INTERVAL_SECONDS:-900}
       COLLECTOR_JOB: ${COLLECTOR_JOB:-kuveyt-silver}
-      COLLECTOR_JOBS: ${COLLECTOR_JOBS:-kuveyt-silver,global-xag-usd,tcmb-usd-try,fed-rss,fred-macro,hermes-agent,bloomberght-rss,fxstreet-rss,investing-rss}
+      COLLECTOR_JOBS: ${COLLECTOR_JOBS:-kuveyt-silver,yahoo-usd-try,kuveyt-usd-try,tcmb-usd-try,global-xag-usd,fed-rss,fred-macro,hermes-agent,bloomberght-rss,fxstreet-rss,investing-rss}
       COLLECTOR_USER_AGENT: ${COLLECTOR_USER_AGENT:-SilverPilot/0.1 public-source paper-trading collector}
       KUVEYT_SILVER_URL: ${KUVEYT_SILVER_URL:-https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama}
       GLOBAL_XAG_SOURCE_PRIORITY: ${GLOBAL_XAG_SOURCE_PRIORITY:-yahoo-si-f,gold-api-xag-usd,metals-dev}

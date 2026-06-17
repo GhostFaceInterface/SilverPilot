@@ -273,11 +273,14 @@ def format_readiness_block_report(trade_data: dict) -> str:
     divergence_lines = _format_source_divergence_lines(trade_data.get("source_divergence"))
     divergence_section = ""
     if divergence_lines:
-        divergence_section = (
-            "<b>Veri Kaynağı Ayrışması:</b>\n"
-            f"{chr(10).join(divergence_lines)}\n"
-            "• Teknik timeframe readiness hazır olabilir; bu blok banka/global/FX fiyat tutarlılığı korumasıdır.\n\n"
+        source_divergence_block = reason_code in {SOURCE_DIVERGENCE_BLOCK, SOURCE_DIVERGENCE_STALE_DATA}
+        divergence_title = "Veri Kaynağı Ayrışması" if source_divergence_block else "Bilgi Amaçlı Veri Kaynağı Kontrolü"
+        divergence_note = (
+            "• Teknik timeframe readiness hazır olabilir; bu blok banka/global/FX fiyat tutarlılığı korumasıdır."
+            if source_divergence_block
+            else "• Bu bölüm bilgi amaçlıdır; ana blok teknik timeframe readiness durumundan kaynaklanır."
         )
+        divergence_section = f"<b>{divergence_title}:</b>\n{chr(10).join(divergence_lines)}\n{divergence_note}\n\n"
 
     msg = (
         "⚠️ <b>SilverPilot Koruma Blok Raporu</b>\n\n"
@@ -318,7 +321,7 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         return
     action_str, status_emoji = ACTION_MAP[action]
 
-    is_readiness_block = trade_data.get("notification_kind") == "readiness_block"
+    is_readiness_block = _is_readiness_block_notification(trade_data)
     is_blended = (
         trade_data.get("strategy_name") == "blended"
         and bool(trade_data.get("strategy_votes"))
@@ -471,6 +474,15 @@ async def send_telegram_notification(trade_data: dict, settings, disable_notific
         )
     except Exception as e:
         logger.error("Failed to dispatch trade Telegram notification; error_type=%s.", type(e).__name__)
+
+
+def _is_readiness_block_notification(trade_data: dict) -> bool:
+    if trade_data.get("notification_kind") == "readiness_block":
+        return True
+    reason_code = trade_data.get("reason_code")
+    if reason_code in READINESS_BLOCK_REASONS:
+        return True
+    return any(reason in READINESS_BLOCK_REASONS for reason in trade_data.get("readiness_block_flags") or [])
 
 
 async def run_auto_trading(db: Session = None):

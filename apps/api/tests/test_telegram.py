@@ -768,6 +768,70 @@ async def test_send_telegram_notification_labels_skipped_buy_as_candidate():
 
 
 @pytest.mark.anyio
+async def test_send_telegram_notification_infers_readiness_block_from_reason_code():
+    settings = Settings(telegram_bot_token="test_token_123", telegram_chat_id=987654)
+    trade_data = {
+        "action": "HOLD",
+        "candidate_action": "HOLD",
+        "final_action": "HOLD",
+        "mode": "diagnostic",
+        "reason_code": "ENTRY_TIMEFRAME_STALE",
+        "readiness_block_flags": ["ENTRY_TIMEFRAME_STALE"],
+        "execution": {"status": "skipped", "skipped_reason": "diagnostic_mode", "trade_id": None},
+        "price": 2.2568,
+        "cash_balance": 2461.60,
+        "xag_balance": 0.0,
+        "strategy_name": "strategy_v2",
+        "timeframe_inputs": {
+            "1d": {"status": "ready", "usable": True, "source": "yahoo-si-f", "age_minutes": 1681},
+            "1h": {
+                "status": "stale",
+                "usable": False,
+                "source": "yahoo-si-f",
+                "age_minutes": 481,
+                "reason_codes": ["ENTRY_TIMEFRAME_STALE"],
+            },
+            "5m": {"status": "ready", "usable": True, "source": "yahoo-si-f", "age_minutes": 11},
+        },
+        "timeframe_indicators": {},
+        "source_divergence": {
+            "status": "ok",
+            "threshold_percent": Decimal("3.0"),
+            "bank_mid_try_gram": Decimal("104.3466"),
+            "global_xag_usd_oz": Decimal("70.2900"),
+            "usd_try": Decimal("46.2542"),
+            "converted_try_gram": Decimal("104.5286"),
+            "divergence_percent": Decimal("0.17"),
+            "bank_source": "kuveyt-public-silver-page",
+            "global_source": "yahoo-si-f",
+            "fx_source": "tcmb-today-xml",
+            "bank_age_minutes": 0,
+            "global_age_minutes": 10,
+            "fx_age_minutes": 0,
+            "stale_reasons": [],
+        },
+    }
+
+    with patch("app.services.telegram.Bot") as MockBot:
+        mock_bot_instance = MagicMock()
+        mock_bot_instance.send_message = AsyncMock()
+        MockBot.return_value = mock_bot_instance
+
+        from app.services.auto_trader import send_telegram_notification
+
+        await send_telegram_notification(trade_data, settings)
+
+        message_text = mock_bot_instance.send_message.call_args.kwargs["text"]
+        assert "SilverPilot Koruma Blok Raporu" in message_text
+        assert "Saatlik giriş verisi güncel değil" in message_text
+        assert "ENTRY_TIMEFRAME_STALE" in message_text
+        assert "SilverPilot Auto-Trading Raporu" not in message_text
+        assert "Bilgi Amaçlı Veri Kaynağı Kontrolü" in message_text
+        assert "bu blok banka/global/FX fiyat tutarlılığı korumasıdır" not in message_text
+        assert "ana blok teknik timeframe readiness" in message_text
+
+
+@pytest.mark.anyio
 async def test_send_telegram_message_success():
     from app.services.telegram import send_telegram_message
 
