@@ -534,6 +534,12 @@ Deliverables: collector service, quote tables, bar builder.
 Acceptance: duplicate handling, freshness, and quote-count bars tested.
 Do not include: strategies.
 
+Status as of 2026-06-17: started. `PriceCollector` persists provider quote
+candidates into `price_quotes` with service-level duplicate handling, and
+`QuoteBarBuilder` creates/upserts execution OHLC bars from persisted quotes.
+Remaining Phase 3 work: scheduled collection, broader freshness status
+classification, and production retention/archive policy.
+
 ### Phase 4: Indicator service
 
 Goal: calculate requested indicators from bars.
