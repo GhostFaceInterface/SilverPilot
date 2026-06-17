@@ -1,42 +1,19 @@
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Environments
 .env
 .env.*
 !.env.example
+
 .venv/
 venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
-# Data and local artifacts
-data/*
-!data/.gitkeep
-!data/models/
-!data/models/champion_model.pkl
-notebooks/*
-
-!notebooks/.gitkeep
+.DS_Store
 *.db
 *.sqlite
-
-# OS and editors
-.DS_Store
-.idea/
-.vscode/
-*.swp
-.*.swp
-
-# Logs
 *.log
 logs/
 mlruns/
-
-# Local scratch items
-scratch/ag-kit/
-
+node_modules/
