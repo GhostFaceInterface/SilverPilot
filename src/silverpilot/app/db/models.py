@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -381,4 +382,44 @@ class MarketBarModel(Base, TimestampMixin):
         CheckConstraint("quote_count > 0", name="quote_count_positive"),
         CheckConstraint("bar_end_at > bar_start_at", name="bar_window_valid"),
         Index("ix_market_bars_instrument_time", "instrument_type", "instrument_id", "bar_start_at"),
+    )
+
+
+class IndicatorSnapshotModel(Base, TimestampMixin):
+    __tablename__ = "indicator_snapshots"
+
+    id: Mapped[UUID] = uuid_pk()
+    instrument_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    instrument_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    indicator_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    parameters: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(36, 18), nullable=False)
+    calculated_at: Mapped[datetime] = utc_datetime()
+    source_bar_end_at: Mapped[datetime] = utc_datetime()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_type",
+            "instrument_id",
+            "source",
+            "timeframe",
+            "indicator_name",
+            "parameters_hash",
+            "source_bar_end_at",
+        ),
+        CheckConstraint(
+            "instrument_type IN ('reference', 'execution')",
+            name="indicator_instrument_type_valid",
+        ),
+        Index(
+            "ix_indicator_snapshots_lookup",
+            "instrument_type",
+            "instrument_id",
+            "timeframe",
+            "indicator_name",
+            "source_bar_end_at",
+        ),
     )

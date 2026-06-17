@@ -17,6 +17,7 @@ from silverpilot.app.db.models import (
     CurrencyModel,
     ExecutionInstrumentModel,
     ExecutionVenueModel,
+    IndicatorSnapshotModel,
     MarketBarModel,
     MetalModel,
     UnitModel,
@@ -32,6 +33,7 @@ CORE_TABLES = {
     "execution_instruments",
     "execution_venues",
     "instrument_mappings",
+    "indicator_snapshots",
     "market_bars",
     "metals",
     "price_quotes",
@@ -199,6 +201,45 @@ def test_market_bar_constraints_reject_invalid_price_shape(engine: Engine) -> No
                 created_at=now(),
             )
         )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_indicator_snapshot_unique_cache_key(engine: Engine) -> None:
+    source_bar_end_at = datetime(2026, 6, 17, 13, 0, tzinfo=UTC)
+    instrument_id = uuid4()
+    first = IndicatorSnapshotModel(
+        id=uuid4(),
+        instrument_type="reference",
+        instrument_id=instrument_id,
+        source="fixture",
+        timeframe="1h",
+        indicator_name="ema",
+        parameters_hash="abc",
+        parameters={"period": 14},
+        value=Decimal("42.1"),
+        calculated_at=source_bar_end_at,
+        source_bar_end_at=source_bar_end_at,
+        created_at=source_bar_end_at,
+    )
+    duplicate = IndicatorSnapshotModel(
+        id=uuid4(),
+        instrument_type="reference",
+        instrument_id=instrument_id,
+        source="fixture",
+        timeframe="1h",
+        indicator_name="ema",
+        parameters_hash="abc",
+        parameters={"period": 14},
+        value=Decimal("42.2"),
+        calculated_at=source_bar_end_at,
+        source_bar_end_at=source_bar_end_at,
+        created_at=source_bar_end_at,
+    )
+
+    with Session(engine) as session:
+        session.add_all([first, duplicate])
 
         with pytest.raises(IntegrityError):
             session.commit()

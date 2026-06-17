@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from silverpilot.app.domain import (
     BankInstrument,
     Currency,
+    IndicatorSnapshot,
     MarketBar,
     Money,
     PriceQuote,
@@ -148,6 +149,39 @@ def test_market_bar_timestamp_and_price_validation() -> None:
             quote_count=4,
             bar_start_at=start,
             bar_end_at=start + timedelta(hours=1),
+        )
+
+
+def test_indicator_snapshot_timestamp_validation() -> None:
+    source_bar_end_at = datetime(2026, 6, 17, 11, 0, tzinfo=UTC)
+    snapshot = IndicatorSnapshot(
+        id=uuid4(),
+        instrument_type=InstrumentType.REFERENCE,
+        instrument_id=uuid4(),
+        source="reference-fixture",
+        timeframe="1h",
+        indicator_name="EMA",
+        parameters={"period": 14},
+        value="42.125",
+        calculated_at=source_bar_end_at + timedelta(seconds=1),
+        source_bar_end_at=source_bar_end_at,
+    )
+
+    assert snapshot.indicator_name == "ema"
+    assert snapshot.value == Decimal("42.125")
+
+    with pytest.raises(ValidationError):
+        IndicatorSnapshot(
+            id=uuid4(),
+            instrument_type=InstrumentType.REFERENCE,
+            instrument_id=uuid4(),
+            source="reference-fixture",
+            timeframe="1h",
+            indicator_name="ema",
+            parameters={"period": 14},
+            value="42.125",
+            calculated_at=source_bar_end_at,
+            source_bar_end_at=source_bar_end_at + timedelta(seconds=1),
         )
 
 

@@ -180,6 +180,47 @@ class MarketBar(DomainModel):
         return self
 
 
+class IndicatorSnapshot(DomainModel):
+    id: UUID
+    instrument_type: InstrumentType
+    instrument_id: UUID
+    source: str
+    timeframe: str
+    indicator_name: str
+    parameters: dict[str, Any]
+    value: Decimal
+    calculated_at: datetime
+    source_bar_end_at: datetime
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value(cls, value: Any) -> Decimal:
+        return parse_decimal(value)
+
+    @field_validator("calculated_at", "source_bar_end_at")
+    @classmethod
+    def validate_datetime(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @field_validator("indicator_name")
+    @classmethod
+    def validate_indicator_name(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("indicator_name is required")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_snapshot(self) -> "IndicatorSnapshot":
+        if not self.source.strip():
+            raise ValueError("source is required")
+        if not self.timeframe.strip():
+            raise ValueError("timeframe is required")
+        if self.source_bar_end_at > self.calculated_at:
+            raise ValueError("source_bar_end_at cannot be after calculated_at")
+        return self
+
+
 class User(DomainModel):
     id: UUID
     email: str | None = None

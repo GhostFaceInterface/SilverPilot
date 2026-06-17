@@ -553,6 +553,15 @@ Deliverables: indicator calculators and cache.
 Acceptance: deterministic fixtures match known library output.
 Do not include: every possible indicator.
 
+Status as of 2026-06-17: implemented for the requested Phase 4 indicator
+slice. `IndicatorService` calculates requested indicators from closed
+`market_bars` and caches reproducible `indicator_snapshots` by instrument,
+timeframe, indicator name, normalized parameters, and exact source bar end
+timestamp. The current supported set is EMA, RSI, ATR, ADX, and Bollinger Band
+Width with deterministic fixture coverage and explicit insufficient-data
+failures. Phase 4 does not produce regimes, signals, strategy decisions, or
+orders.
+
 ### Phase 5: Rule-based regime detector
 
 Goal: classify regimes using indicators and hysteresis.
