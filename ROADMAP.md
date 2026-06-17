@@ -890,3 +890,530 @@ The first 30 days should prove one narrow vertical slice: Kuveyt Turk + silver +
 - Produce a first report with PnL before costs, PnL after costs, rejected/no-trade reasons, drawdown, and portfolio curve.
 
 Nothing from Hermes, ML, Telegram, dashboard, Docker, multi-user SaaS, multi-bank support, or mobile/web UI enters these first four sprints.
+
+## 29. Remaining Critical Design Clarifications
+
+These clarifications are mandatory before implementation expands beyond the first skeleton. They prevent ambiguous data, unit, cost, versioning, and API behavior.
+
+### 29.1 Kuveyt Turk Feasibility Before Provider Implementation
+
+Before implementing `KuveytTurkPriceProvider`, create a feasibility spike.
+
+It must answer:
+
+- What is the public source URL?
+- Is the source HTML, JSON, RSS, or another format?
+- Is scraping/fetching allowed by robots.txt and terms?
+- Is the displayed price executable or only indicative?
+- Are buy price, sell price, and timestamp available?
+- How often can it be fetched safely?
+- What happens during maintenance, weekends, holidays, or stale price states?
+
+Provider implementation cannot start until this feasibility note exists under `docs/providers/kuveyt_turk.md`.
+
+### 29.2 Reference Market Instrument vs Execution Instrument
+
+Separate reference market data from executable bank pricing.
+
+- `ReferenceMarketInstrument`: signal and indicator data, such as XAGUSD ounce/USD or SI=F.
+- `ExecutionInstrument`: executable paper-trading bank quote, such as Kuveyt Turk silver gram/TRY.
+
+Technical indicators may use reference market data if needed, but paper trades must execute only on the execution instrument's realistic bank buy/sell price. Backtest reports must clearly state which instrument was used for signals and which instrument was used for execution.
+
+### 29.3 Unit and Conversion Model
+
+Add explicit unit modeling.
+
+Required concepts:
+
+- `Unit`
+- `InstrumentUnit`
+- `UnitConversionRule`
+- `QuoteUnit`
+- `ExecutionUnit`
+
+All conversions must be tested with Decimal. The ounce-to-gram conversion constant must be centralized and covered by deterministic tests. No strategy, provider, broker, risk rule, or report may perform hidden ad hoc unit conversion.
+
+### 29.4 Cost Breakdown Model
+
+The cost model must return detailed components, not only one total cost.
+
+Required components:
+
+- spread cost.
+- bank commission.
+- tax.
+- slippage approximation.
+- currency conversion cost.
+- rounding adjustment.
+- total cost.
+
+Backtest reports must include gross PnL, PnL before costs, PnL after costs, and cost as percentage of gross profit. Cost rules must be versioned and date-effective.
+
+### 29.5 Strategy and Configuration Versioning
+
+Every strategy run and backtest must store:
+
+- strategy name.
+- strategy version.
+- strategy parameters hash.
+- risk policy version.
+- cost model version.
+- indicator config hash.
+- regime detector version.
+- code commit SHA if available.
+- data snapshot ID.
+
+A backtest is not reproducible unless these fields are persisted.
+
+### 29.6 Backtest Dataset Snapshot
+
+Add `BacktestDatasetSnapshot`.
+
+It must record:
+
+- instrument.
+- source.
+- start_at.
+- end_at.
+- quote_count.
+- bar_count.
+- data_hash.
+- filters_applied.
+- repair_policy.
+- created_at.
+
+Backtests must reference a dataset snapshot.
+
+### 29.7 Clock Abstraction
+
+Add:
+
+- `Clock`
+- `RealClock`
+- `SimulatedClock`
+
+No backtest code may call wall-clock time directly. Live paper uses `RealClock`. Backtests use `SimulatedClock`.
+
+### 29.8 API Versioning and Remote Safety
+
+All APIs must use versioned paths such as `/api/v1`.
+
+Before any remote-facing mutating endpoint exists, require:
+
+- authentication.
+- authorization.
+- account ownership checks.
+- audit logging.
+- rate limiting.
+- CORS policy.
+- schema tests.
+
+No remote-facing mutating endpoint may exist without auth, ownership check, audit log, and tests.
+
+### 29.9 Database Migration and Backup Discipline
+
+Add:
+
+- migration upgrade tests.
+- migration downgrade tests where feasible.
+- local dev reset script.
+- seed data strategy.
+- backup and restore procedure before VPS deployment.
+
+Migration risk must be reviewed before any deploy involving financial state.
+
+### 29.10 Provider Payload and Fixture Policy
+
+Default policy:
+
+- Production should not retain raw provider payloads long-term unless necessary.
+- Parser tests may use sanitized fixtures.
+- Provider response hash should be stored for debugging.
+- No sensitive payload should be committed.
+
+If raw payload retention is introduced, retention, redaction, and access rules must be documented first.
+
+### 29.11 Error Taxonomy
+
+Define typed errors:
+
+- `ProviderUnavailable`
+- `ProviderParseError`
+- `StaleDataError`
+- `DataQualityError`
+- `IndicatorInsufficientData`
+- `RegimeUncertain`
+- `RiskRejected`
+- `InsufficientBalance`
+- `LedgerInvariantViolation`
+- `BacktestDataUnavailable`
+
+Errors must be observable, testable, and mapped consistently to API responses and logs.
+
+### 29.12 Indicator Warmup and Insufficient Data Policy
+
+Indicators must return an explicit insufficient-data state when the warmup window is not satisfied.
+
+- EMA 200 cannot be considered valid with only 50 bars.
+- ADX, ATR, and RSI must not produce fake values during warmup.
+- RegimeDetector must return NO_TRADE when required indicator inputs are insufficient.
+
+### 29.13 Initial Timeframe and Trading Scope
+
+V1 is not a high-frequency system.
+
+Initial defaults:
+
+- raw quote collection from provider.
+- 15m or 1h bars.
+- strategy decisions on 1h bars unless changed by config.
+- no seconds-level trading.
+- no scalping.
+
+V1 trading scope:
+
+- long-only.
+- no leverage.
+- no margin.
+- no short selling.
+- no real-money execution.
+- cash-based buy.
+- position-based sell.
+
+### 29.14 Rounding Policy
+
+Add explicit rounding rules:
+
+- money precision by currency.
+- quantity precision by metal/unit.
+- bank-specific rounding if observed.
+- fee rounding.
+- tax rounding.
+- portfolio valuation rounding.
+
+No hidden float arithmetic is allowed.
+
+### 29.15 Narrower First Skeleton
+
+Revise the first implementation prompt so Phase 0 creates only the minimum domain/value models:
+
+- `Money`
+- `Quantity`
+- `Currency`
+- `Metal`
+- `Unit`
+- `Bank`
+- `BankInstrument`
+- `PriceQuote`
+- `MarketBar`
+- `User`
+- `VirtualAccount`
+
+Do not create all future models in the first skeleton. Add later models in their own phases.
+
+## 30. Multi-Bank, Multi-Metal, Reference-vs-Execution Design
+
+SilverPilot must support multiple banks and multiple precious metals while keeping signal data separate from executable bank pricing.
+
+### 30.1 Multi-Bank Is Mandatory, But Kuveyt Turk Is First
+
+SilverPilot must be designed for multiple banks from day one, even though Kuveyt Turk is implemented first.
+
+- Core trading, paper execution, indicator, regime, risk, and backtest logic must not depend on Kuveyt Turk-specific code.
+- Kuveyt Turk is only the first `BankPriceProvider` implementation.
+- Future banks such as Ziraat, Is Bankasi, Garanti, Akbank, or others must be added by implementing the same provider interface.
+- There must be no `if bank == "kuveyt_turk"` business logic inside core services.
+- Bank-specific parsing, source rules, rate limits, freshness rules, field names, and fee rules belong only in provider/config layers.
+- The first vertical slice uses Kuveyt Turk only, but the architecture must remain bank-agnostic.
+
+### 30.2 Multi-Metal Is Mandatory
+
+Silver is only the first supported metal.
+
+The domain model must support:
+
+- silver / XAG.
+- gold / XAU.
+- platinum / XPT.
+- palladium / XPD.
+- future precious metals if needed.
+
+IndicatorService, StrategyEngine, RiskManager, and PaperBroker must not be silver-specific. Metal-specific behavior must be represented through configuration, instruments, units, and cost rules. The first vertical slice uses silver only, but the architecture must remain metal-agnostic.
+
+### 30.3 Reference Market Instrument vs Execution Instrument
+
+Definitions:
+
+- `Metal`: the underlying precious metal, such as XAG or XAU.
+- `ReferenceMarketInstrument`: market data series used for indicators, regimes, and strategy signals, such as XAGUSD, SI=F, XAUUSD, or GC=F.
+- `ExecutionInstrument`: instrument used for paper trading execution, such as Kuveyt Turk silver gram/TRY.
+- `BankInstrument`: bank-specific execution instrument with buy/sell prices, spread, unit, currency, and cost rules.
+- `ExecutionVenue`: place where execution is simulated, initially a bank.
+
+Critical rules:
+
+- Technical indicators and regimes may use `ReferenceMarketInstrument`.
+- PaperBroker must execute only on the account-bound `ExecutionInstrument` / `BankInstrument`.
+- Reports must show both signal instrument and execution instrument.
+
+Example:
+
+- Signal source: XAGUSD or SI=F.
+- Execution source: Kuveyt Turk silver gram/TRY bank buy/sell quote.
+
+### 30.4 V1 Indicator Source Policy
+
+V1 uses a reference-market-first indicator policy.
+
+- Calculate indicators from the selected `ReferenceMarketInstrument`.
+- Use bank quotes for execution, spread, cost, risk filters, premium/discount tracking, and portfolio valuation.
+- Do not calculate separate strategy indicators for every bank in V1.
+- Bank-specific indicator series may be added later only after enough clean bank quote history exists.
+
+Reason:
+
+- Bank quote history may be incomplete, stale, irregular, bank-specific, and affected by spread policy.
+- If every bank gets its own indicator series too early, complexity explodes.
+- Reference market data gives a cleaner signal baseline.
+- Bank prices determine whether a signal is executable after realistic costs in each account.
+
+### 30.5 Bank Premium / Discount Tracking
+
+SilverPilot must track the difference between reference market price and bank executable price.
+
+Add `ExecutionPremiumSnapshot` or an equivalent concept.
+
+It should compare:
+
+- reference converted price.
+- bank buy price.
+- bank sell price.
+- bank spread.
+- premium/discount versus reference.
+- timestamp and source provenance.
+
+Example conversion:
+
+```text
+reference_gram_try = (xagusd_price / ounce_to_gram) * usdtry_price
+bank_sell_premium = bank_sell_gram_try - reference_gram_try
+bank_buy_discount = reference_gram_try - bank_buy_gram_try
+```
+
+This premium/discount must be available to RiskManager and reports.
+
+### 30.6 Account-Bound Execution Resolution
+
+StrategyEngine may produce asset-level TradeIntent, but execution is resolved per virtual account.
+
+Example asset-level intent:
+
+- asset: XAG.
+- side: BUY.
+- target cash amount: 10000 TRY.
+- signal instrument: XAGUSD or SI=F.
+- reason: reference trend up + pullback.
+
+For each subscribed account, `AccountBoundExecutionResolver` resolves:
+
+- the account's bound bank/execution venue.
+- the account's allowed bank instrument for the target metal, unit, and currency.
+- the account-bound quote freshness and data quality.
+- account/bank-specific spread, fees, taxes, min transaction amount, and risk rules.
+
+The resolver must not choose another bank because its spread is better. Other bank prices are benchmark data only for that account.
+
+### 30.7 Future Bank-Specific Indicator Mode
+
+Bank-specific indicators are allowed only as a future experimental mode.
+
+Requirements before enabling:
+
+- enough clean quote history per bank.
+- stable bar construction per bank.
+- missing/stale data handling.
+- sufficient warmup windows.
+- backtest comparison against reference-market indicators.
+- report showing whether bank-specific indicators add value after costs.
+
+Default mode remains reference-market indicators for signals and account-bound bank prices for execution.
+
+### 30.8 Signal/Execution Consistency in Backtests
+
+Backtests must store:
+
+- signal instrument.
+- signal data source.
+- execution instrument.
+- execution venue/bank.
+- FX conversion source if used.
+- unit conversion rule.
+- premium/discount snapshots.
+- cost model version.
+
+A backtest result is invalid if it mixes reference and execution prices without recording the mapping.
+
+### 30.9 No Hidden Conversions
+
+No strategy, provider, risk rule, broker, or report may perform hidden ad hoc conversions.
+
+All conversions must go through:
+
+- `UnitConversionService`
+- `FXRateProvider`
+- configured instrument mapping
+
+All conversion assumptions must be visible in reports.
+
+### 30.10 Updated First Vertical Slice
+
+The first vertical slice is:
+
+- Metal: silver / XAG.
+- ReferenceMarketInstrument: XAGUSD or SI=F, selected after feasibility check.
+- ExecutionVenue: Kuveyt Turk.
+- ExecutionInstrument: Kuveyt Turk silver gram/TRY.
+- Currency: TRY.
+- Bars/timeframe: 15m or 1h, decided by config.
+- Strategy: one simple reference-market signal strategy.
+- Execution: paper trade at Kuveyt Turk buy/sell prices for the bound account.
+- Costs: spread-first, then commission/tax if known and source-backed.
+- Reports: PnL before costs, PnL after costs, premium/discount, rejected/no-trade reasons.
+
+Do not add other banks or metals until this vertical slice is stable, tested, and reproducible.
+
+## 31. Account-Bound Execution Correction
+
+SilverPilot must not assume that virtual money can freely move between banks. Each virtual account is bound to its own bank/execution venue. If a user's virtual money is in Kuveyt Turk, the account trades only under Kuveyt Turk pricing, spread, fee, tax, freshness, and availability rules. If another account is in Ziraat, that account trades only under Ziraat rules.
+
+### 31.1 No Cross-Bank Execution Selection
+
+Remove or supersede any design implication that SilverPilot should choose the best bank for a trade based on spread or availability.
+
+Wrong model:
+
+- Strategy says buy XAG.
+- System compares Kuveyt Turk, Ziraat, Garanti, and others.
+- System chooses the bank with the best spread.
+- Trade executes there.
+
+Correct model:
+
+- Strategy says buy XAG.
+- Each subscribed virtual account evaluates that signal independently.
+- The account's own bank/execution venue determines execution.
+- The account may trade only if its own bank quote, spread, fees, taxes, freshness, and risk rules allow it.
+- Other banks are not execution candidates for that account.
+
+### 31.2 Account-Bound Execution Layer
+
+Use `AccountBoundExecutionResolver`, not generic best-bank routing.
+
+Responsibilities:
+
+- Read the `VirtualAccount`.
+- Determine the account's bound `ExecutionVenue` / `Bank`.
+- Determine the allowed `BankInstrument` for the target metal, unit, and currency.
+- Fetch or validate the relevant account-bound quote.
+- Pass account-bound execution context to RiskManager.
+- Create a PaperOrder only for the account's own execution instrument.
+
+It must not:
+
+- choose another bank because its spread is better.
+- assume funds can be transferred between banks.
+- execute a trade on an instrument not allowed by the account.
+- hide bank-specific execution assumptions.
+
+### 31.3 VirtualAccount Must Carry Execution Context
+
+`VirtualAccount` must include or link to:
+
+- user_id.
+- base_currency.
+- execution_venue_id or bank_id.
+- allowed bank instruments.
+- wallets.
+- positions.
+- account-level strategy subscriptions.
+- account-level risk configuration.
+
+A user may have multiple virtual accounts, each bound to a different bank.
+
+Examples:
+
+- Account A: Kuveyt Turk + TRY + silver gram/TRY.
+- Account B: Ziraat + TRY + silver gram/TRY.
+- Account C: Kuveyt Turk + TRY + gold gram/TRY.
+
+These accounts do not share cash unless an explicit future transfer simulation feature is implemented.
+
+### 31.4 Signal Is Asset-Level, Execution Is Account-Level
+
+StrategyEngine may produce an asset-level TradeIntent.
+
+Example:
+
+- asset: XAG.
+- side: BUY.
+- target cash amount: 10000 TRY.
+- signal instrument: XAGUSD or SI=F.
+- reason: reference trend up + pullback.
+
+Then each account resolves execution independently.
+
+For Account A:
+
+- execution venue: Kuveyt Turk.
+- execution instrument: Kuveyt Turk silver gram/TRY.
+- risk decision: approve/reject/reduce based on Kuveyt Turk rules.
+
+For Account B:
+
+- execution venue: Ziraat.
+- execution instrument: Ziraat silver gram/TRY.
+- risk decision: approve/reject/reduce based on Ziraat rules.
+
+The system must show when the same signal produced different outcomes across accounts because bank conditions differ.
+
+### 31.5 Other Bank Prices Are Benchmark Data Only
+
+For a given account, other banks' prices may be used only for:
+
+- benchmark reporting.
+- spread comparison reports.
+- premium/discount analysis.
+- market observation.
+- future what-if simulations.
+
+They must not be used to execute that account's paper trade. If Account A is bound to Kuveyt Turk, then Ziraat's better spread can be reported as benchmark information, but Account A cannot execute at Ziraat unless a future explicit transfer simulation moves funds to a Ziraat-bound account.
+
+### 31.6 Future Transfer Simulation Is Out of Scope
+
+Simulating money transfer between banks is not part of V1.
+
+Do not implement:
+
+- cross-bank cash movement.
+- automatic bank switching.
+- best-bank routing.
+- transfer fees.
+- transfer delays.
+- transfer limits.
+
+These may be considered in a future version only after the core paper trading system is stable.
+
+### 31.7 Updated First Vertical Slice
+
+The first vertical slice remains:
+
+- one user.
+- one virtual account.
+- one bound bank: Kuveyt Turk.
+- one execution instrument: Kuveyt Turk silver gram/TRY.
+- one reference market instrument: XAGUSD or SI=F.
+- one strategy.
+- one account-bound paper execution path.
+
+Do not add multi-bank routing. Multi-bank support means multiple independently configured accounts/providers, not dynamic best-bank execution.
