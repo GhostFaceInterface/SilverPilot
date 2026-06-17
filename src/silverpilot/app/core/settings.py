@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     app_name: str = "SilverPilot"
     environment: Literal["development", "test", "staging", "production"] = "development"
+    database_url: str = "sqlite+pysqlite:///./silverpilot.db"
     log_level: str = Field(default="INFO", min_length=1)
 
 
