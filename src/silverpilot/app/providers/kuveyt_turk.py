@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -22,9 +23,14 @@ from silverpilot.app.providers.errors import (
 
 KUVEYT_TURK_SOURCE_NAME = "kuveyt_turk_finance_portal"
 KUVEYT_TURK_BASE_URL = "https://www.kuveytturk.com.tr"
-KUVEYT_TURK_FINANCE_PORTAL_PATH = "/ck0d84?B83A1EF44DD940F2FEC85646BDB25EA0"
-KUVEYT_TURK_FINANCE_PORTAL_URL = f"{KUVEYT_TURK_BASE_URL}{KUVEYT_TURK_FINANCE_PORTAL_PATH}"
+KUVEYT_TURK_FINANCE_PORTAL_PAGE_URL = f"{KUVEYT_TURK_BASE_URL}/finans-portali"
+KUVEYT_TURK_CORE_JS_URL = f"{KUVEYT_TURK_BASE_URL}/magiclick.core.min.js"
+LAST_KNOWN_FINANCE_PORTAL_PATH = "/ck0d84?B83A1EF44DD940F2FEC85646BDB25EA0"
+LAST_KNOWN_FINANCE_PORTAL_URL = f"{KUVEYT_TURK_BASE_URL}{LAST_KNOWN_FINANCE_PORTAL_PATH}"
+KUVEYT_TURK_FINANCE_PORTAL_URL = LAST_KNOWN_FINANCE_PORTAL_URL
 _SILVER_GRAM_SYMBOL = "GMS (gr)"
+_FINANCE_PORTAL_ADDRESS_KEY = "fn-rlrtd"
+_FINANCE_PORTAL_PATH_PATTERN = re.compile(r"^/ck0d84\?[A-Fa-f0-9]{32}$")
 _HTTP_GET = Callable[[str, float], bytes]
 _JsonValue = Any
 
@@ -48,23 +54,74 @@ class ProviderQuoteResult:
     indicative: bool
 
 
+class KuveytTurkEndpointResolver:
+    """Discovers the current public finance portal endpoint from official assets."""
+
+    def __init__(
+        self,
+        *,
+        finance_portal_page_url: str = KUVEYT_TURK_FINANCE_PORTAL_PAGE_URL,
+        core_js_url: str = KUVEYT_TURK_CORE_JS_URL,
+        base_url: str = KUVEYT_TURK_BASE_URL,
+        timeout_seconds: float = 10.0,
+        http_get: _HTTP_GET | None = None,
+    ) -> None:
+        self._finance_portal_page_url = finance_portal_page_url
+        self._core_js_url = core_js_url
+        self._base_url = base_url
+        self._timeout_seconds = timeout_seconds
+        self._http_get = http_get or _default_http_get
+
+    def resolve_finance_portal_url(self) -> str:
+        html = self._fetch_text(
+            self._finance_portal_page_url,
+            "Kuveyt Turk finance portal page is unavailable",
+        )
+        path = _extract_finance_portal_path_from_addresses(html)
+        if path is None:
+            core_js = self._fetch_text(
+                self._core_js_url,
+                "Kuveyt Turk core JavaScript is unavailable",
+            )
+            path = _extract_finance_portal_path_from_core_js(core_js)
+
+        if path is None:
+            raise ProviderParseError("Kuveyt Turk finance portal endpoint was not found")
+
+        return _finance_portal_absolute_url(path, base_url=self._base_url)
+
+    def _fetch_text(self, url: str, unavailable_message: str) -> str:
+        try:
+            raw = self._http_get(url, self._timeout_seconds)
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            raise ProviderUnavailableError(unavailable_message) from exc
+
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            message = "Kuveyt Turk endpoint discovery response is not UTF-8"
+            raise ProviderParseError(message) from exc
+
+
 class KuveytTurkPriceProvider:
     """Fetches Kuveyt Turk public indicative silver gram/TRY quotes."""
 
     def __init__(
         self,
         *,
-        url: str = KUVEYT_TURK_FINANCE_PORTAL_URL,
+        url: str | None = None,
         timeout_seconds: float = 10.0,
         freshness_ttl: timedelta = timedelta(minutes=5),
         clock: Clock | None = None,
         http_get: _HTTP_GET | None = None,
+        endpoint_resolver: KuveytTurkEndpointResolver | None = None,
     ) -> None:
         self._url = url
         self._timeout_seconds = timeout_seconds
         self._freshness_ttl = freshness_ttl
         self._clock = clock or RealClock()
         self._http_get = http_get or _default_http_get
+        self._endpoint_resolver = endpoint_resolver
 
     def fetch_quote(self, instrument: BankInstrument) -> PriceQuote:
         return self.fetch_quote_result(instrument).quote
@@ -100,10 +157,18 @@ class KuveytTurkPriceProvider:
         )
 
     def _fetch_payload(self) -> bytes:
+        url = self._url or self._resolve_url()
         try:
-            return self._http_get(self._url, self._timeout_seconds)
+            return self._http_get(url, self._timeout_seconds)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
             raise ProviderUnavailableError("Kuveyt Turk finance portal is unavailable") from exc
+
+    def _resolve_url(self) -> str:
+        resolver = self._endpoint_resolver or KuveytTurkEndpointResolver(
+            timeout_seconds=self._timeout_seconds,
+            http_get=self._http_get,
+        )
+        return resolver.resolve_finance_portal_url()
 
     @staticmethod
     def _validate_supported_instrument(instrument: BankInstrument) -> None:
@@ -152,11 +217,45 @@ def validate_freshness(*, observed_at: datetime, now: datetime, max_age: timedel
         raise StaleDataError("Kuveyt Turk quote is stale")
 
 
+def _extract_finance_portal_path_from_addresses(document: str) -> str | None:
+    addresses_block_match = re.search(
+        r"\bconst\s+addresses\s*=\s*\{(?P<body>.*?)\}\s*;?",
+        document,
+        flags=re.DOTALL,
+    )
+    if addresses_block_match is None:
+        return None
+
+    path_match = re.search(
+        rf"""["']{re.escape(_FINANCE_PORTAL_ADDRESS_KEY)}["']\s*:\s*["'](?P<path>[^"']+)["']""",
+        addresses_block_match.group("body"),
+    )
+    if path_match is None:
+        return None
+    return path_match.group("path")
+
+
+def _extract_finance_portal_path_from_core_js(document: str) -> str | None:
+    path_match = re.search(
+        r"""(?:["']?financePortal["']?)\s*:\s*["'](?P<path>[^"']+)["']""",
+        document,
+    )
+    if path_match is None:
+        return None
+    return path_match.group("path")
+
+
+def _finance_portal_absolute_url(path: str, *, base_url: str = KUVEYT_TURK_BASE_URL) -> str:
+    if not _FINANCE_PORTAL_PATH_PATTERN.fullmatch(path):
+        raise ProviderParseError("Kuveyt Turk finance portal endpoint path is not allowed")
+    return urljoin(base_url, path)
+
+
 def _default_http_get(url: str, timeout_seconds: float) -> bytes:
     request = Request(
         url,
         headers={
-            "Accept": "application/json",
+            "Accept": "application/json, text/html, application/javascript, */*",
             "User-Agent": "SilverPilot/0.1 public-price-feasibility",
         },
         method="GET",

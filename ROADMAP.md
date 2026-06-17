@@ -493,14 +493,15 @@ Official sources inspected:
 - Robots: `https://www.kuveytturk.com.tr/robots.txt`
 - Silver page: `https://www.kuveytturk.com.tr/kendim-icin/yatirim-urunleri/hazine-urunleri/canli-gumus-fiyatlari-ve-gram-gumus-hesaplama`
 - Finance portal page: `https://www.kuveytturk.com.tr/finans-portali`
-- Public JSON endpoint discovered from official site JavaScript: `/ck0d84?B83A1EF44DD940F2FEC85646BDB25EA0`
+- Public finance portal endpoint discovery: the official finance portal page currently exposes `addresses["fn-rlrtd"]`, and official `magiclick.core.min.js` exposes `ApiEndpoints.financePortal`.
+- Last-known public finance portal JSON path observed from official assets: `/ck0d84?B83A1EF44DD940F2FEC85646BDB25EA0`
 - Public parities endpoint discovered from official site JavaScript: `/ck0d84?EB770F761E1233CCE1588AFFCAEBABFC`
 
 Findings:
 
 - `robots.txt` allows `/` and only disallows `/blog/etiket/*`; this is not legal permission by itself, but it does not block the finance/silver pages.
 - The official silver page exists and describes live silver prices, digital silver account access, BSMV handling, weekend/night spread widening, and ounce-to-gram conversion.
-- The public finance portal endpoint currently returns JSON rows including `GMS (gr)` / `Gümüş` with `BuyRate`, `SellRate`, `ChangeRate`, and `ChangeRateNegative`.
+- The discovered public finance portal endpoint currently returns JSON rows including `GMS (gr)` / `Gümüş` with `BuyRate`, `SellRate`, `ChangeRate`, and `ChangeRateNegative`.
 - The public parities endpoint currently returns reference-style rows including `GÜMÜŞ (ONS/$)` with `LastValue`, `Difference`, `Daily`, and `Yearly`.
 - The finance portal states that displayed exchange/gold rates are indicative and not binding; transactions use internet or mobile branch rates. Therefore these quotes must be treated as public indicative bank quotes, not guaranteed executable prices.
 - The JSON response does not expose a clear provider timestamp. The provider must set `fetched_at`, `observed_at`, and `stored_at`; `provider_reported_at` must remain null unless a reliable source timestamp is later found.
@@ -509,9 +510,11 @@ Findings:
 
 Phase 2B constraints:
 
-- Implement only the public finance portal JSON path first.
+- Implement only the public finance portal JSON path first, discovered from official public Kuveyt Turk assets.
 - Do not bypass login, captcha, private banking, mobile-only, or authenticated endpoints.
-- Treat `/ck0d84?...` endpoint identifiers as volatile implementation details discovered from official JavaScript; provider tests must fail visibly if the endpoint, schema, or field names change.
+- Treat `/ck0d84?...` endpoint identifiers as volatile last-known implementation details, not stable source contracts. The provider must discover the current endpoint semantically from `addresses["fn-rlrtd"]` on the finance portal page, then fall back to `ApiEndpoints.financePortal` in official core JavaScript.
+- Accept only same-site `/ck0d84?<hash>` endpoint paths. Reject external domains, login/captcha/private/mobile/authenticated paths, and malformed endpoint values.
+- Default behavior must fail closed when endpoint discovery, schema, freshness, or field names change. A last-known endpoint path may exist only as diagnostic/configured fallback data, not as the default execution path.
 - Parse `GMS (gr)` as the first Kuveyt Turk silver gram/TRY execution quote candidate.
 - Store raw provider response hashes for debugging, but do not retain raw payloads long-term in production by default.
 - Because quotes are public indicative values, reports must label them as indicative bank quotes until executable parity with internet/mobile branch order screens can be manually verified.
@@ -520,8 +523,8 @@ Phase 2B constraints:
 ### Phase 2B: Kuveyt Turk provider implementation
 
 Goal: implement the first provider only after Phase 2A approves a source-backed path.
-Deliverables: provider interface, Kuveyt Turk implementation, sanitized parser fixtures, freshness checks, parser failure tests.
-Acceptance: parser detects buy/sell/timestamp when available, fails visibly on bad fixtures, respects feasibility constraints, and does not bypass login/captcha/private endpoints.
+Deliverables: provider interface, Kuveyt Turk implementation, endpoint discovery tests, sanitized parser fixtures, freshness checks, parser failure tests.
+Acceptance: provider discovers the endpoint through `fn-rlrtd` or `ApiEndpoints.financePortal`, parser detects buy/sell/timestamp when available, fails visibly on bad discovery/schema/freshness fixtures, respects feasibility constraints, and does not bypass login/captcha/private endpoints.
 Do not include: other banks, best-bank routing, trading strategies.
 
 ### Phase 3: Price storage and bar builder
