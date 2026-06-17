@@ -1,0 +1,22 @@
+{
+  "Data": [
+    {
+      "Code": "USD",
+      "Symbol": "USD",
+      "Name": "Amerikan Doları",
+      "BuyRate": "39,100000",
+      "SellRate": "39,900000",
+      "ChangeRate": "0.12",
+      "ChangeRateNegative": false
+    },
+    {
+      "Code": "GMS",
+      "Symbol": "GMS (gr)",
+      "Name": "Gümüş",
+      "BuyRate": "41,100000",
+      "SellRate": "42,200000",
+      "ChangeRate": "0.40",
+      "ChangeRateNegative": false
+    }
+  ]
+}
