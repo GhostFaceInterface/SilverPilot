@@ -208,8 +208,8 @@ class VirtualAccount(DomainModel):
     user_id: UUID
     name: str
     base_currency_code: str
-    bound_bank_id: UUID
-    allowed_bank_instrument_ids: tuple[UUID, ...]
+    execution_venue_id: UUID
+    allowed_execution_instrument_ids: tuple[UUID, ...]
     starting_balance: Money
     status: AccountStatus = AccountStatus.ACTIVE
 
@@ -225,8 +225,8 @@ class VirtualAccount(DomainModel):
     def validate_execution_context(self) -> "VirtualAccount":
         if not self.name.strip():
             raise ValueError("account name is required")
-        if not self.allowed_bank_instrument_ids:
-            raise ValueError("virtual account must have allowed bank instruments")
+        if not self.allowed_execution_instrument_ids:
+            raise ValueError("virtual account must have allowed execution instruments")
         if self.starting_balance.currency_code != self.base_currency_code:
             raise ValueError("starting balance currency must match base currency")
         return self

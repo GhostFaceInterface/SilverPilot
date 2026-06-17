@@ -39,7 +39,7 @@ Only silver and Kuveyt Turk are implemented in the first vertical slice. However
 ## 3. Core Domain Model
 
 - User: application user; key fields are id, email or external identity, status, created_at.
-- VirtualAccount: a user's paper-trading account; belongs to User; key fields are base_currency, starting_balance, current_status.
+- VirtualAccount: a user's paper-trading account; belongs to User; key fields are base_currency, execution_venue_id, allowed_execution_instrument_ids, starting_balance, current_status.
 - Wallet: account-level cash balances by currency; belongs to VirtualAccount; key fields are currency, available_amount, reserved_amount.
 - Bank: pricing institution; key fields are name, country, status, source_policy.
 - BankInstrument: bank-specific tradable quote definition; links Bank, Metal, Currency, and unit; key fields are symbol, buy_quote_field, sell_quote_field, min_trade_amount, fee_rule_id.
@@ -696,7 +696,7 @@ Requirements:
    - BankInstrument construction
    - PriceQuote buy/sell validation
    - MarketBar timestamp validation
-   - VirtualAccount bound bank/execution context
+   - VirtualAccount account-bound execution context
 10. Add code quality setup:
    - ruff check
    - ruff format
@@ -1326,8 +1326,8 @@ Example asset-level intent:
 
 For each subscribed account, `AccountBoundExecutionResolver` resolves:
 
-- the account's bound bank/execution venue.
-- the account's allowed bank instrument for the target metal, unit, and currency.
+- the account's account-bound execution venue.
+- the account's allowed execution instrument for the target metal, unit, and currency.
 - the account-bound quote freshness and data quality.
 - account/bank-specific spread, fees, taxes, min transaction amount, and risk rules.
 
@@ -1443,8 +1443,8 @@ It must not:
 
 - user_id.
 - base_currency.
-- execution_venue_id or bank_id.
-- allowed bank instruments.
+- execution_venue_id.
+- allowed execution instruments.
 - wallets.
 - positions.
 - account-level strategy subscriptions.

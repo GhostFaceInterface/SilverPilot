@@ -151,21 +151,21 @@ def test_market_bar_timestamp_and_price_validation() -> None:
         )
 
 
-def test_virtual_account_carries_bound_bank_execution_context() -> None:
-    bank_id = uuid4()
+def test_virtual_account_carries_account_bound_execution_context() -> None:
+    execution_venue_id = uuid4()
     instrument_id = uuid4()
     account = VirtualAccount(
         id=uuid4(),
         user_id=uuid4(),
         name="Kuveyt Turk paper account",
         base_currency_code="try",
-        bound_bank_id=bank_id,
-        allowed_bank_instrument_ids=(instrument_id,),
+        execution_venue_id=execution_venue_id,
+        allowed_execution_instrument_ids=(instrument_id,),
         starting_balance=Money(amount="10000", currency_code="TRY"),
     )
 
-    assert account.bound_bank_id == bank_id
-    assert account.allowed_bank_instrument_ids == (instrument_id,)
+    assert account.execution_venue_id == execution_venue_id
+    assert account.allowed_execution_instrument_ids == (instrument_id,)
     assert account.base_currency_code == "TRY"
 
     with pytest.raises(ValidationError):
@@ -174,7 +174,7 @@ def test_virtual_account_carries_bound_bank_execution_context() -> None:
             user_id=uuid4(),
             name="No instruments",
             base_currency_code="TRY",
-            bound_bank_id=bank_id,
-            allowed_bank_instrument_ids=(),
+            execution_venue_id=execution_venue_id,
+            allowed_execution_instrument_ids=(),
             starting_balance=Money(amount="10000", currency_code="TRY"),
         )
