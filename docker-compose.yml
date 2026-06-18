@@ -1,17 +1,17 @@
 name: silverpilot
 
 x-app-environment: &app-environment
-  SILVERPILOT_APP_NAME: ${SILVERPILOT_APP_NAME:-SilverPilot}
-  SILVERPILOT_ENVIRONMENT: ${SILVERPILOT_ENVIRONMENT:-development}
+  SILVERPILOT_APP_NAME: ${SILVERPILOT_APP_NAME:-${APP_NAME:-SilverPilot}}
+  SILVERPILOT_ENVIRONMENT: ${SILVERPILOT_ENVIRONMENT:-${APP_ENV:-development}}
   SILVERPILOT_LOG_LEVEL: ${SILVERPILOT_LOG_LEVEL:-INFO}
-  SILVERPILOT_DATABASE_URL: ${SILVERPILOT_DATABASE_URL:-postgresql+psycopg://silverpilot:silverpilot_dev_password@db:5432/silverpilot}
+  SILVERPILOT_DATABASE_URL: ${SILVERPILOT_DATABASE_URL:-${DATABASE_URL:-postgresql+psycopg://silverpilot:silverpilot_dev_password@postgres:5432/silverpilot}}
   SILVERPILOT_TELEGRAM_ENABLED: ${SILVERPILOT_TELEGRAM_ENABLED:-false}
-  SILVERPILOT_TELEGRAM_BOT_TOKEN: ${SILVERPILOT_TELEGRAM_BOT_TOKEN:-}
-  SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID: ${SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID:-}
+  SILVERPILOT_TELEGRAM_BOT_TOKEN: ${SILVERPILOT_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}
+  SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID: ${SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID:-${TELEGRAM_CHAT_ID:-}}
   SILVERPILOT_TELEGRAM_API_BASE_URL: ${SILVERPILOT_TELEGRAM_API_BASE_URL:-https://api.telegram.org}
 
 services:
-  db:
+  postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-silverpilot}
@@ -34,7 +34,7 @@ services:
       <<: *app-environment
     command: ["alembic", "upgrade", "head"]
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     restart: "no"
 

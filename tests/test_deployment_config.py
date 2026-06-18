@@ -15,7 +15,7 @@ def test_dockerfile_builds_backend_runtime_as_non_root_user() -> None:
 def test_compose_defines_api_migration_postgres_and_collector_boundaries() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
-    assert "db:" in compose
+    assert "postgres:" in compose
     assert "migrate:" in compose
     assert "api:" in compose
     assert "collector:" in compose
@@ -31,7 +31,7 @@ def test_env_example_documents_runtime_without_secret_values() -> None:
     env_example = (ROOT / ".env.example").read_text()
 
     assert (
-        "SILVERPILOT_DATABASE_URL=postgresql+psycopg://silverpilot:change-me@db:5432/silverpilot"
+        "SILVERPILOT_DATABASE_URL=postgresql+psycopg://silverpilot:change-me@postgres:5432/silverpilot"
         in env_example
     )
     assert "POSTGRES_PASSWORD=change-me" in env_example
