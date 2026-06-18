@@ -2,6 +2,7 @@
 
 from silverpilot.app.risks.service import (
     AccountBoundExecutionResolver,
+    EventRiskContext,
     RiskContext,
     RiskDecisionResult,
     RiskManager,
@@ -10,6 +11,7 @@ from silverpilot.app.risks.service import (
 
 __all__ = [
     "AccountBoundExecutionResolver",
+    "EventRiskContext",
     "RiskContext",
     "RiskDecisionResult",
     "RiskManager",

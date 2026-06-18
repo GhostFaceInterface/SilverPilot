@@ -2,10 +2,10 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-11 slice and the detailed execution boundary before Phase 12.
+completed Phase 0-12 slice and the detailed execution boundary before Phase 13.
 
-The current implementation has completed Phase 11: Telegram adapter. The next
-implementation boundary is Phase 12: News/Hermes risk module.
+The current implementation has completed Phase 12: News/Hermes risk module.
+The next implementation boundary is Phase 13: Reporting dashboard data.
 
 ## Phase Status
 
@@ -24,17 +24,18 @@ implementation boundary is Phase 12: News/Hermes risk module.
 | Phase 9: Backtest engine | PASS | `phase-09-backtest-engine.md` |
 | Phase 10: REST API | PASS | `phase-10-rest-api.md` |
 | Phase 11: Telegram adapter | PASS | `phase-11-telegram-adapter.md` |
+| Phase 12: News/Hermes risk module | PASS | `phase-12-news-hermes-risk.md` |
 
-Phase 12 News/Hermes risk module is the next boundary after Phase 11.
+Phase 13 Reporting dashboard data is the next boundary after Phase 12.
 
 ## Verification Matrix
 
-The Phase 0-11 audit is based on local source evidence and the latest
+The Phase 0-12 audit is based on local source evidence and the latest
 verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 124 passed |
+| `pytest` | 133 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
@@ -67,13 +68,19 @@ through `src/silverpilot/app/notifications`. Telegram is disabled by default,
 uses injected transport for sends, and consumes API DTOs instead of owning
 trading, risk, broker, backtest, or ledger decisions.
 
+Phase 12 added `src/silverpilot/app/news`, news source/event/event-risk schema,
+Hermes risk JSON generation, idempotent news/event-risk persistence, and
+RiskManager-only event-risk veto/no-trade/reduction handling. Stale news is
+ignored and event-risk context cannot create strategy signals, orders, trades,
+positions, or ledger entries.
+
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
-- Do not add Hermes, ML, dashboard, Docker, multi-bank routing, real money
-  execution, Telegram-owned decisions, or mutating remote API behavior inside
-  the Phase 11 notification boundary.
+- Do not add ML, dashboard UI, Docker, multi-bank routing, real money
+  execution, Telegram-owned decisions, live news fetching, or mutating remote
+  API behavior inside the Phase 12 event-risk boundary.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not
   invent a root `/agents` application directory.

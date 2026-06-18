@@ -17,12 +17,15 @@ from silverpilot.app.db.models import (
     BankInstrumentModel,
     BankModel,
     CurrencyModel,
+    EventRiskSnapshotModel,
     ExecutionInstrumentModel,
     ExecutionVenueModel,
     IndicatorSnapshotModel,
     MarketBarModel,
     MarketRegimeSnapshotModel,
     MetalModel,
+    NewsEventModel,
+    NewsSourceModel,
     PaperOrderModel,
     RiskDecisionModel,
     StrategyModel,
@@ -47,7 +50,10 @@ CORE_TABLES = {
     "market_bars",
     "market_regime_snapshots",
     "metals",
+    "event_risk_snapshots",
     "ledger_entries",
+    "news_events",
+    "news_sources",
     "paper_orders",
     "paper_trades",
     "price_quotes",
@@ -223,6 +229,58 @@ def test_market_bar_constraints_reject_invalid_price_shape(engine: Engine) -> No
 
         with pytest.raises(IntegrityError):
             session.commit()
+
+
+def test_news_event_risk_schema_constraints(engine: Engine) -> None:
+    created_at = now()
+    source = NewsSourceModel(
+        id=uuid4(),
+        code="tcmb",
+        name="TCMB",
+        category="central_bank",
+        reliability_score=Decimal("0.9000"),
+        source_policy="official public source",
+        status="active",
+        created_at=created_at,
+    )
+    event = NewsEventModel(
+        id=uuid4(),
+        source=source,
+        source_event_time=created_at,
+        provider_reported_at=created_at,
+        published_at=created_at,
+        fetched_at=created_at,
+        title="Policy shock",
+        summary="Hawkish policy shock",
+        affected_assets=["XAG"],
+        event_type="central_bank",
+        content_hash="hash",
+        created_at=created_at,
+    )
+    snapshot = EventRiskSnapshotModel(
+        id=uuid4(),
+        news_event=event,
+        source="tcmb",
+        schema_version="hermes-risk-v1",
+        event_type="central_bank",
+        affected_assets=["XAG"],
+        direction_bias="bearish",
+        confidence=Decimal("0.7500"),
+        time_horizon="1d",
+        risk_level="high",
+        reasoning="fixture",
+        action_recommendation="no_trade",
+        interpreted_at=created_at,
+        expires_at=datetime(2026, 6, 18, 13, 0, tzinfo=UTC),
+        payload={"action_recommendation": "no_trade"},
+        created_at=created_at,
+    )
+
+    with Session(engine) as session:
+        session.add(snapshot)
+        session.commit()
+
+        assert session.get(EventRiskSnapshotModel, snapshot.id) is not None
 
 
 def test_indicator_snapshot_unique_cache_key(engine: Engine) -> None:

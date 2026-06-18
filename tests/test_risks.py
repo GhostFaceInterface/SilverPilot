@@ -32,7 +32,7 @@ from silverpilot.app.db.models import (
     VirtualAccountModel,
     WalletModel,
 )
-from silverpilot.app.risks import RiskContext, RiskManager, RiskPolicy
+from silverpilot.app.risks import EventRiskContext, RiskContext, RiskManager, RiskPolicy
 
 SOURCE = "kuveyt_turk_finance_portal"
 BASE_TIME = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
@@ -385,6 +385,68 @@ def test_risk_manager_rejects_below_bank_min_trade_after_precision(engine: Engin
         assert result.decision.reasons == ["approved_size_below_bank_min_trade_after_precision"]
 
 
+def test_risk_manager_rejects_event_risk_no_trade_through_policy(engine: Engine) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(session, evaluated_at=evaluated_at)
+
+        result = RiskManager(session=session, policy=_policy()).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(
+                fixture.execution_instrument_id,
+                evaluated_at=evaluated_at,
+                event_risk=_event_risk("no_trade", evaluated_at=evaluated_at),
+            ),
+        )
+
+        assert result.decision.decision == "reject"
+        assert result.decision.reasons == ["event_risk_no_trade"]
+        assert result.decision.constraints_applied["event_risk_status"] == "applied"
+
+
+def test_risk_manager_reduces_event_risk_only_inside_risk_decision(engine: Engine) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(session, evaluated_at=evaluated_at, cash_amount=Decimal("800"))
+
+        result = RiskManager(session=session, policy=_policy()).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(
+                fixture.execution_instrument_id,
+                evaluated_at=evaluated_at,
+                event_risk=_event_risk("reduce_risk", evaluated_at=evaluated_at),
+            ),
+        )
+
+        assert result.decision.decision == "reduce"
+        assert result.decision.approved_cash_amount == Decimal("400.00000000")
+        assert result.decision.reasons == ["reduced:event_risk"]
+        assert session.scalar(select(PaperOrderModel)) is None
+        assert session.scalar(select(PaperTradeModel)) is None
+
+
+def test_risk_manager_ignores_stale_event_risk(engine: Engine) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(session, evaluated_at=evaluated_at)
+
+        result = RiskManager(session=session, policy=_policy()).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(
+                fixture.execution_instrument_id,
+                evaluated_at=evaluated_at,
+                event_risk=_event_risk(
+                    "veto",
+                    evaluated_at=evaluated_at - timedelta(days=2),
+                ),
+            ),
+        )
+
+        assert result.decision.decision == "approve"
+        assert result.decision.reasons == ["risk_approved"]
+        assert result.decision.constraints_applied["event_risk_status"] == "ignored_stale"
+
+
 def test_risk_manager_is_idempotent_per_intent_and_policy(engine: Engine) -> None:
     evaluated_at = _time()
     with Session(engine) as session:
@@ -449,6 +511,7 @@ def _context(
     current_drawdown: Decimal | None = Decimal("0.02"),
     current_daily_loss: Decimal | None = Decimal("0"),
     expected_edge_after_costs: Decimal | None = Decimal("0.05"),
+    event_risk: EventRiskContext | None = None,
 ) -> RiskContext:
     return RiskContext(
         execution_instrument_id=execution_instrument_id,
@@ -458,6 +521,20 @@ def _context(
         current_drawdown=current_drawdown,
         current_daily_loss=current_daily_loss,
         expected_edge_after_costs=expected_edge_after_costs,
+        event_risk=event_risk,
+    )
+
+
+def _event_risk(action_recommendation: str, *, evaluated_at: datetime) -> EventRiskContext:
+    return EventRiskContext(
+        snapshot_id=uuid4(),
+        action_recommendation=action_recommendation,
+        risk_level="high",
+        confidence=Decimal("0.85"),
+        affected_assets=("XAG",),
+        interpreted_at=evaluated_at - timedelta(minutes=1),
+        expires_at=evaluated_at + timedelta(hours=1),
+        reasoning="test event risk context",
     )
 
 

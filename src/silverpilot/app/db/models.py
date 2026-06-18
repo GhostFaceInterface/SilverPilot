@@ -354,6 +354,113 @@ class PriceQuoteModel(Base, TimestampMixin):
     )
 
 
+class NewsSourceModel(Base, TimestampMixin):
+    __tablename__ = "news_sources"
+
+    id: Mapped[UUID] = uuid_pk()
+    code: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    reliability_score: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    source_policy: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+    events: Mapped[list["NewsEventModel"]] = relationship(back_populates="source")
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('central_bank', 'turkish_financial', 'global_financial', "
+            "'commodity', 'economic_calendar')",
+            name="news_source_category_valid",
+        ),
+        CheckConstraint(
+            "reliability_score >= 0 AND reliability_score <= 1",
+            name="news_source_reliability_range",
+        ),
+        Index("ix_news_sources_status", "status"),
+    )
+
+
+class NewsEventModel(Base, TimestampMixin):
+    __tablename__ = "news_events"
+
+    id: Mapped[UUID] = uuid_pk()
+    source_id: Mapped[UUID] = mapped_column(ForeignKey("news_sources.id"), nullable=False)
+    source_event_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    provider_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    published_at: Mapped[datetime] = utc_datetime()
+    fetched_at: Mapped[datetime] = utc_datetime()
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    affected_assets: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    source: Mapped[NewsSourceModel] = relationship(back_populates="events")
+    risk_snapshots: Mapped[list["EventRiskSnapshotModel"]] = relationship(
+        back_populates="news_event"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "content_hash"),
+        CheckConstraint("fetched_at >= published_at", name="news_event_fetched_gte_published"),
+        Index("ix_news_events_source_published", "source_id", "published_at"),
+        Index("ix_news_events_event_type", "event_type"),
+    )
+
+
+class EventRiskSnapshotModel(Base, TimestampMixin):
+    __tablename__ = "event_risk_snapshots"
+
+    id: Mapped[UUID] = uuid_pk()
+    news_event_id: Mapped[UUID] = mapped_column(ForeignKey("news_events.id"), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    affected_assets: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    direction_bias: Mapped[str] = mapped_column(String(16), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    time_horizon: Mapped[str] = mapped_column(String(16), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(16), nullable=False)
+    reasoning: Mapped[str] = mapped_column(String(1000), nullable=False)
+    action_recommendation: Mapped[str] = mapped_column(String(32), nullable=False)
+    interpreted_at: Mapped[datetime] = utc_datetime()
+    expires_at: Mapped[datetime] = utc_datetime()
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+    news_event: Mapped[NewsEventModel] = relationship(back_populates="risk_snapshots")
+
+    __table_args__ = (
+        UniqueConstraint("news_event_id", "schema_version"),
+        CheckConstraint(
+            "direction_bias IN ('bullish', 'bearish', 'neutral', 'mixed', 'unknown')",
+            name="event_risk_direction_bias_valid",
+        ),
+        CheckConstraint(
+            "time_horizon IN ('intraday', '1d', '1w', '1m', 'unknown')",
+            name="event_risk_time_horizon_valid",
+        ),
+        CheckConstraint(
+            "risk_level IN ('low', 'medium', 'high', 'unknown')",
+            name="event_risk_level_valid",
+        ),
+        CheckConstraint(
+            "action_recommendation IN ('veto', 'reduce_risk', 'no_trade', 'monitor', 'none')",
+            name="event_risk_action_valid",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="event_risk_confidence_range"),
+        CheckConstraint("expires_at > interpreted_at", name="event_risk_expiry_valid"),
+        Index("ix_event_risk_snapshots_event", "news_event_id"),
+        Index("ix_event_risk_snapshots_action", "action_recommendation"),
+        Index("ix_event_risk_snapshots_expires", "expires_at"),
+    )
+
+
 class MarketBarModel(Base, TimestampMixin):
     __tablename__ = "market_bars"
 

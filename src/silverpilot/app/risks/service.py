@@ -34,6 +34,8 @@ class RiskPolicy:
     min_order_cash: Decimal = Decimal("100")
     min_expected_edge_after_costs: Decimal = Decimal("0")
     max_source_divergence_pct: Decimal | None = None
+    min_event_risk_confidence: Decimal = Decimal("0.50")
+    event_risk_reduction_factor: Decimal = Decimal("0.50")
 
     def __post_init__(self) -> None:
         if not self.version.strip():
@@ -45,6 +47,8 @@ class RiskPolicy:
             "max_drawdown",
             "max_spread_pct",
             "min_order_cash",
+            "min_event_risk_confidence",
+            "event_risk_reduction_factor",
         ):
             if getattr(self, field_name) < Decimal("0"):
                 raise ValueError(f"{field_name} cannot be negative")
@@ -56,6 +60,32 @@ class RiskPolicy:
             raise ValueError("min_order_cash must be greater than zero")
         if self.min_quote_freshness <= timedelta(0):
             raise ValueError("min_quote_freshness must be greater than zero")
+        if self.min_event_risk_confidence > Decimal("1"):
+            raise ValueError("min_event_risk_confidence cannot exceed one")
+        if self.event_risk_reduction_factor <= Decimal(
+            "0"
+        ) or self.event_risk_reduction_factor > Decimal("1"):
+            raise ValueError(
+                "event_risk_reduction_factor must be greater than zero and at most one"
+            )
+
+
+@dataclass(frozen=True)
+class EventRiskContext:
+    snapshot_id: UUID | None
+    action_recommendation: str
+    risk_level: str
+    confidence: Decimal
+    affected_assets: tuple[str, ...]
+    interpreted_at: datetime
+    expires_at: datetime
+    reasoning: str
+
+    def is_active_at(self, evaluated_at: datetime) -> bool:
+        interpreted_at = _aware_datetime(self.interpreted_at)
+        expires_at = _aware_datetime(self.expires_at)
+        evaluated_at = _aware_datetime(evaluated_at)
+        return interpreted_at <= evaluated_at < expires_at
 
 
 @dataclass(frozen=True)
@@ -70,6 +100,7 @@ class RiskContext:
     source_divergence_pct: Decimal | None = None
     cooldown_active: bool = False
     no_trade_window_active: bool = False
+    event_risk: EventRiskContext | None = None
 
 
 @dataclass(frozen=True)
@@ -161,6 +192,7 @@ class RiskManager:
             "min_quote_freshness_seconds": int(self._policy.min_quote_freshness.total_seconds()),
             "execution_instrument_id": str(context.execution_instrument_id),
         }
+        event_risk_action = self._event_risk_action(context, constraints)
         missing = self._missing_context(context)
         if missing:
             return _RiskDecisionPayload.reject(
@@ -250,6 +282,16 @@ class RiskManager:
                 reasons=["no_trade_window_active"],
                 constraints_applied=constraints,
             )
+        if event_risk_action == "veto":
+            return _RiskDecisionPayload.reject(
+                reasons=["event_risk_veto"],
+                constraints_applied=constraints,
+            )
+        if event_risk_action == "no_trade":
+            return _RiskDecisionPayload.reject(
+                reasons=["event_risk_no_trade"],
+                constraints_applied=constraints,
+            )
         if (
             self._policy.max_source_divergence_pct is not None
             and context.source_divergence_pct is not None
@@ -271,15 +313,23 @@ class RiskManager:
         requested_cash = Decimal(intent.cash_amount)
         approved_cash = requested_cash
         reasons = ["risk_approved"]
+        if event_risk_action == "reduce_risk":
+            approved_cash = (requested_cash * self._policy.event_risk_reduction_factor).quantize(
+                _MONEY_QUANTUM,
+                rounding=ROUND_DOWN,
+            )
+            reasons = ["reduced:event_risk"]
         if requested_cash > self._policy.max_order_cash:
-            approved_cash = self._policy.max_order_cash
-            reasons = ["reduced:max_order_cash"]
+            approved_cash = min(approved_cash, self._policy.max_order_cash)
+            if reasons == ["risk_approved"]:
+                reasons = ["reduced:max_order_cash"]
 
         position_room = self._policy.max_position_cash - Decimal(str(context.current_position_cash))
         constraints["position_room_cash"] = str(position_room)
         if position_room < approved_cash:
             approved_cash = max(position_room, Decimal("0"))
-            reasons = ["reduced:max_position_cash"]
+            if reasons == ["risk_approved"]:
+                reasons = ["reduced:max_position_cash"]
 
         if wallet.available_amount < approved_cash:
             return _RiskDecisionPayload.reject(
@@ -394,6 +444,41 @@ class RiskManager:
         ):
             missing.append("source_divergence_pct")
         return missing
+
+    def _event_risk_action(
+        self,
+        context: RiskContext,
+        constraints: dict[str, object],
+    ) -> str | None:
+        event_risk = context.event_risk
+        if event_risk is None:
+            constraints["event_risk_status"] = "not_provided"
+            return None
+
+        event_payload: dict[str, object] = {
+            "snapshot_id": str(event_risk.snapshot_id) if event_risk.snapshot_id else None,
+            "action_recommendation": event_risk.action_recommendation,
+            "risk_level": event_risk.risk_level,
+            "confidence": str(event_risk.confidence),
+            "affected_assets": list(event_risk.affected_assets),
+            "interpreted_at": _aware_datetime(event_risk.interpreted_at).isoformat(),
+            "expires_at": _aware_datetime(event_risk.expires_at).isoformat(),
+            "min_confidence": str(self._policy.min_event_risk_confidence),
+            "reduction_factor": str(self._policy.event_risk_reduction_factor),
+        }
+        constraints["event_risk"] = event_payload
+        if not event_risk.is_active_at(context.evaluated_at):
+            constraints["event_risk_status"] = "ignored_stale"
+            return None
+        if event_risk.confidence < self._policy.min_event_risk_confidence:
+            constraints["event_risk_status"] = "ignored_low_confidence"
+            return None
+        if event_risk.action_recommendation in {"veto", "no_trade", "reduce_risk"}:
+            constraints["event_risk_status"] = "applied"
+            return event_risk.action_recommendation
+
+        constraints["event_risk_status"] = "monitored"
+        return None
 
 
 @dataclass(frozen=True)

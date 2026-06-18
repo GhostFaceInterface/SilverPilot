@@ -676,9 +676,20 @@ real-money execution.
 ### Phase 12: News/Hermes risk module
 
 Goal: add structured event-risk context.
-Deliverables: news sources, interpreter, Hermes JSON schema.
-Acceptance: stale news ignored; risk flags can reduce or veto only through RiskManager.
-Do not include: direct agent trading.
+Status: implemented as structured news/event-risk context for RiskManager.
+Deliverables: `news_sources`, `news_events`, and `event_risk_snapshots`
+schema; `src/silverpilot/app/news` with source definitions, normalized event
+payloads, deterministic `NewsInterpreter`, Hermes risk JSON output, and
+idempotent persistence through `NewsRiskRepository`; `RiskManager` accepts
+optional event-risk context and applies veto, no-trade, or risk reduction only
+inside the persisted risk decision.
+Acceptance: stale news returns no event-risk snapshot; news cannot be used
+before it is published/fetched/interpreted; stale or low-confidence event-risk
+context is ignored by RiskManager with an audit trail; active high-confidence
+event-risk can reject or reduce only through RiskManager and never creates
+orders, trades, positions, ledger entries, or strategy signals by itself.
+Do not include: direct agent trading, live news fetching, LLM-owned trading
+claims, Telegram commands, dashboard behavior, ML, or real-money execution.
 
 ### Phase 13: Reporting dashboard data
 
