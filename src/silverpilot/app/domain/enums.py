@@ -14,3 +14,12 @@ class BankStatus(StrEnum):
 class InstrumentType(StrEnum):
     REFERENCE = "reference"
     EXECUTION = "execution"
+
+
+class MarketRegime(StrEnum):
+    TREND_UP = "trend_up"
+    TREND_DOWN = "trend_down"
+    RANGE = "range"
+    HIGH_VOLATILITY = "high_volatility"
+    LOW_VOLATILITY = "low_volatility"
+    NO_TRADE = "no_trade"

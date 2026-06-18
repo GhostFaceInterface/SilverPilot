@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from silverpilot.app.domain.enums import AccountStatus, BankStatus, InstrumentType
+from silverpilot.app.domain.enums import AccountStatus, BankStatus, InstrumentType, MarketRegime
 from silverpilot.app.domain.value_objects import Money, parse_decimal
 
 
@@ -218,6 +218,48 @@ class IndicatorSnapshot(DomainModel):
             raise ValueError("timeframe is required")
         if self.source_bar_end_at > self.calculated_at:
             raise ValueError("source_bar_end_at cannot be after calculated_at")
+        return self
+
+
+class MarketRegimeSnapshot(DomainModel):
+    id: UUID
+    instrument_type: InstrumentType
+    instrument_id: UUID
+    source: str
+    timeframe: str
+    regime: MarketRegime
+    confidence: Decimal
+    evidence: dict[str, Any]
+    config_version: str
+    starts_at: datetime
+    confirmed_at: datetime
+    source_bar_end_at: datetime
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def validate_confidence(cls, value: Any) -> Decimal:
+        parsed = parse_decimal(value)
+        if parsed < Decimal("0") or parsed > Decimal("1"):
+            raise ValueError("confidence must be between 0 and 1")
+        return parsed
+
+    @field_validator("starts_at", "confirmed_at", "source_bar_end_at")
+    @classmethod
+    def validate_regime_datetime(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_regime_snapshot(self) -> "MarketRegimeSnapshot":
+        if not self.source.strip():
+            raise ValueError("source is required")
+        if not self.timeframe.strip():
+            raise ValueError("timeframe is required")
+        if not self.config_version.strip():
+            raise ValueError("config_version is required")
+        if self.source_bar_end_at > self.confirmed_at:
+            raise ValueError("source_bar_end_at cannot be after confirmed_at")
+        if self.starts_at > self.confirmed_at:
+            raise ValueError("starts_at cannot be after confirmed_at")
         return self
 
 

@@ -423,3 +423,55 @@ class IndicatorSnapshotModel(Base, TimestampMixin):
             "source_bar_end_at",
         ),
     )
+
+
+class MarketRegimeSnapshotModel(Base, TimestampMixin):
+    __tablename__ = "market_regime_snapshots"
+
+    id: Mapped[UUID] = uuid_pk()
+    instrument_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    instrument_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    regime: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    evidence: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    config_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    starts_at: Mapped[datetime] = utc_datetime()
+    confirmed_at: Mapped[datetime] = utc_datetime()
+    source_bar_end_at: Mapped[datetime] = utc_datetime()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_type",
+            "instrument_id",
+            "source",
+            "timeframe",
+            "source_bar_end_at",
+            "config_version",
+        ),
+        CheckConstraint(
+            "instrument_type IN ('reference', 'execution')",
+            name="market_regime_instrument_type_valid",
+        ),
+        CheckConstraint(
+            "regime IN ('trend_up', 'trend_down', 'range', 'high_volatility', "
+            "'low_volatility', 'no_trade')",
+            name="market_regime_value_valid",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="regime_confidence_range"),
+        CheckConstraint("confirmed_at >= starts_at", name="regime_confirmed_gte_starts"),
+        CheckConstraint(
+            "confirmed_at >= source_bar_end_at",
+            name="regime_confirmed_gte_source_bar_end",
+        ),
+        Index(
+            "ix_market_regime_snapshots_lookup",
+            "instrument_type",
+            "instrument_id",
+            "timeframe",
+            "source_bar_end_at",
+        ),
+        Index("ix_market_regime_snapshots_confirmed", "confirmed_at"),
+        Index("ix_market_regime_snapshots_regime", "regime"),
+    )

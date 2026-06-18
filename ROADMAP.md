@@ -569,6 +569,15 @@ Deliverables: regime service and snapshots.
 Acceptance: trend/range/high-vol/no-trade cases tested.
 Do not include: ML classifier.
 
+Status as of 2026-06-18: completed for the Phase 5 rule-based detector slice.
+`RegimeDetector` classifies TREND_UP, TREND_DOWN, RANGE, HIGH_VOLATILITY,
+LOW_VOLATILITY, and NO_TRADE from closed bars and Phase 4 indicator snapshots.
+It persists explainable `market_regime_snapshots` with config version,
+confidence, evidence JSON, source bar end, start, and confirmation timestamps.
+Stale, missing, or insufficient data produces NO_TRADE. Regime transitions use
+tested hysteresis and cooldown rules. Phase 5 does not emit trade intents,
+orders, risk decisions, broker actions, ML classifications, or API responses.
+
 ### Phase 6: One simple strategy
 
 Goal: produce TradeIntent from one strategy.

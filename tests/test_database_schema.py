@@ -19,6 +19,7 @@ from silverpilot.app.db.models import (
     ExecutionVenueModel,
     IndicatorSnapshotModel,
     MarketBarModel,
+    MarketRegimeSnapshotModel,
     MetalModel,
     UnitModel,
     UserModel,
@@ -35,6 +36,7 @@ CORE_TABLES = {
     "instrument_mappings",
     "indicator_snapshots",
     "market_bars",
+    "market_regime_snapshots",
     "metals",
     "price_quotes",
     "reference_market_instruments",
@@ -234,6 +236,47 @@ def test_indicator_snapshot_unique_cache_key(engine: Engine) -> None:
         parameters={"period": 14},
         value=Decimal("42.2"),
         calculated_at=source_bar_end_at,
+        source_bar_end_at=source_bar_end_at,
+        created_at=source_bar_end_at,
+    )
+
+    with Session(engine) as session:
+        session.add_all([first, duplicate])
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_market_regime_snapshot_unique_cache_key(engine: Engine) -> None:
+    source_bar_end_at = datetime(2026, 6, 17, 13, 0, tzinfo=UTC)
+    instrument_id = uuid4()
+    first = MarketRegimeSnapshotModel(
+        id=uuid4(),
+        instrument_type="reference",
+        instrument_id=instrument_id,
+        source="fixture",
+        timeframe="1h",
+        regime="trend_up",
+        confidence=Decimal("0.8500"),
+        evidence={"candidate_regime": "trend_up"},
+        config_version="rule-v1",
+        starts_at=source_bar_end_at,
+        confirmed_at=source_bar_end_at,
+        source_bar_end_at=source_bar_end_at,
+        created_at=source_bar_end_at,
+    )
+    duplicate = MarketRegimeSnapshotModel(
+        id=uuid4(),
+        instrument_type="reference",
+        instrument_id=instrument_id,
+        source="fixture",
+        timeframe="1h",
+        regime="trend_up",
+        confidence=Decimal("0.8500"),
+        evidence={"candidate_regime": "trend_up"},
+        config_version="rule-v1",
+        starts_at=source_bar_end_at,
+        confirmed_at=source_bar_end_at,
         source_bar_end_at=source_bar_end_at,
         created_at=source_bar_end_at,
     )

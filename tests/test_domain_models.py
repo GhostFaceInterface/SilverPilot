@@ -10,13 +10,14 @@ from silverpilot.app.domain import (
     Currency,
     IndicatorSnapshot,
     MarketBar,
+    MarketRegimeSnapshot,
     Money,
     PriceQuote,
     Quantity,
     Unit,
     VirtualAccount,
 )
-from silverpilot.app.domain.enums import InstrumentType
+from silverpilot.app.domain.enums import InstrumentType, MarketRegime
 
 
 def test_money_uses_decimal_and_rejects_float() -> None:
@@ -182,6 +183,43 @@ def test_indicator_snapshot_timestamp_validation() -> None:
             value="42.125",
             calculated_at=source_bar_end_at,
             source_bar_end_at=source_bar_end_at + timedelta(seconds=1),
+        )
+
+
+def test_market_regime_snapshot_validation() -> None:
+    source_bar_end_at = datetime(2026, 6, 17, 11, 0, tzinfo=UTC)
+    snapshot = MarketRegimeSnapshot(
+        id=uuid4(),
+        instrument_type=InstrumentType.REFERENCE,
+        instrument_id=uuid4(),
+        source="reference-fixture",
+        timeframe="1h",
+        regime=MarketRegime.TREND_UP,
+        confidence="0.85",
+        evidence={"candidate_regime": "trend_up"},
+        config_version="rule-v1",
+        starts_at=source_bar_end_at,
+        confirmed_at=source_bar_end_at + timedelta(seconds=1),
+        source_bar_end_at=source_bar_end_at,
+    )
+
+    assert snapshot.confidence == Decimal("0.85")
+    assert snapshot.regime == MarketRegime.TREND_UP
+
+    with pytest.raises(ValidationError):
+        MarketRegimeSnapshot(
+            id=uuid4(),
+            instrument_type=InstrumentType.REFERENCE,
+            instrument_id=uuid4(),
+            source="reference-fixture",
+            timeframe="1h",
+            regime=MarketRegime.TREND_UP,
+            confidence="1.25",
+            evidence={},
+            config_version="rule-v1",
+            starts_at=source_bar_end_at,
+            confirmed_at=source_bar_end_at,
+            source_bar_end_at=source_bar_end_at,
         )
 
 
