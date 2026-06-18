@@ -9,12 +9,23 @@ Do not include real trading.
 
 ## Current Evidence
 
-Phase 8 has not started. It depends on Phase 7 approving risk decisions, Phase 3
-quotes, and Phase 1 account, wallet, and instrument schema.
+Phase 8 is implemented in the backend service layer.
+
+- `src/silverpilot/app/paper_trading/service.py` adds `PaperBroker`,
+  `PaperOrderRequest`, `PaperCostModel`, and append-only `LedgerService`.
+- `src/silverpilot/app/db/models.py` adds `PaperOrderModel`,
+  `PaperTradeModel`, `PositionModel`, and `LedgerEntryModel`.
+- `migrations/versions/20260618_0007_paper_trading_ledger.py` adds the Phase 8
+  tables, indexes, constraints, and downgrade path.
+- `tests/test_paper_trading.py` covers buy, sell, same-quote loss,
+  idempotency, risk approval refusal, insufficient cash/position refusal, and
+  append-only ledger behavior.
+- `tests/test_database_schema.py` verifies schema presence and one order per
+  risk decision.
 
 ## Required Interfaces And Schema
 
-Add:
+Added:
 
 - `paper_orders`: account, intent, risk decision, side, requested quantity,
   approved quantity, status, created_at.
@@ -24,7 +35,7 @@ Add:
 - `ledger_entries`: immutable account journal entries with currency, amount,
   entry type, reference type/id, and created_at.
 
-Add:
+Added:
 
 - `PaperBroker.execute(order, quote) -> PaperTradeDTO`
 - `LedgerService.append(entries)`, append-only only.
@@ -65,7 +76,7 @@ posting.
 
 ## Done Gate
 
-Approved paper orders execute through one broker transaction, ledger and
+Approved paper orders execute through the broker session transaction, ledger and
 positions balance, same-quote round trips lose money after spread/costs, and no
 real bank or real-money execution path exists.
 

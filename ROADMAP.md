@@ -619,9 +619,15 @@ entries, API responses, ML, Hermes, Telegram, or real-money behavior.
 ### Phase 8: Paper broker and ledger
 
 Goal: execute approved orders realistically and account for them.
-Deliverables: paper orders, trades, positions, ledger entries.
-Acceptance: buy then sell at same quote loses money after costs; ledger balances.
-Do not include: real trading.
+Status: implemented in the backend service layer.
+Deliverables: `paper_orders`, `paper_trades`, `positions`, and immutable
+`ledger_entries` with `PaperBroker` and `LedgerService`.
+Acceptance: buy uses the bank sell price, sell uses the bank buy price, buy then
+sell at the same quote loses money after spread and configured costs, repeated
+execution of the same risk decision is idempotent, and rejected/insufficient
+execution attempts do not leave partial orders, trades, or ledger entries.
+Do not include: real trading, bank automation, API endpoints, dashboard, ML,
+Hermes, Telegram, or backtest replay.
 
 ### Phase 9: Backtest engine
 

@@ -12,9 +12,13 @@ from silverpilot.app.db.models import (
     CurrencyModel,
     ExecutionVenueModel,
     IndicatorSnapshotModel,
+    LedgerEntryModel,
     MarketBarModel,
     MarketRegimeSnapshotModel,
     MetalModel,
+    PaperOrderModel,
+    PaperTradeModel,
+    PositionModel,
     StrategyModel,
     StrategyRunModel,
     TradeIntentModel,
@@ -269,10 +273,10 @@ def test_strategy_engine_persists_runs_without_execution_tables(engine: Engine) 
         intent = session.scalar(select(TradeIntentModel))
         assert intent is not None
         assert intent.side == "buy"
-        assert "paper_orders" not in Base.metadata.tables
-        assert "paper_trades" not in Base.metadata.tables
-        assert "positions" not in Base.metadata.tables
-        assert "ledger_entries" not in Base.metadata.tables
+        assert session.scalar(select(PaperOrderModel)) is None
+        assert session.scalar(select(PaperTradeModel)) is None
+        assert session.scalar(select(PositionModel)) is None
+        assert session.scalar(select(LedgerEntryModel)) is None
 
 
 def _add_account(session: Session) -> UUID:

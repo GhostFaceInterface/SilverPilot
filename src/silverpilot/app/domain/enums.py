@@ -42,3 +42,14 @@ class RiskDecisionOutcome(StrEnum):
     APPROVE = "approve"
     REDUCE = "reduce"
     REJECT = "reject"
+
+
+class PaperOrderSide(StrEnum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class PaperOrderStatus(StrEnum):
+    PENDING = "pending"
+    EXECUTED = "executed"
+    REJECTED = "rejected"

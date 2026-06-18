@@ -9,9 +9,13 @@ from silverpilot.app.domain import (
     BankInstrument,
     Currency,
     IndicatorSnapshot,
+    LedgerEntry,
     MarketBar,
     MarketRegimeSnapshot,
     Money,
+    PaperOrder,
+    PaperTrade,
+    Position,
     PriceQuote,
     Quantity,
     RiskDecision,
@@ -24,6 +28,8 @@ from silverpilot.app.domain import (
 from silverpilot.app.domain.enums import (
     InstrumentType,
     MarketRegime,
+    PaperOrderSide,
+    PaperOrderStatus,
     RiskDecisionOutcome,
     StrategyRunStatus,
     TradeIntentSide,
@@ -318,6 +324,77 @@ def test_risk_decision_validation() -> None:
             reasons=["risk_approved"],
             constraints_applied={},
             evaluated_at=evaluated_at,
+        )
+
+
+def test_paper_trading_domain_models_validation() -> None:
+    executed_at = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+    order = PaperOrder(
+        id=uuid4(),
+        account_id=uuid4(),
+        trade_intent_id=uuid4(),
+        risk_decision_id=uuid4(),
+        execution_instrument_id=uuid4(),
+        bank_instrument_id=uuid4(),
+        side=PaperOrderSide.BUY,
+        requested_quantity="10",
+        approved_quantity="10",
+        status=PaperOrderStatus.EXECUTED,
+    )
+    trade = PaperTrade(
+        id=uuid4(),
+        order_id=order.id,
+        account_id=order.account_id,
+        execution_instrument_id=order.execution_instrument_id,
+        bank_instrument_id=order.bank_instrument_id,
+        quote_id=uuid4(),
+        side=PaperOrderSide.BUY,
+        quantity="10",
+        execution_price="50",
+        gross_cash_amount="500",
+        fees="0.5",
+        taxes="0",
+        spread_cost="10",
+        net_cash_amount="500.5",
+        realized_pnl="0",
+        executed_at=executed_at,
+    )
+    position = Position(
+        id=uuid4(),
+        account_id=order.account_id,
+        bank_instrument_id=order.bank_instrument_id,
+        quantity="10",
+        average_cost="50.05",
+        realized_pnl="0",
+    )
+    ledger = LedgerEntry(
+        id=uuid4(),
+        account_id=order.account_id,
+        currency_id=uuid4(),
+        amount="-500.5",
+        entry_type="paper_buy_cash",
+        reference_type="paper_trade",
+        reference_id=trade.id,
+        metadata_json={"order_id": str(order.id)},
+    )
+
+    assert order.side == PaperOrderSide.BUY
+    assert trade.net_cash_amount == Decimal("500.5")
+    assert position.average_cost == Decimal("50.05")
+    assert ledger.amount == Decimal("-500.5")
+
+    with pytest.raises(ValidationError):
+        PaperOrder(
+            id=uuid4(),
+            account_id=uuid4(),
+            trade_intent_id=uuid4(),
+            risk_decision_id=uuid4(),
+            execution_instrument_id=uuid4(),
+            bank_instrument_id=uuid4(),
+            side=PaperOrderSide.SELL,
+            requested_quantity="0",
+            approved_quantity="10",
+            status=PaperOrderStatus.PENDING,
         )
 
 

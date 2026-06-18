@@ -113,7 +113,7 @@ class RiskManager:
             "execution_instrument_id": (
                 execution.execution_instrument.id
                 if execution.execution_instrument is not None
-                else context.execution_instrument_id
+                else None
             ),
             "quote_id": quote.id if quote is not None else None,
             "decision": decision_payload.outcome.value,

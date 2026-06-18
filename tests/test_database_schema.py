@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -21,6 +21,7 @@ from silverpilot.app.db.models import (
     MarketBarModel,
     MarketRegimeSnapshotModel,
     MetalModel,
+    PaperOrderModel,
     RiskDecisionModel,
     StrategyModel,
     StrategyRunModel,
@@ -42,7 +43,11 @@ CORE_TABLES = {
     "market_bars",
     "market_regime_snapshots",
     "metals",
+    "ledger_entries",
+    "paper_orders",
+    "paper_trades",
     "price_quotes",
+    "positions",
     "reference_market_instruments",
     "risk_decisions",
     "strategies",
@@ -374,6 +379,94 @@ def test_risk_decision_stores_execution_instrument_reference(engine: Engine) -> 
     assert "execution_instrument_id" in foreign_key_columns
 
 
+def test_paper_trading_schema_contains_execution_and_ledger_tables(engine: Engine) -> None:
+    inspector = inspect(engine)
+    assert {
+        "paper_orders",
+        "paper_trades",
+        "positions",
+        "ledger_entries",
+    }.issubset(set(inspector.get_table_names()))
+    paper_order_columns = {column["name"] for column in inspector.get_columns("paper_orders")}
+    paper_order_indexes = {index["name"] for index in inspector.get_indexes("paper_orders")}
+    ledger_indexes = {index["name"] for index in inspector.get_indexes("ledger_entries")}
+
+    assert "risk_decision_id" in paper_order_columns
+    assert "approved_quantity" in paper_order_columns
+    assert "ix_paper_orders_risk_decision" in paper_order_indexes
+    assert "ix_ledger_entries_reference" in ledger_indexes
+
+
+def test_paper_order_unique_per_risk_decision(engine: Engine) -> None:
+    created_at = now()
+    with Session(engine) as session:
+        account, strategy_run = _seed_account_and_strategy_run(session, created_at=created_at)
+        intent = strategy_run.trade_intents[0]
+        decision = RiskDecisionModel(
+            id=uuid4(),
+            trade_intent_id=intent.id,
+            execution_instrument_id=account.allowed_instruments[0].execution_instrument_id,
+            decision="approve",
+            requested_cash_amount=Decimal("500"),
+            approved_cash_amount=Decimal("500"),
+            approved_quantity=Decimal("10"),
+            policy_version="risk-v1",
+            reasons=["risk_approved"],
+            constraints_applied={},
+            evaluated_at=created_at,
+            created_at=created_at,
+        )
+        first = _paper_order(
+            account_id=account.id,
+            intent_id=intent.id,
+            risk_decision_id=decision.id,
+            execution_instrument_id=account.allowed_instruments[0].execution_instrument_id,
+            bank_instrument_id=account.allowed_instruments[
+                0
+            ].execution_instrument.bank_instrument_id,
+            created_at=created_at,
+        )
+        duplicate = _paper_order(
+            account_id=account.id,
+            intent_id=intent.id,
+            risk_decision_id=decision.id,
+            execution_instrument_id=account.allowed_instruments[0].execution_instrument_id,
+            bank_instrument_id=account.allowed_instruments[
+                0
+            ].execution_instrument.bank_instrument_id,
+            created_at=created_at,
+        )
+        session.add_all([account, decision, first, duplicate])
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def _paper_order(
+    *,
+    account_id: UUID,
+    intent_id: UUID,
+    risk_decision_id: UUID,
+    execution_instrument_id: UUID,
+    bank_instrument_id: UUID | None,
+    created_at: datetime,
+) -> PaperOrderModel:
+    assert bank_instrument_id is not None
+    return PaperOrderModel(
+        id=uuid4(),
+        account_id=account_id,
+        trade_intent_id=intent_id,
+        risk_decision_id=risk_decision_id,
+        execution_instrument_id=execution_instrument_id,
+        bank_instrument_id=bank_instrument_id,
+        side="buy",
+        requested_quantity=Decimal("10"),
+        approved_quantity=Decimal("10"),
+        status="executed",
+        created_at=created_at,
+    )
+
+
 def _seed_account_and_strategy_run(
     session: Session,
     *,
@@ -433,6 +526,37 @@ def _seed_account_and_strategy_run(
         status="active",
         created_at=created_at,
     )
+    bank_instrument = BankInstrumentModel(
+        id=uuid4(),
+        bank=bank,
+        metal=metal,
+        currency=currency,
+        unit=unit,
+        symbol=f"KT-XAG-{uuid4().hex[:6]}",
+        min_trade_amount=Decimal("100"),
+        quantity_precision=4,
+        price_precision=4,
+        status="active",
+        created_at=created_at,
+    )
+    execution_instrument = ExecutionInstrumentModel(
+        id=uuid4(),
+        execution_venue=venue,
+        bank_instrument=bank_instrument,
+        metal=metal,
+        currency=currency,
+        unit=unit,
+        symbol=f"KT-XAG-{uuid4().hex[:6]}",
+        status="active",
+        created_at=created_at,
+    )
+    allowed = VirtualAccountInstrumentModel(
+        id=uuid4(),
+        virtual_account=account,
+        execution_instrument=execution_instrument,
+        status="active",
+        created_at=created_at,
+    )
     strategy = StrategyModel(
         id=uuid4(),
         name="trend_up_pullback",
@@ -469,6 +593,6 @@ def _seed_account_and_strategy_run(
         evidence={},
         created_at=created_at,
     )
-    session.add_all([metal, intent])
+    session.add_all([allowed, intent])
     session.flush()
     return account, run

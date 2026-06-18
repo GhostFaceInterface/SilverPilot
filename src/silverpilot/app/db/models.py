@@ -11,6 +11,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -607,3 +608,139 @@ class RiskDecisionModel(Base, TimestampMixin):
         Index("ix_risk_decisions_decision", "decision"),
         Index("ix_risk_decisions_created_at", "created_at"),
     )
+
+
+class PaperOrderModel(Base, TimestampMixin):
+    __tablename__ = "paper_orders"
+
+    id: Mapped[UUID] = uuid_pk()
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    trade_intent_id: Mapped[UUID] = mapped_column(ForeignKey("trade_intents.id"), nullable=False)
+    risk_decision_id: Mapped[UUID] = mapped_column(ForeignKey("risk_decisions.id"), nullable=False)
+    execution_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("execution_instruments.id"), nullable=False
+    )
+    bank_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("bank_instruments.id"), nullable=False
+    )
+    side: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    approved_quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    account: Mapped[VirtualAccountModel] = relationship()
+    trade_intent: Mapped[TradeIntentModel] = relationship()
+    risk_decision: Mapped[RiskDecisionModel] = relationship()
+    execution_instrument: Mapped[ExecutionInstrumentModel] = relationship()
+    bank_instrument: Mapped[BankInstrumentModel] = relationship()
+    trade: Mapped["PaperTradeModel | None"] = relationship(back_populates="order")
+
+    __table_args__ = (
+        UniqueConstraint("risk_decision_id", name="uq_paper_orders_risk_decision_id"),
+        CheckConstraint("side IN ('buy', 'sell')", name="paper_order_side_valid"),
+        CheckConstraint(
+            "status IN ('pending', 'executed', 'rejected')",
+            name="paper_order_status_valid",
+        ),
+        CheckConstraint("requested_quantity > 0", name="paper_order_requested_quantity_positive"),
+        CheckConstraint("approved_quantity > 0", name="paper_order_approved_quantity_positive"),
+        Index("ix_paper_orders_account_status", "account_id", "status"),
+        Index("ix_paper_orders_risk_decision", "risk_decision_id"),
+    )
+
+
+class PaperTradeModel(Base, TimestampMixin):
+    __tablename__ = "paper_trades"
+
+    id: Mapped[UUID] = uuid_pk()
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("paper_orders.id"), nullable=False)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    execution_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("execution_instruments.id"), nullable=False
+    )
+    bank_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("bank_instruments.id"), nullable=False
+    )
+    quote_id: Mapped[UUID] = mapped_column(ForeignKey("price_quotes.id"), nullable=False)
+    side: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    execution_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    gross_cash_amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    fees: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    taxes: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    spread_cost: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    net_cash_amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    executed_at: Mapped[datetime] = utc_datetime()
+
+    order: Mapped[PaperOrderModel] = relationship(back_populates="trade")
+    account: Mapped[VirtualAccountModel] = relationship()
+    execution_instrument: Mapped[ExecutionInstrumentModel] = relationship()
+    bank_instrument: Mapped[BankInstrumentModel] = relationship()
+    quote: Mapped[PriceQuoteModel] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_paper_trades_order_id"),
+        CheckConstraint("side IN ('buy', 'sell')", name="paper_trade_side_valid"),
+        CheckConstraint("quantity > 0", name="paper_trade_quantity_positive"),
+        CheckConstraint("execution_price > 0", name="paper_trade_execution_price_positive"),
+        CheckConstraint("gross_cash_amount >= 0", name="paper_trade_gross_non_negative"),
+        CheckConstraint("fees >= 0", name="paper_trade_fees_non_negative"),
+        CheckConstraint("taxes >= 0", name="paper_trade_taxes_non_negative"),
+        CheckConstraint("spread_cost >= 0", name="paper_trade_spread_cost_non_negative"),
+        Index("ix_paper_trades_account_executed", "account_id", "executed_at"),
+        Index("ix_paper_trades_order", "order_id"),
+    )
+
+
+class PositionModel(Base, TimestampMixin):
+    __tablename__ = "positions"
+
+    id: Mapped[UUID] = uuid_pk()
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    bank_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("bank_instruments.id"), nullable=False
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    average_cost: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+
+    account: Mapped[VirtualAccountModel] = relationship()
+    bank_instrument: Mapped[BankInstrumentModel] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "bank_instrument_id", name="uq_positions_account_bank"),
+        CheckConstraint("quantity >= 0", name="position_quantity_non_negative"),
+        CheckConstraint("average_cost >= 0", name="position_average_cost_non_negative"),
+        Index("ix_positions_account", "account_id"),
+    )
+
+
+class LedgerEntryModel(Base, TimestampMixin):
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[UUID] = uuid_pk()
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    currency_id: Mapped[UUID] = mapped_column(ForeignKey("currencies.id"), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    reference_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    reference_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+
+    account: Mapped[VirtualAccountModel] = relationship()
+    currency: Mapped[CurrencyModel] = relationship()
+
+    __table_args__ = (
+        Index("ix_ledger_entries_account_created", "account_id", "created_at"),
+        Index("ix_ledger_entries_reference", "reference_type", "reference_id"),
+    )
+
+
+@event.listens_for(LedgerEntryModel, "before_update")
+def _prevent_ledger_entry_update(
+    _mapper: object,
+    _connection: object,
+    _target: LedgerEntryModel,
+) -> None:
+    raise ValueError("ledger entries are append-only")

@@ -15,7 +15,11 @@ from silverpilot.app.db.models import (
     ExecutionInstrumentModel,
     ExecutionVenueModel,
     InstrumentMappingModel,
+    LedgerEntryModel,
     MetalModel,
+    PaperOrderModel,
+    PaperTradeModel,
+    PositionModel,
     PriceQuoteModel,
     ReferenceMarketInstrumentModel,
     RiskDecisionModel,
@@ -264,6 +268,23 @@ def test_risk_manager_rejects_invalid_account_bound_execution(
         assert result.decision.reasons == [expected_reason]
 
 
+def test_risk_manager_rejects_unknown_execution_instrument_without_fk_write(
+    engine: Engine,
+) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(session, evaluated_at=evaluated_at)
+
+        result = RiskManager(session=session, policy=_policy()).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(uuid4(), evaluated_at=evaluated_at),
+        )
+
+        assert result.decision.decision == "reject"
+        assert result.decision.execution_instrument_id is None
+        assert result.decision.reasons == ["execution_instrument_not_found"]
+
+
 def test_risk_manager_uses_only_account_bound_quote_not_cheaper_bank(engine: Engine) -> None:
     evaluated_at = _time()
     with Session(engine) as session:
@@ -401,10 +422,10 @@ def test_risk_manager_does_not_create_execution_state(engine: Engine) -> None:
             context=_context(fixture.execution_instrument_id, evaluated_at=evaluated_at),
         )
 
-        assert "paper_orders" not in Base.metadata.tables
-        assert "paper_trades" not in Base.metadata.tables
-        assert "positions" not in Base.metadata.tables
-        assert "ledger_entries" not in Base.metadata.tables
+        assert session.scalar(select(PaperOrderModel)) is None
+        assert session.scalar(select(PaperTradeModel)) is None
+        assert session.scalar(select(PositionModel)) is None
+        assert session.scalar(select(LedgerEntryModel)) is None
 
 
 def _policy() -> RiskPolicy:

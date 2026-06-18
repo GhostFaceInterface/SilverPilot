@@ -10,6 +10,8 @@ from silverpilot.app.domain.enums import (
     BankStatus,
     InstrumentType,
     MarketRegime,
+    PaperOrderSide,
+    PaperOrderStatus,
     RiskDecisionOutcome,
     StrategyRunStatus,
     TradeIntentSide,
@@ -409,6 +411,123 @@ class RiskDecision(DomainModel):
                 raise ValueError("approved decisions require positive approved quantity")
             if self.approved_cash_amount > self.requested_cash_amount:
                 raise ValueError("approved_cash_amount cannot exceed requested_cash_amount")
+        return self
+
+
+class PaperOrder(DomainModel):
+    id: UUID
+    account_id: UUID
+    trade_intent_id: UUID
+    risk_decision_id: UUID
+    execution_instrument_id: UUID
+    bank_instrument_id: UUID
+    side: PaperOrderSide
+    requested_quantity: Decimal
+    approved_quantity: Decimal
+    status: PaperOrderStatus
+
+    @field_validator("requested_quantity", "approved_quantity", mode="before")
+    @classmethod
+    def validate_order_quantity(cls, value: Any) -> Decimal:
+        parsed = parse_decimal(value)
+        if parsed <= Decimal("0"):
+            raise ValueError("paper order quantities must be greater than zero")
+        return parsed
+
+
+class PaperTrade(DomainModel):
+    id: UUID
+    order_id: UUID
+    account_id: UUID
+    execution_instrument_id: UUID
+    bank_instrument_id: UUID
+    quote_id: UUID
+    side: PaperOrderSide
+    quantity: Decimal
+    execution_price: Decimal
+    gross_cash_amount: Decimal
+    fees: Decimal
+    taxes: Decimal
+    spread_cost: Decimal
+    net_cash_amount: Decimal
+    realized_pnl: Decimal
+    executed_at: datetime
+
+    @field_validator(
+        "quantity",
+        "execution_price",
+        "gross_cash_amount",
+        "fees",
+        "taxes",
+        "spread_cost",
+        "net_cash_amount",
+        "realized_pnl",
+        mode="before",
+    )
+    @classmethod
+    def validate_trade_decimal(cls, value: Any) -> Decimal:
+        return parse_decimal(value)
+
+    @field_validator("executed_at")
+    @classmethod
+    def validate_executed_at(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_trade(self) -> "PaperTrade":
+        if self.quantity <= Decimal("0"):
+            raise ValueError("trade quantity must be greater than zero")
+        if self.execution_price <= Decimal("0"):
+            raise ValueError("execution_price must be greater than zero")
+        for field_name in ("gross_cash_amount", "fees", "taxes", "spread_cost"):
+            if getattr(self, field_name) < Decimal("0"):
+                raise ValueError(f"{field_name} cannot be negative")
+        return self
+
+
+class Position(DomainModel):
+    id: UUID
+    account_id: UUID
+    bank_instrument_id: UUID
+    quantity: Decimal
+    average_cost: Decimal
+    realized_pnl: Decimal
+
+    @field_validator("quantity", "average_cost", "realized_pnl", mode="before")
+    @classmethod
+    def validate_position_decimal(cls, value: Any) -> Decimal:
+        return parse_decimal(value)
+
+    @model_validator(mode="after")
+    def validate_position(self) -> "Position":
+        if self.quantity < Decimal("0"):
+            raise ValueError("position quantity cannot be negative")
+        if self.average_cost < Decimal("0"):
+            raise ValueError("position average_cost cannot be negative")
+        return self
+
+
+class LedgerEntry(DomainModel):
+    id: UUID
+    account_id: UUID
+    currency_id: UUID
+    amount: Decimal
+    entry_type: str
+    reference_type: str
+    reference_id: UUID
+    metadata_json: dict[str, Any]
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def validate_entry_amount(cls, value: Any) -> Decimal:
+        return parse_decimal(value)
+
+    @model_validator(mode="after")
+    def validate_entry(self) -> "LedgerEntry":
+        if not self.entry_type.strip():
+            raise ValueError("entry_type is required")
+        if not self.reference_type.strip():
+            raise ValueError("reference_type is required")
         return self
 
 
