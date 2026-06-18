@@ -14,10 +14,12 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+_DEFAULT_ALEMBIC_URL = "sqlite+pysqlite:///./silverpilot.db"
+
 
 def get_url() -> str:
     configured_url = config.get_main_option("sqlalchemy.url")
-    if configured_url:
+    if configured_url and configured_url != _DEFAULT_ALEMBIC_URL:
         return configured_url
     return get_settings().database_url
 
