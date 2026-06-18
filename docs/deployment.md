@@ -30,8 +30,9 @@ bash .codex/scripts/verify-docker.sh --build
 
 ## Compose Services
 
-- `postgres`: Postgres 16 with a named `postgres_data` volume and loopback-bound
-  host port.
+- `postgres`: Postgres 16 with a named `postgres_rebuild_data` volume and
+  loopback-bound host port. The rebuild volume name intentionally avoids
+  mutating legacy pre-reset database volumes during the first deployment.
 - `migrate`: one-shot Alembic migration service. It must complete before `api`
   starts.
 - `api`: FastAPI service exposing `/health` on a loopback-bound host port.
