@@ -645,9 +645,17 @@ Do not include: LLM, ML, REST API, dashboard, or real-money execution.
 ### Phase 10: REST API
 
 Goal: expose backend state as JSON.
-Deliverables: accounts, prices, indicators, regimes, trades, backtests, reports, health endpoints.
-Acceptance: schema tests and service-layer boundaries.
-Do not include: frontend-specific business logic.
+Status: implemented as read-only `/api/v1` endpoints.
+Deliverables: `src/silverpilot/app/api` with response schemas, query service,
+versioned routes, accounts, wallets, banks, execution instruments, latest
+prices, indicators, regimes, trades, positions, backtests, reports, and health
+endpoints.
+Acceptance: API tests cover JSON schemas, pagination metadata, dependency
+overridden test database access, structured not-found responses, and the
+service-layer boundary; routes do not contain financial formulas or direct
+execution logic.
+Do not include: frontend-specific business logic, mutating trading endpoints,
+authentication/authorization, rate limiting, Telegram, or dashboard behavior.
 
 ### Phase 11: Telegram adapter
 

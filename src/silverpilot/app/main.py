@@ -1,5 +1,7 @@
-from fastapi import APIRouter, FastAPI
+from fastapi import FastAPI
 
+from silverpilot.app.api import api_router
+from silverpilot.app.api.schemas import HealthResponse
 from silverpilot.app.core.settings import Settings, get_settings
 
 
@@ -7,17 +9,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     app = FastAPI(title=resolved_settings.app_name)
 
-    @app.get("/health", tags=["health"])
-    def health() -> dict[str, str]:
-        return {"status": "ok", "app": resolved_settings.app_name}
+    @app.get("/health", response_model=HealthResponse, tags=["health"])
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok", app=resolved_settings.app_name)
 
-    api_v1 = APIRouter(prefix="/api/v1")
-
-    @api_v1.get("/health", tags=["health"])
-    def api_health() -> dict[str, str]:
-        return {"status": "ok", "app": resolved_settings.app_name}
-
-    app.include_router(api_v1)
+    app.include_router(api_router)
     return app
 
 

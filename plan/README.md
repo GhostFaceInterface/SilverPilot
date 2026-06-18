@@ -2,10 +2,10 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-9 slice and the detailed execution boundary before Phase 10.
+completed Phase 0-10 slice and the detailed execution boundary before Phase 11.
 
-The current implementation has completed Phase 9: Backtest engine. The next
-implementation boundary is Phase 10: REST API.
+The current implementation has completed Phase 10: REST API. The next
+implementation boundary is Phase 11: Telegram adapter.
 
 ## Phase Status
 
@@ -22,18 +22,18 @@ implementation boundary is Phase 10: REST API.
 | Phase 7: Risk manager | PASS | `phase-07-risk-manager.md` |
 | Phase 8: Paper broker and ledger | PASS | `phase-08-paper-broker-ledger.md` |
 | Phase 9: Backtest engine | PASS | `phase-09-backtest-engine.md` |
+| Phase 10: REST API | PASS | `phase-10-rest-api.md` |
 
-Phase 10 REST API is the next boundary after Phase 9 and is intentionally out
-of scope for this handoff.
+Phase 11 Telegram adapter is the next boundary after Phase 10.
 
 ## Verification Matrix
 
-The Phase 0-9 audit is based on local source evidence and the latest
+The Phase 0-10 audit is based on local source evidence and the latest
 verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 117 passed |
+| `pytest` | 120 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
@@ -56,12 +56,18 @@ clock replay, persisted backtest reports, cost-inclusive PnL, rejected/no-trade
 reporting, portfolio curves, and shared strategy/risk/broker/ledger execution
 against isolated simulated accounts.
 
+Phase 10 added read-only `/api/v1` REST endpoints through
+`src/silverpilot/app/api`, with Pydantic response schemas, pagination metadata,
+structured not-found responses, and an `ApiQueryService` that keeps database
+queries out of route handlers.
+
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
 - Do not add Hermes, ML, Telegram, dashboard, Docker, multi-bank routing, real
-  money execution, or Phase 10 API work inside Phase 5-9.
+  money execution, or mutating remote API behavior inside the Phase 10 read API
+  boundary.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not
   invent a root `/agents` application directory.
