@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "staging", "production"] = "development"
     database_url: str = "sqlite+pysqlite:///./silverpilot.db"
     log_level: str = Field(default="INFO", min_length=1)
+    telegram_enabled: bool = False
+    telegram_bot_token: str | None = None
+    telegram_default_chat_id: str | None = None
+    telegram_api_base_url: str = "https://api.telegram.org"
 
 
 @lru_cache

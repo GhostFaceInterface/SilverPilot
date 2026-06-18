@@ -660,9 +660,18 @@ authentication/authorization, rate limiting, Telegram, or dashboard behavior.
 ### Phase 11: Telegram adapter
 
 Goal: add Telegram as a read/notification client.
-Deliverables: command formatting and notification adapter.
-Acceptance: Telegram can be disabled without breaking core services.
-Do not include: Telegram-owned trading decisions.
+Status: implemented as an optional notification adapter.
+Deliverables: `src/silverpilot/app/notifications` with
+`TelegramCommandFormatter`, `TelegramAdapter`, `NotificationService`, settings
+for disabled-by-default Telegram configuration, and injected transport support
+for testable sends.
+Acceptance: Telegram formatting uses read-only API DTOs; disabled or missing
+Telegram configuration returns skipped delivery results without touching core
+services; enabled sends go through an injected transport; tests verify no
+Telegram-owned trading decisions or required runtime dependency.
+Do not include: Telegram-owned trading decisions, bot polling/webhooks,
+authenticated remote command handling, dashboard behavior, Hermes, ML, or
+real-money execution.
 
 ### Phase 12: News/Hermes risk module
 

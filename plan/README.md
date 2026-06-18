@@ -2,10 +2,10 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-10 slice and the detailed execution boundary before Phase 11.
+completed Phase 0-11 slice and the detailed execution boundary before Phase 12.
 
-The current implementation has completed Phase 10: REST API. The next
-implementation boundary is Phase 11: Telegram adapter.
+The current implementation has completed Phase 11: Telegram adapter. The next
+implementation boundary is Phase 12: News/Hermes risk module.
 
 ## Phase Status
 
@@ -23,17 +23,18 @@ implementation boundary is Phase 11: Telegram adapter.
 | Phase 8: Paper broker and ledger | PASS | `phase-08-paper-broker-ledger.md` |
 | Phase 9: Backtest engine | PASS | `phase-09-backtest-engine.md` |
 | Phase 10: REST API | PASS | `phase-10-rest-api.md` |
+| Phase 11: Telegram adapter | PASS | `phase-11-telegram-adapter.md` |
 
-Phase 11 Telegram adapter is the next boundary after Phase 10.
+Phase 12 News/Hermes risk module is the next boundary after Phase 11.
 
 ## Verification Matrix
 
-The Phase 0-10 audit is based on local source evidence and the latest
+The Phase 0-11 audit is based on local source evidence and the latest
 verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 120 passed |
+| `pytest` | 124 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
@@ -61,13 +62,18 @@ Phase 10 added read-only `/api/v1` REST endpoints through
 structured not-found responses, and an `ApiQueryService` that keeps database
 queries out of route handlers.
 
+Phase 11 added optional Telegram command formatting and notification delivery
+through `src/silverpilot/app/notifications`. Telegram is disabled by default,
+uses injected transport for sends, and consumes API DTOs instead of owning
+trading, risk, broker, backtest, or ledger decisions.
+
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
-- Do not add Hermes, ML, Telegram, dashboard, Docker, multi-bank routing, real
-  money execution, or mutating remote API behavior inside the Phase 10 read API
-  boundary.
+- Do not add Hermes, ML, dashboard, Docker, multi-bank routing, real money
+  execution, Telegram-owned decisions, or mutating remote API behavior inside
+  the Phase 11 notification boundary.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not
   invent a root `/agents` application directory.
