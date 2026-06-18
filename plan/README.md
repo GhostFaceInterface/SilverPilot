@@ -5,9 +5,10 @@ an implementation handoff companion: it records the current audit state for the
 completed Phase 0-14 slice, the deployment-readiness gate before Phase 14, and
 the offline ML experiment boundary.
 
-The current implementation has completed Phase 14: Offline ML edge experiments.
-The next product implementation boundary is a separate post-Phase-14 decision;
-runtime ML remains explicitly out of scope until a future promotion gate.
+The current implementation has completed Phase 14: Offline ML edge experiments
+locally. Phase 15 records the roadmap-code closure audit and separates verified
+Phase 0-14 behavior from Phase 16/17 hardening. Runtime ML remains explicitly
+out of scope until a future promotion gate.
 
 ## Phase Status
 
@@ -30,10 +31,12 @@ runtime ML remains explicitly out of scope until a future promotion gate.
 | Phase 13: Reporting dashboard data | PASS | `phase-13-reporting-dashboard-data.md` |
 | Deployment readiness before Phase 14 | PASS | `deployment-readiness-before-phase-14.md` |
 | Phase 14: Offline ML edge experiments | PASS | `phase-14-ml-experiments.md` |
+| Phase 15: Roadmap-code closure audit | LOCAL PASS / REMOTE CI PENDING | `phase-15-architecture-closure.md` |
 
 Phase 14 is complete as an offline experiment lane only. ML has no runtime
 authority over strategy, risk, broker, API, Telegram, scheduler, collector, or
-order behavior.
+order behavior. Remote CI must pass after the optional-ML mypy fix is pushed
+before making an unqualified Phase 0-14 completion claim.
 
 ## Verification Matrix
 
@@ -48,6 +51,7 @@ evidence and the latest verification run:
 | `mypy` | passed |
 | `bash .codex/scripts/verify-docker.sh` | passed |
 | `bash .codex/scripts/verify-docker.sh --build` | UNKNOWN/SKIPPED: Docker daemon not running |
+| latest GitHub Actions CI on `main` | failed before local optional-ML mypy fix; pending commit/push |
 
 Rerun the same commands after each phase to prove code and documentation remain
 aligned.
@@ -103,6 +107,13 @@ embargo validation, rule-only/dummy/logistic experiment reports, and
 `insufficient_data` handling. It extracts a pure `trend_up_pullback` evaluator
 so offline candidate generation matches strategy behavior without persisting
 strategy runs or trade intents.
+
+Phase 15 added a closure audit that classifies roadmap-only concepts after
+Phase 14. `ExecutionPremiumService`, `ExecutionPremiumSnapshot`, concrete
+database-backed unit conversion, detailed cost breakdowns, and `QuoteUnit` /
+`ExecutionUnit` / `InstrumentUnit` terminology are deferred to Phase 16.
+Offline ML productization gates and runtime-boundary regressions are deferred
+to Phase 17.
 
 ## Scope Rules
 

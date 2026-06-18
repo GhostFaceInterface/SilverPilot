@@ -559,7 +559,7 @@ def _predict(
     if model_family == "logistic_regression":
         if len(set(train_labels)) < 2:
             raise ValueError("logistic_regression requires both classes in the training split")
-        from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
+        from sklearn.linear_model import LogisticRegression
 
         model = LogisticRegression(random_state=random_seed, max_iter=1000)
         model.fit(_matrix(rows, split.train_indices), train_labels)
