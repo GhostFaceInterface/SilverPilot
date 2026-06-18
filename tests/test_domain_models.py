@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from silverpilot.app.domain import (
+    BacktestDatasetSnapshot,
+    BacktestRun,
     BankInstrument,
     Currency,
     IndicatorSnapshot,
@@ -26,6 +28,7 @@ from silverpilot.app.domain import (
     VirtualAccount,
 )
 from silverpilot.app.domain.enums import (
+    BacktestRunStatus,
     InstrumentType,
     MarketRegime,
     PaperOrderSide,
@@ -395,6 +398,53 @@ def test_paper_trading_domain_models_validation() -> None:
             requested_quantity="0",
             approved_quantity="10",
             status=PaperOrderStatus.PENDING,
+        )
+
+
+def test_backtest_domain_models_validation() -> None:
+    started_at = datetime(2026, 6, 18, 1, 0, tzinfo=UTC)
+    completed_at = started_at + timedelta(hours=3)
+    snapshot = BacktestDatasetSnapshot(
+        id=uuid4(),
+        instrument_type=InstrumentType.REFERENCE,
+        instrument_id=uuid4(),
+        execution_instrument_id=uuid4(),
+        source="reference-fixture",
+        timeframe="1h",
+        quote_source="kuveyt_turk_finance_portal",
+        start_at=started_at,
+        end_at=completed_at,
+        input_ranges={"quotes": [{"id": "quote-1"}]},
+        data_hash="abc",
+    )
+    run = BacktestRun(
+        id=uuid4(),
+        dataset_snapshot_id=snapshot.id,
+        account_id=uuid4(),
+        strategy_id=uuid4(),
+        config_hash="def",
+        status=BacktestRunStatus.COMPLETED,
+        started_at=started_at,
+        completed_at=completed_at,
+        report_json={"pnl_after_costs": "10.00"},
+    )
+
+    assert snapshot.data_hash == "abc"
+    assert run.status == BacktestRunStatus.COMPLETED
+
+    with pytest.raises(ValidationError):
+        BacktestDatasetSnapshot(
+            id=uuid4(),
+            instrument_type=InstrumentType.REFERENCE,
+            instrument_id=uuid4(),
+            execution_instrument_id=uuid4(),
+            source="reference-fixture",
+            timeframe="1h",
+            quote_source="kuveyt_turk_finance_portal",
+            start_at=completed_at,
+            end_at=started_at,
+            input_ranges={"quotes": []},
+            data_hash="abc",
         )
 
 

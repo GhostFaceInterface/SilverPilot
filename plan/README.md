@@ -2,9 +2,10 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-8 slice and the detailed execution plan through Phase 9.
+completed Phase 0-9 slice and the detailed execution boundary before Phase 10.
 
-The current implementation is entering Phase 9: Backtest engine.
+The current implementation has completed Phase 9: Backtest engine. The next
+implementation boundary is Phase 10: REST API.
 
 ## Phase Status
 
@@ -20,19 +21,19 @@ The current implementation is entering Phase 9: Backtest engine.
 | Phase 6: One simple strategy | PASS | `phase-06-simple-strategy.md` |
 | Phase 7: Risk manager | PASS | `phase-07-risk-manager.md` |
 | Phase 8: Paper broker and ledger | PASS | `phase-08-paper-broker-ledger.md` |
-| Phase 9: Backtest engine | NEXT | `phase-09-backtest-engine.md` |
+| Phase 9: Backtest engine | PASS | `phase-09-backtest-engine.md` |
 
 Phase 10 REST API is the next boundary after Phase 9 and is intentionally out
 of scope for this handoff.
 
 ## Verification Matrix
 
-The Phase 0-8 audit is based on local source evidence and the latest
+The Phase 0-9 audit is based on local source evidence and the latest
 verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 110 passed |
+| `pytest` | 117 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
@@ -49,6 +50,11 @@ Phase 8 added `PaperBroker`, `LedgerService`, paper orders, paper trades,
 positions, and immutable ledger entries. Buy execution uses bank sell price;
 sell execution uses bank buy price; same-quote round trips lose money after
 spread and configured costs.
+
+Phase 9 added deterministic dataset snapshots, `BacktestEngine`, simulated
+clock replay, persisted backtest reports, cost-inclusive PnL, rejected/no-trade
+reporting, portfolio curves, and shared strategy/risk/broker/ledger execution
+against isolated simulated accounts.
 
 ## Scope Rules
 

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from silverpilot.app.db.base import Base
 from silverpilot.app.db.models import (
+    BacktestDatasetSnapshotModel,
+    BacktestRunModel,
     BankInstrumentModel,
     BankModel,
     CurrencyModel,
@@ -33,6 +35,8 @@ from silverpilot.app.db.models import (
 )
 
 CORE_TABLES = {
+    "backtest_dataset_snapshots",
+    "backtest_runs",
     "banks",
     "bank_instruments",
     "currencies",
@@ -442,6 +446,58 @@ def test_paper_order_unique_per_risk_decision(engine: Engine) -> None:
             session.commit()
 
 
+def test_backtest_schema_contains_dataset_and_report_tables(engine: Engine) -> None:
+    inspector = inspect(engine)
+    assert {"backtest_dataset_snapshots", "backtest_runs"}.issubset(
+        set(inspector.get_table_names())
+    )
+    dataset_columns = {
+        column["name"] for column in inspector.get_columns("backtest_dataset_snapshots")
+    }
+    run_columns = {column["name"] for column in inspector.get_columns("backtest_runs")}
+    dataset_indexes = {
+        index["name"] for index in inspector.get_indexes("backtest_dataset_snapshots")
+    }
+
+    assert "data_hash" in dataset_columns
+    assert "input_ranges" in dataset_columns
+    assert "report_json" in run_columns
+    assert "ix_backtest_dataset_lookup" in dataset_indexes
+
+
+def test_backtest_dataset_hash_is_unique(engine: Engine) -> None:
+    created_at = now()
+    with Session(engine) as session:
+        account, strategy_run = _seed_account_and_strategy_run(session, created_at=created_at)
+        execution_instrument_id = account.allowed_instruments[0].execution_instrument_id
+        first = _backtest_dataset_snapshot(
+            execution_instrument_id=execution_instrument_id,
+            instrument_id=strategy_run.instrument_id,
+            created_at=created_at,
+        )
+        duplicate = _backtest_dataset_snapshot(
+            execution_instrument_id=execution_instrument_id,
+            instrument_id=strategy_run.instrument_id,
+            created_at=created_at,
+        )
+        run = BacktestRunModel(
+            id=uuid4(),
+            dataset_snapshot=first,
+            account_id=account.id,
+            strategy_id=strategy_run.strategy_id,
+            config_hash="abc",
+            status="completed",
+            started_at=created_at,
+            completed_at=created_at,
+            report_json={"status": "completed"},
+            created_at=created_at,
+        )
+        session.add_all([account, first, duplicate, run])
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
 def _paper_order(
     *,
     account_id: UUID,
@@ -463,6 +519,28 @@ def _paper_order(
         requested_quantity=Decimal("10"),
         approved_quantity=Decimal("10"),
         status="executed",
+        created_at=created_at,
+    )
+
+
+def _backtest_dataset_snapshot(
+    *,
+    execution_instrument_id: UUID,
+    instrument_id: UUID,
+    created_at: datetime,
+) -> BacktestDatasetSnapshotModel:
+    return BacktestDatasetSnapshotModel(
+        id=uuid4(),
+        instrument_type="reference",
+        instrument_id=instrument_id,
+        execution_instrument_id=execution_instrument_id,
+        source="reference-fixture",
+        timeframe="1h",
+        quote_source="kuveyt_turk_finance_portal",
+        start_at=created_at,
+        end_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+        input_ranges={"quotes": []},
+        data_hash="abc",
         created_at=created_at,
     )
 

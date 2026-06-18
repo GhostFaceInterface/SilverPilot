@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from silverpilot.app.domain.enums import (
     AccountStatus,
+    BacktestRunStatus,
     BankStatus,
     InstrumentType,
     MarketRegime,
@@ -528,6 +529,70 @@ class LedgerEntry(DomainModel):
             raise ValueError("entry_type is required")
         if not self.reference_type.strip():
             raise ValueError("reference_type is required")
+        return self
+
+
+class BacktestDatasetSnapshot(DomainModel):
+    id: UUID
+    instrument_type: InstrumentType
+    instrument_id: UUID
+    execution_instrument_id: UUID
+    source: str
+    timeframe: str
+    quote_source: str
+    start_at: datetime
+    end_at: datetime
+    input_ranges: dict[str, Any]
+    data_hash: str
+
+    @field_validator("start_at", "end_at")
+    @classmethod
+    def validate_dataset_datetime(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_dataset_snapshot(self) -> "BacktestDatasetSnapshot":
+        if not self.source.strip():
+            raise ValueError("source is required")
+        if not self.timeframe.strip():
+            raise ValueError("timeframe is required")
+        if not self.quote_source.strip():
+            raise ValueError("quote_source is required")
+        if self.start_at >= self.end_at:
+            raise ValueError("start_at must be before end_at")
+        if not self.input_ranges:
+            raise ValueError("input_ranges are required")
+        if not self.data_hash.strip():
+            raise ValueError("data_hash is required")
+        return self
+
+
+class BacktestRun(DomainModel):
+    id: UUID
+    dataset_snapshot_id: UUID
+    account_id: UUID
+    strategy_id: UUID
+    config_hash: str
+    status: BacktestRunStatus
+    started_at: datetime
+    completed_at: datetime | None = None
+    report_json: dict[str, Any]
+
+    @field_validator("started_at", "completed_at")
+    @classmethod
+    def validate_run_datetime(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_backtest_run(self) -> "BacktestRun":
+        if not self.config_hash.strip():
+            raise ValueError("config_hash is required")
+        if self.completed_at is not None and self.completed_at < self.started_at:
+            raise ValueError("completed_at cannot be before started_at")
+        if not self.report_json:
+            raise ValueError("report_json is required")
         return self
 
 

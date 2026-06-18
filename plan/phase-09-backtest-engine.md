@@ -10,19 +10,31 @@ LLM or ML.
 
 ## Current Evidence
 
-Phase 9 has not started. It depends on Phase 5 regimes, Phase 6 strategy
-intents, Phase 7 risk decisions, Phase 8 broker/ledger behavior, and stored
-quotes/bars/indicators from Phase 3-4.
+Phase 9 is implemented in the backend service layer. Evidence:
+
+- `src/silverpilot/app/backtests/service.py`: `BacktestDatasetSnapshotService`,
+  `BacktestEngine`, `BacktestConfig`, `BacktestReportDTO`, rejected/no-trade
+  DTOs, and portfolio curve DTOs.
+- `src/silverpilot/app/db/models.py`: `BacktestDatasetSnapshotModel` and
+  `BacktestRunModel`.
+- `migrations/versions/20260618_0008_backtest_engine.py`: schema migration for
+  dataset snapshots and backtest runs.
+- `tests/test_backtests.py`: deterministic replay, dataset hash drift,
+  cost-inclusive PnL, rejected/no-trade report entries, shared execution table
+  usage, and live-account non-mutation tests.
+- `tests/test_database_schema.py` and `tests/test_domain_models.py`: schema and
+  domain validation coverage.
 
 ## Required Interfaces And Schema
 
-Add:
+Added:
 
 - `backtest_dataset_snapshots`: instrument, source, start/end, input ranges,
-  data hash, created_at.
-- Backtest run/report records as needed for deterministic report output.
+  data hash, and created_at.
+- `backtest_runs`: dataset snapshot reference, simulated account reference,
+  strategy reference, config hash, status, timestamps, and report JSON.
 
-Add:
+Added:
 
 - `SimulatedClock` use throughout replay.
 - `BacktestDatasetSnapshotService` to freeze reproducible input identity.
@@ -52,21 +64,26 @@ emits portfolio value curve plus final metrics.
 
 ## Exact Tests
 
-- Deterministic replay produces identical output for the same dataset snapshot.
-- Dataset hash changes when any input quote/bar/policy changes.
-- No wall-clock usage: simulated clock controls all timestamps.
-- Cost-inclusive PnL differs from naive price-only PnL.
-- Report includes rejected trades and no-trade reasons.
-- Portfolio curve includes cash, position value, total value, unrealized PnL,
-  realized PnL, and drawdown.
-- Backtest uses the same strategy/risk/broker/ledger core as paper trading.
-- Live account tables are not mutated by backtest runs.
+- `test_backtest_engine_replays_deterministically_with_cost_inclusive_report`
+  covers deterministic replay, cost-inclusive PnL, no-trade reasons, drawdown,
+  portfolio curve, and live wallet non-mutation.
+- `test_backtest_dataset_hash_changes_when_quote_input_changes` covers dataset
+  hash drift when input quote data changes.
+- `test_backtest_report_includes_rejected_trades_without_live_account_mutation`
+  covers rejected risk decisions in the report and live wallet non-mutation.
+- `test_backtest_persists_run_report_and_uses_shared_execution_tables` proves
+  strategy runs, intents, risk decisions, paper orders, paper trades, and ledger
+  entries are produced by the shared core.
+- `test_backtest_schema_contains_dataset_and_report_tables`,
+  `test_backtest_dataset_hash_is_unique`, and
+  `test_backtest_domain_models_validation` cover schema/domain shape.
 
 ## Done Gate
 
-Backtests are deterministic, reproducible from stored inputs, cost-inclusive,
-audit rejected/no-trade decisions, produce a portfolio curve and drawdown, and
-reuse live paper-trading core logic without touching live accounts.
+PASS. Backtests are deterministic, reproducible from stored inputs,
+cost-inclusive, audit rejected/no-trade decisions, produce a portfolio curve and
+drawdown, and reuse live paper-trading core logic without touching live
+accounts.
 
 ## Out Of Scope
 

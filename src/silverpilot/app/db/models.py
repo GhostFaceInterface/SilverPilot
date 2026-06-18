@@ -737,6 +737,73 @@ class LedgerEntryModel(Base, TimestampMixin):
     )
 
 
+class BacktestDatasetSnapshotModel(Base, TimestampMixin):
+    __tablename__ = "backtest_dataset_snapshots"
+
+    id: Mapped[UUID] = uuid_pk()
+    instrument_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    instrument_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    execution_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("execution_instruments.id"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    quote_source: Mapped[str] = mapped_column(String(200), nullable=False)
+    start_at: Mapped[datetime] = utc_datetime()
+    end_at: Mapped[datetime] = utc_datetime()
+    input_ranges: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    data_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+
+    execution_instrument: Mapped[ExecutionInstrumentModel] = relationship()
+
+    __table_args__ = (
+        CheckConstraint(
+            "instrument_type IN ('reference', 'execution')",
+            name="backtest_dataset_instrument_type_valid",
+        ),
+        CheckConstraint("end_at > start_at", name="backtest_dataset_window_valid"),
+        Index(
+            "ix_backtest_dataset_lookup",
+            "instrument_type",
+            "instrument_id",
+            "timeframe",
+            "start_at",
+            "end_at",
+        ),
+    )
+
+
+class BacktestRunModel(Base, TimestampMixin):
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[UUID] = uuid_pk()
+    dataset_snapshot_id: Mapped[UUID] = mapped_column(
+        ForeignKey("backtest_dataset_snapshots.id"), nullable=False
+    )
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    strategy_id: Mapped[UUID] = mapped_column(ForeignKey("strategies.id"), nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = utc_datetime()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    report_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+    dataset_snapshot: Mapped[BacktestDatasetSnapshotModel] = relationship()
+    account: Mapped[VirtualAccountModel] = relationship()
+    strategy: Mapped[StrategyModel] = relationship()
+
+    __table_args__ = (
+        CheckConstraint("status IN ('completed', 'failed')", name="backtest_run_status_valid"),
+        CheckConstraint(
+            "completed_at IS NULL OR completed_at >= started_at",
+            name="backtest_completed_gte_started",
+        ),
+        Index("ix_backtest_runs_dataset", "dataset_snapshot_id"),
+        Index("ix_backtest_runs_account", "account_id"),
+        Index("ix_backtest_runs_strategy", "strategy_id"),
+    )
+
+
 @event.listens_for(LedgerEntryModel, "before_update")
 def _prevent_ledger_entry_update(
     _mapper: object,

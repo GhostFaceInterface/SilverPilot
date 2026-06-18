@@ -3,6 +3,8 @@
 from silverpilot.app.domain.clocks import Clock, RealClock, SimulatedClock
 from silverpilot.app.domain.interfaces import PriceProvider, UnitConversionService
 from silverpilot.app.domain.models import (
+    BacktestDatasetSnapshot,
+    BacktestRun,
     Bank,
     BankInstrument,
     Currency,
@@ -28,6 +30,8 @@ from silverpilot.app.domain.value_objects import Money, Quantity
 __all__ = [
     "Bank",
     "BankInstrument",
+    "BacktestDatasetSnapshot",
+    "BacktestRun",
     "Clock",
     "Currency",
     "IndicatorSnapshot",

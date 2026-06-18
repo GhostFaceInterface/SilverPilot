@@ -632,9 +632,15 @@ Hermes, Telegram, or backtest replay.
 ### Phase 9: Backtest engine
 
 Goal: answer the core product question over a date range.
-Deliverables: deterministic replay engine and report output.
-Acceptance: reproducible PnL, drawdown, rejected trades, and portfolio curve.
-Do not include: LLM or ML.
+Status: implemented in the backend service layer.
+Deliverables: `backtest_dataset_snapshots`, `backtest_runs`,
+`BacktestDatasetSnapshotService`, `BacktestEngine`, and report DTOs.
+Acceptance: dataset hashes are reproducible and change when source inputs
+change; replay uses `SimulatedClock`; strategy, risk, paper broker, cost and
+ledger services are reused; live accounts are not mutated; reports include PnL
+before costs, PnL after costs, total costs, rejected trades, no-trade reasons,
+drawdown, and portfolio curve.
+Do not include: LLM, ML, REST API, dashboard, or real-money execution.
 
 ### Phase 10: REST API
 

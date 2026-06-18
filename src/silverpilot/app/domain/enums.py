@@ -53,3 +53,8 @@ class PaperOrderStatus(StrEnum):
     PENDING = "pending"
     EXECUTED = "executed"
     REJECTED = "rejected"
+
+
+class BacktestRunStatus(StrEnum):
+    COMPLETED = "completed"
+    FAILED = "failed"
