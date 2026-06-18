@@ -75,6 +75,43 @@ def test_strategy_engine_generates_long_intent_for_trend_up_pullback(engine: Eng
         assert result.run.evidence["reasons"] == ["trend_up_pullback_confirmed"]
 
 
+def test_strategy_engine_matches_indicators_by_parameters_hash(engine: Engine) -> None:
+    instrument_id = uuid4()
+    source_bar_end_at = _time(2)
+    with Session(engine) as session:
+        account_id = _add_account(session)
+        strategy_id = _add_strategy(session)
+        _add_market_context(
+            session,
+            instrument_id=instrument_id,
+            source_bar_end_at=source_bar_end_at,
+            regime=MarketRegime.TREND_UP,
+        )
+        ema_50 = session.scalar(
+            select(IndicatorSnapshotModel).where(
+                IndicatorSnapshotModel.instrument_id == instrument_id,
+                IndicatorSnapshotModel.indicator_name == "ema",
+                IndicatorSnapshotModel.parameters_hash == hash_parameters({"period": 50}),
+            )
+        )
+        assert ema_50 is not None
+        ema_50.parameters = {"period": "50"}
+
+        result = StrategyEngine(session=session).run(
+            strategy_id=strategy_id,
+            account_id=account_id,
+            instrument_type=InstrumentType.REFERENCE,
+            instrument_id=instrument_id,
+            source=SOURCE,
+            timeframe=TIMEFRAME,
+            source_bar_end_at=source_bar_end_at,
+            run_at=source_bar_end_at + timedelta(minutes=1),
+        )
+
+        assert result.run.status == StrategyRunStatus.INTENT_CREATED.value
+        assert result.run.evidence["reasons"] == ["trend_up_pullback_confirmed"]
+
+
 @pytest.mark.parametrize(
     "regime",
     [
@@ -429,6 +466,7 @@ def _add_indicator(
     indicator_name: str,
     parameters: dict[str, object],
     value: Decimal,
+    stored_parameters: dict[str, object] | None = None,
 ) -> None:
     session.add(
         IndicatorSnapshotModel(
@@ -438,7 +476,7 @@ def _add_indicator(
             timeframe=TIMEFRAME,
             indicator_name=indicator_name,
             parameters_hash=hash_parameters(parameters),
-            parameters=parameters,
+            parameters=stored_parameters or parameters,
             value=value,
             calculated_at=source_bar_end_at,
             source_bar_end_at=source_bar_end_at,

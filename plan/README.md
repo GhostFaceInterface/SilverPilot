@@ -40,6 +40,11 @@ verification run:
 Rerun the same commands after each phase to prove code and documentation remain
 aligned.
 
+Phase 7 hardening before Phase 8 added account-bound execution validation,
+bank precision/minimum sizing, explicit expected-edge context, and
+hash-based indicator snapshot lookup for Phase 5/6 consumers. Re-run the
+verification matrix after this hardening before starting Phase 8.
+
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.

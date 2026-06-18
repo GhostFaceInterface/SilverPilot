@@ -1,19 +1,25 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from silverpilot.app.db.models import (
+    BankInstrumentModel,
+    ExecutionInstrumentModel,
+    InstrumentMappingModel,
     PriceQuoteModel,
     RiskDecisionModel,
     TradeIntentModel,
+    VirtualAccountInstrumentModel,
     VirtualAccountModel,
     WalletModel,
 )
 from silverpilot.app.domain.enums import RiskDecisionOutcome
+
+_MONEY_QUANTUM = Decimal("0.00000001")
 
 
 @dataclass(frozen=True)
@@ -54,13 +60,13 @@ class RiskPolicy:
 
 @dataclass(frozen=True)
 class RiskContext:
-    bank_instrument_id: UUID
+    execution_instrument_id: UUID
     quote_source: str
     evaluated_at: datetime
     current_position_cash: Decimal | None
     current_drawdown: Decimal | None
     current_daily_loss: Decimal | None
-    expected_edge_after_costs: Decimal | None = Decimal("0")
+    expected_edge_after_costs: Decimal | None = None
     source_divergence_pct: Decimal | None = None
     cooldown_active: bool = False
     no_trade_window_active: bool = False
@@ -82,11 +88,17 @@ class RiskManager:
     def evaluate(self, *, trade_intent_id: UUID, context: RiskContext) -> RiskDecisionResult:
         intent = self._load_intent(trade_intent_id)
         account = self._load_account(intent.account_id)
-        quote = self._latest_quote(context)
+        execution = AccountBoundExecutionResolver(session=self._session).resolve(
+            account=account,
+            intent=intent,
+            execution_instrument_id=context.execution_instrument_id,
+        )
+        quote = self._latest_quote(execution.bank_instrument, context)
         wallet = self._base_currency_wallet(account)
 
         decision_payload = self._evaluate_payload(
             intent=intent,
+            execution=execution,
             quote=quote,
             wallet=wallet,
             context=context,
@@ -98,6 +110,11 @@ class RiskManager:
             )
         )
         values = {
+            "execution_instrument_id": (
+                execution.execution_instrument.id
+                if execution.execution_instrument is not None
+                else context.execution_instrument_id
+            ),
             "quote_id": quote.id if quote is not None else None,
             "decision": decision_payload.outcome.value,
             "requested_cash_amount": intent.cash_amount,
@@ -128,6 +145,7 @@ class RiskManager:
         self,
         *,
         intent: TradeIntentModel,
+        execution: "ExecutionResolution",
         quote: PriceQuoteModel | None,
         wallet: WalletModel | None,
         context: RiskContext,
@@ -141,6 +159,7 @@ class RiskManager:
             "max_drawdown": str(self._policy.max_drawdown),
             "max_spread_pct": str(self._policy.max_spread_pct),
             "min_quote_freshness_seconds": int(self._policy.min_quote_freshness.total_seconds()),
+            "execution_instrument_id": str(context.execution_instrument_id),
         }
         missing = self._missing_context(context)
         if missing:
@@ -148,6 +167,19 @@ class RiskManager:
                 reasons=[f"missing_risk_context:{','.join(missing)}"],
                 constraints_applied=constraints,
             )
+        if execution.reasons:
+            return _RiskDecisionPayload.reject(
+                reasons=execution.reasons,
+                constraints_applied=constraints,
+            )
+        if execution.bank_instrument is None:
+            return _RiskDecisionPayload.reject(
+                reasons=["missing_bank_instrument"],
+                constraints_applied=constraints,
+            )
+        constraints["bank_instrument_id"] = str(execution.bank_instrument.id)
+        constraints["bank_min_trade_amount"] = str(execution.bank_instrument.min_trade_amount)
+        constraints["bank_quantity_precision"] = execution.bank_instrument.quantity_precision
         if wallet is None:
             return _RiskDecisionPayload.reject(
                 reasons=["missing_base_currency_wallet"],
@@ -259,12 +291,39 @@ class RiskManager:
                 reasons=["approved_size_below_min_order"],
                 constraints_applied=constraints,
             )
+        if approved_cash < Decimal(execution.bank_instrument.min_trade_amount):
+            return _RiskDecisionPayload.reject(
+                reasons=["approved_size_below_bank_min_trade"],
+                constraints_applied=constraints,
+            )
 
-        approved_quantity = approved_cash / Decimal(quote.bank_sell_price)
+        approved_quantity = _quantize_quantity(
+            approved_cash / Decimal(quote.bank_sell_price),
+            execution.bank_instrument.quantity_precision,
+        )
+        approved_cash = (approved_quantity * Decimal(quote.bank_sell_price)).quantize(
+            _MONEY_QUANTUM,
+            rounding=ROUND_DOWN,
+        )
+        if approved_quantity <= Decimal("0"):
+            return _RiskDecisionPayload.reject(
+                reasons=["approved_quantity_below_precision"],
+                constraints_applied=constraints,
+            )
+        if approved_cash < self._policy.min_order_cash:
+            return _RiskDecisionPayload.reject(
+                reasons=["approved_size_below_min_order_after_precision"],
+                constraints_applied=constraints,
+            )
+        if approved_cash < Decimal(execution.bank_instrument.min_trade_amount):
+            return _RiskDecisionPayload.reject(
+                reasons=["approved_size_below_bank_min_trade_after_precision"],
+                constraints_applied=constraints,
+            )
+        if approved_cash < requested_cash and not reasons[0].startswith("reduced"):
+            reasons = ["reduced:quantity_precision"]
         constraints["approved_cash_amount"] = str(approved_cash)
         constraints["approved_quantity"] = str(approved_quantity)
-        if approved_cash < requested_cash and not reasons[0].startswith("reduced"):
-            reasons = ["risk_reduced"]
         outcome = (
             RiskDecisionOutcome.REDUCE
             if approved_cash < requested_cash
@@ -294,11 +353,17 @@ class RiskManager:
             raise ValueError(f"account is not active: {account_id}")
         return account
 
-    def _latest_quote(self, context: RiskContext) -> PriceQuoteModel | None:
+    def _latest_quote(
+        self,
+        bank_instrument: BankInstrumentModel | None,
+        context: RiskContext,
+    ) -> PriceQuoteModel | None:
+        if bank_instrument is None:
+            return None
         return self._session.scalar(
             select(PriceQuoteModel)
             .where(
-                PriceQuoteModel.bank_instrument_id == context.bank_instrument_id,
+                PriceQuoteModel.bank_instrument_id == bank_instrument.id,
                 PriceQuoteModel.source == context.quote_source,
                 PriceQuoteModel.observed_at <= context.evaluated_at,
             )
@@ -332,6 +397,101 @@ class RiskManager:
 
 
 @dataclass(frozen=True)
+class ExecutionResolution:
+    execution_instrument: ExecutionInstrumentModel | None
+    bank_instrument: BankInstrumentModel | None
+    reasons: list[str]
+
+
+class AccountBoundExecutionResolver:
+    """Resolves an intent to the account-bound executable bank instrument."""
+
+    def __init__(self, *, session: Session) -> None:
+        self._session = session
+
+    def resolve(
+        self,
+        *,
+        account: VirtualAccountModel,
+        intent: TradeIntentModel,
+        execution_instrument_id: UUID,
+    ) -> ExecutionResolution:
+        execution_instrument = self._session.get(ExecutionInstrumentModel, execution_instrument_id)
+        if execution_instrument is None:
+            return ExecutionResolution(None, None, ["execution_instrument_not_found"])
+        bank_instrument = execution_instrument.bank_instrument
+        if execution_instrument.status != "active":
+            return ExecutionResolution(
+                execution_instrument,
+                bank_instrument,
+                ["execution_instrument_inactive"],
+            )
+        if execution_instrument.execution_venue_id != account.execution_venue_id:
+            return ExecutionResolution(
+                execution_instrument,
+                bank_instrument,
+                ["execution_instrument_wrong_venue"],
+            )
+        allowed = self._session.scalar(
+            select(VirtualAccountInstrumentModel).where(
+                VirtualAccountInstrumentModel.virtual_account_id == account.id,
+                VirtualAccountInstrumentModel.execution_instrument_id == execution_instrument.id,
+            )
+        )
+        if allowed is None or allowed.status != "active":
+            return ExecutionResolution(
+                execution_instrument,
+                bank_instrument,
+                ["execution_instrument_not_allowed"],
+            )
+        if bank_instrument is None:
+            return ExecutionResolution(execution_instrument, None, ["missing_bank_instrument"])
+        if bank_instrument.status != "active":
+            return ExecutionResolution(
+                execution_instrument,
+                bank_instrument,
+                ["bank_instrument_inactive"],
+            )
+        if (
+            account.execution_venue.bank_id is not None
+            and bank_instrument.bank_id != account.execution_venue.bank_id
+        ):
+            return ExecutionResolution(
+                execution_instrument,
+                bank_instrument,
+                ["bank_instrument_wrong_bank"],
+            )
+
+        strategy_run = intent.strategy_run
+        if strategy_run.instrument_type == "reference":
+            mapping = self._session.scalar(
+                select(InstrumentMappingModel).where(
+                    InstrumentMappingModel.reference_market_instrument_id
+                    == strategy_run.instrument_id,
+                    InstrumentMappingModel.execution_instrument_id == execution_instrument.id,
+                    InstrumentMappingModel.status == "active",
+                )
+            )
+            if mapping is None:
+                return ExecutionResolution(
+                    execution_instrument,
+                    bank_instrument,
+                    ["missing_reference_execution_mapping"],
+                )
+        elif (
+            strategy_run.instrument_type == "execution"
+            and strategy_run.instrument_id != execution_instrument.id
+        ):
+            return ExecutionResolution(
+                execution_instrument,
+                bank_instrument,
+                ["execution_instrument_mismatch"],
+            )
+
+        return ExecutionResolution(execution_instrument, bank_instrument, [])
+
+
+@dataclass(frozen=True)
 class _RiskDecisionPayload:
     outcome: RiskDecisionOutcome
     approved_cash_amount: Decimal | None
@@ -360,6 +520,11 @@ def _spread_pct(quote: PriceQuoteModel) -> Decimal:
     if sell_price <= Decimal("0"):
         return Decimal("1")
     return (Decimal(quote.bank_sell_price) - Decimal(quote.bank_buy_price)) / sell_price
+
+
+def _quantize_quantity(value: Decimal, precision: int) -> Decimal:
+    quantum = Decimal("1").scaleb(-precision)
+    return value.quantize(quantum, rounding=ROUND_DOWN)
 
 
 def _aware_datetime(value: datetime) -> datetime:

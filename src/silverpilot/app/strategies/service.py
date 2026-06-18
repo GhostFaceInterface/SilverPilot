@@ -25,6 +25,7 @@ from silverpilot.app.domain.enums import (
     TradeIntentSide,
     TradeIntentStatus,
 )
+from silverpilot.app.indicators.service import hash_parameters
 
 
 @dataclass(frozen=True)
@@ -348,8 +349,12 @@ def _find_indicator_snapshot(
     indicator_name: str,
     parameters: dict[str, object],
 ) -> IndicatorSnapshotModel | None:
+    parameters_hash = hash_parameters(parameters)
     for snapshot in snapshots:
-        if snapshot.indicator_name == indicator_name and snapshot.parameters == parameters:
+        if (
+            snapshot.indicator_name == indicator_name
+            and snapshot.parameters_hash == parameters_hash
+        ):
             return snapshot
     return None
 

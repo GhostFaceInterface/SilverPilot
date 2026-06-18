@@ -12,16 +12,19 @@ Phase 7 is implemented as of 2026-06-18.
 
 Evidence:
 
-- `src/silverpilot/app/risks/service.py` adds `RiskPolicy`, `RiskContext`, and
-  `RiskManager`.
+- `src/silverpilot/app/risks/service.py` adds `RiskPolicy`, `RiskContext`,
+  `AccountBoundExecutionResolver`, and `RiskManager`.
 - `src/silverpilot/app/db/models.py` includes `risk_decisions`.
 - `migrations/versions/20260618_0005_risk_decisions.py` adds the persisted
   decision table with downgrade support.
+- `migrations/versions/20260618_0006_risk_execution_context.py` adds the
+  persisted resolved execution instrument reference.
 - `tests/test_risks.py` covers approve, reduce, stale quote, spread,
-  insufficient balance, drawdown, missing context, idempotency, and
+  insufficient balance, drawdown, missing context, account-bound execution
+  eligibility, bank precision/minimum sizing, idempotency, and
   no-execution-state boundaries.
 - `tests/test_database_schema.py` validates the table and unique policy
-  decision key.
+  decision key plus the execution instrument FK/index.
 - `tests/test_domain_models.py` validates the `RiskDecision` domain shape.
 
 ## Required Interfaces And Schema
@@ -29,6 +32,7 @@ Evidence:
 Implemented `risk_decisions`:
 
 - `trade_intent_id`
+- `execution_instrument_id`
 - `decision`: approve, reduce, reject
 - `approved_quantity` or approved cash amount
 - `policy_version`
@@ -51,13 +55,19 @@ Implemented a versioned risk policy DTO with:
 Implemented `RiskManager.evaluate(trade_intent_id, context) ->
 RiskDecisionResult`.
 
+Implemented `RiskContext.execution_instrument_id` as the account-bound input;
+the risk manager derives the bank instrument from the allowed execution
+instrument instead of accepting a free-form bank instrument id.
+
 ## Data Flow
 
-For each `TradeIntent`, the risk manager loads the latest matching
-`PriceQuote`, the account base-currency `Wallet`, explicit position exposure,
-drawdown, daily-loss, cooldown/no-trade, source-divergence, and expected-edge
-inputs. It persists exactly one decision per intent and policy version and
-returns approve, reduce, or reject with explicit reasons.
+For each `TradeIntent`, the risk manager resolves the account's active allowed
+`ExecutionInstrument`, validates the reference-to-execution mapping, derives
+the active bank instrument, loads the latest matching `PriceQuote`, the account
+base-currency `Wallet`, explicit position exposure, drawdown, daily-loss,
+cooldown/no-trade, source-divergence, and expected-edge inputs. It persists
+exactly one decision per intent and policy version and returns approve, reduce,
+or reject with explicit reasons.
 
 ## Failure Modes
 
@@ -65,6 +75,9 @@ returns approve, reduce, or reject with explicit reasons.
 - Approving stale quotes or stale regime/indicator data.
 - Ignoring bank spread when estimating affordability or edge.
 - Approving sizes above account, policy, or instrument limits.
+- Using a cheaper quote from another bank or an instrument not allowed by the
+  account.
+- Ignoring bank quantity precision or bank minimum trade amount.
 - Accepting missing drawdown or balance inputs as safe.
 - Mutating wallet, order, trade, position, or ledger state.
 - Persisting decisions without policy version and reasons.
@@ -80,6 +93,12 @@ returns approve, reduce, or reject with explicit reasons.
 - Rejects insufficient balance.
 - Rejects max drawdown breach from explicit drawdown input.
 - Rejects missing required risk context.
+- Rejects missing expected-edge input instead of treating it as zero by
+  default.
+- Rejects inactive/not-allowed execution instruments and missing
+  reference-to-execution mappings.
+- Applies bank quantity precision and bank minimum trade amount.
+- Proves cheaper non-account-bound bank quotes are not selected.
 - Persists policy version, reasons, and constraints applied.
 - Asserts no Phase 8 execution tables are created in Phase 7.
 - PaperBroker refusal without an approving RiskDecision remains a Phase 8

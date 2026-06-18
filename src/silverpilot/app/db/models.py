@@ -569,6 +569,9 @@ class RiskDecisionModel(Base, TimestampMixin):
 
     id: Mapped[UUID] = uuid_pk()
     trade_intent_id: Mapped[UUID] = mapped_column(ForeignKey("trade_intents.id"), nullable=False)
+    execution_instrument_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("execution_instruments.id"), nullable=True
+    )
     quote_id: Mapped[UUID | None] = mapped_column(ForeignKey("price_quotes.id"), nullable=True)
     decision: Mapped[str] = mapped_column(String(16), nullable=False)
     requested_cash_amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
@@ -580,6 +583,7 @@ class RiskDecisionModel(Base, TimestampMixin):
     evaluated_at: Mapped[datetime] = utc_datetime()
 
     trade_intent: Mapped[TradeIntentModel] = relationship(back_populates="risk_decisions")
+    execution_instrument: Mapped[ExecutionInstrumentModel | None] = relationship()
     quote: Mapped[PriceQuoteModel | None] = relationship()
 
     __table_args__ = (
@@ -599,6 +603,7 @@ class RiskDecisionModel(Base, TimestampMixin):
             name="risk_approved_cash_amount_lte_requested",
         ),
         Index("ix_risk_decisions_intent", "trade_intent_id"),
+        Index("ix_risk_decisions_execution_instrument", "execution_instrument_id"),
         Index("ix_risk_decisions_decision", "decision"),
         Index("ix_risk_decisions_created_at", "created_at"),
     )

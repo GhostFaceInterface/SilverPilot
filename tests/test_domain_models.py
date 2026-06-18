@@ -291,6 +291,7 @@ def test_risk_decision_validation() -> None:
     decision = RiskDecision(
         id=uuid4(),
         trade_intent_id=uuid4(),
+        execution_instrument_id=uuid4(),
         decision=RiskDecisionOutcome.APPROVE,
         requested_cash_amount="500",
         approved_cash_amount="500",
@@ -302,6 +303,7 @@ def test_risk_decision_validation() -> None:
     )
 
     assert decision.decision == RiskDecisionOutcome.APPROVE
+    assert decision.execution_instrument_id is not None
     assert decision.approved_cash_amount == Decimal("500")
 
     with pytest.raises(ValidationError):

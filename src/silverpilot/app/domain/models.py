@@ -358,6 +358,7 @@ class TradeIntent(DomainModel):
 class RiskDecision(DomainModel):
     id: UUID
     trade_intent_id: UUID
+    execution_instrument_id: UUID | None = None
     quote_id: UUID | None = None
     decision: RiskDecisionOutcome
     requested_cash_amount: Decimal

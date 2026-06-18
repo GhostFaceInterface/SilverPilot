@@ -359,6 +359,21 @@ def test_risk_decision_unique_policy_version_per_intent(engine: Engine) -> None:
             session.commit()
 
 
+def test_risk_decision_stores_execution_instrument_reference(engine: Engine) -> None:
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("risk_decisions")}
+    indexes = {index["name"] for index in inspector.get_indexes("risk_decisions")}
+    foreign_key_columns = {
+        constrained_column
+        for foreign_key in inspector.get_foreign_keys("risk_decisions")
+        for constrained_column in foreign_key["constrained_columns"]
+    }
+
+    assert "execution_instrument_id" in columns
+    assert "ix_risk_decisions_execution_instrument" in indexes
+    assert "execution_instrument_id" in foreign_key_columns
+
+
 def _seed_account_and_strategy_run(
     session: Session,
     *,
