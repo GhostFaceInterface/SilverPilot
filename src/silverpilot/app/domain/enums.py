@@ -36,3 +36,9 @@ class TradeIntentSide(StrEnum):
 
 class TradeIntentStatus(StrEnum):
     PENDING_RISK = "pending_risk"
+
+
+class RiskDecisionOutcome(StrEnum):
+    APPROVE = "approve"
+    REDUCE = "reduce"
+    REJECT = "reject"

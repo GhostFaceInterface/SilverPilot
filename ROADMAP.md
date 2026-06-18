@@ -603,6 +603,16 @@ Deliverables: risk rules and persisted decisions.
 Acceptance: stale data, spread, drawdown, and max size rejections tested.
 Do not include: bypass paths.
 
+Status as of 2026-06-18: completed for the first deterministic risk slice.
+`RiskManager` evaluates pending `trade_intents` against a versioned
+`RiskPolicy` and explicit `RiskContext`, loads the latest Kuveyt Turk quote and
+base-currency wallet, and persists an explainable `risk_decisions` row. It
+approves, reduces, or rejects based on quote freshness, bank spread, max order
+cash, max position cash, daily loss, drawdown, balance, cooldown/no-trade
+inputs, source divergence input, and expected edge after costs. Phase 7 does
+not create paper orders, trades, positions, ledger entries, API responses, ML,
+Hermes, Telegram, or real-money behavior.
+
 ### Phase 8: Paper broker and ledger
 
 Goal: execute approved orders realistically and account for them.

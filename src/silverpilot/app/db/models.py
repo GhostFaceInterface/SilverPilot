@@ -549,6 +549,7 @@ class TradeIntentModel(Base, TimestampMixin):
 
     account: Mapped[VirtualAccountModel] = relationship()
     strategy_run: Mapped[StrategyRunModel] = relationship(back_populates="trade_intents")
+    risk_decisions: Mapped[list["RiskDecisionModel"]] = relationship(back_populates="trade_intent")
 
     __table_args__ = (
         CheckConstraint("side IN ('buy')", name="trade_intent_side_valid"),
@@ -560,4 +561,44 @@ class TradeIntentModel(Base, TimestampMixin):
         CheckConstraint("quantity IS NULL OR quantity > 0", name="trade_intent_quantity_positive"),
         Index("ix_trade_intents_account_status", "account_id", "status"),
         Index("ix_trade_intents_strategy_run", "strategy_run_id"),
+    )
+
+
+class RiskDecisionModel(Base, TimestampMixin):
+    __tablename__ = "risk_decisions"
+
+    id: Mapped[UUID] = uuid_pk()
+    trade_intent_id: Mapped[UUID] = mapped_column(ForeignKey("trade_intents.id"), nullable=False)
+    quote_id: Mapped[UUID | None] = mapped_column(ForeignKey("price_quotes.id"), nullable=True)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_cash_amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    approved_cash_amount: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    approved_quantity: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    constraints_applied: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    evaluated_at: Mapped[datetime] = utc_datetime()
+
+    trade_intent: Mapped[TradeIntentModel] = relationship(back_populates="risk_decisions")
+    quote: Mapped[PriceQuoteModel | None] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("trade_intent_id", "policy_version"),
+        CheckConstraint("decision IN ('approve', 'reduce', 'reject')", name="risk_decision_valid"),
+        CheckConstraint("requested_cash_amount > 0", name="risk_requested_cash_amount_positive"),
+        CheckConstraint(
+            "approved_cash_amount IS NULL OR approved_cash_amount >= 0",
+            name="risk_approved_cash_amount_non_negative",
+        ),
+        CheckConstraint(
+            "approved_quantity IS NULL OR approved_quantity >= 0",
+            name="risk_approved_quantity_non_negative",
+        ),
+        CheckConstraint(
+            "approved_cash_amount IS NULL OR approved_cash_amount <= requested_cash_amount",
+            name="risk_approved_cash_amount_lte_requested",
+        ),
+        Index("ix_risk_decisions_intent", "trade_intent_id"),
+        Index("ix_risk_decisions_decision", "decision"),
+        Index("ix_risk_decisions_created_at", "created_at"),
     )

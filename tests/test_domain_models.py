@@ -14,6 +14,7 @@ from silverpilot.app.domain import (
     Money,
     PriceQuote,
     Quantity,
+    RiskDecision,
     StrategyDefinition,
     StrategyRun,
     TradeIntent,
@@ -23,6 +24,7 @@ from silverpilot.app.domain import (
 from silverpilot.app.domain.enums import (
     InstrumentType,
     MarketRegime,
+    RiskDecisionOutcome,
     StrategyRunStatus,
     TradeIntentSide,
     TradeIntentStatus,
@@ -281,6 +283,39 @@ def test_strategy_run_and_trade_intent_validation() -> None:
             status=TradeIntentStatus.PENDING_RISK,
             rationale="trend_up_pullback_long",
             evidence={},
+        )
+
+
+def test_risk_decision_validation() -> None:
+    evaluated_at = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+    decision = RiskDecision(
+        id=uuid4(),
+        trade_intent_id=uuid4(),
+        decision=RiskDecisionOutcome.APPROVE,
+        requested_cash_amount="500",
+        approved_cash_amount="500",
+        approved_quantity="10",
+        policy_version="risk-v1",
+        reasons=["risk_approved"],
+        constraints_applied={"spread_pct": "0.02"},
+        evaluated_at=evaluated_at,
+    )
+
+    assert decision.decision == RiskDecisionOutcome.APPROVE
+    assert decision.approved_cash_amount == Decimal("500")
+
+    with pytest.raises(ValidationError):
+        RiskDecision(
+            id=uuid4(),
+            trade_intent_id=uuid4(),
+            decision=RiskDecisionOutcome.APPROVE,
+            requested_cash_amount="500",
+            approved_cash_amount=None,
+            approved_quantity=None,
+            policy_version="risk-v1",
+            reasons=["risk_approved"],
+            constraints_applied={},
+            evaluated_at=evaluated_at,
         )
 
 

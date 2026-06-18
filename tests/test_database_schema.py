@@ -21,7 +21,10 @@ from silverpilot.app.db.models import (
     MarketBarModel,
     MarketRegimeSnapshotModel,
     MetalModel,
+    RiskDecisionModel,
     StrategyModel,
+    StrategyRunModel,
+    TradeIntentModel,
     UnitModel,
     UserModel,
     VirtualAccountInstrumentModel,
@@ -41,6 +44,7 @@ CORE_TABLES = {
     "metals",
     "price_quotes",
     "reference_market_instruments",
+    "risk_decisions",
     "strategies",
     "strategy_runs",
     "trade_intents",
@@ -316,3 +320,140 @@ def test_strategy_definition_unique_version(engine: Engine) -> None:
 
         with pytest.raises(IntegrityError):
             session.commit()
+
+
+def test_risk_decision_unique_policy_version_per_intent(engine: Engine) -> None:
+    created_at = now()
+    with Session(engine) as session:
+        account, strategy_run = _seed_account_and_strategy_run(session, created_at=created_at)
+        intent = strategy_run.trade_intents[0]
+        first = RiskDecisionModel(
+            id=uuid4(),
+            trade_intent_id=intent.id,
+            decision="approve",
+            requested_cash_amount=Decimal("500"),
+            approved_cash_amount=Decimal("500"),
+            approved_quantity=Decimal("10"),
+            policy_version="risk-v1",
+            reasons=["risk_approved"],
+            constraints_applied={},
+            evaluated_at=created_at,
+            created_at=created_at,
+        )
+        duplicate = RiskDecisionModel(
+            id=uuid4(),
+            trade_intent_id=intent.id,
+            decision="reject",
+            requested_cash_amount=Decimal("500"),
+            approved_cash_amount=Decimal("0"),
+            approved_quantity=Decimal("0"),
+            policy_version="risk-v1",
+            reasons=["stale_quote"],
+            constraints_applied={},
+            evaluated_at=created_at,
+            created_at=created_at,
+        )
+        session.add_all([account, first, duplicate])
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def _seed_account_and_strategy_run(
+    session: Session,
+    *,
+    created_at: datetime,
+) -> tuple[VirtualAccountModel, StrategyRunModel]:
+    currency = CurrencyModel(
+        id=uuid4(),
+        code=f"T{uuid4().hex[:2]}",
+        name="Turkish Lira",
+        decimal_places=2,
+        created_at=created_at,
+    )
+    unit = UnitModel(
+        id=uuid4(),
+        code=f"G{uuid4().hex[:4]}",
+        name="Gram",
+        precision=6,
+        created_at=created_at,
+    )
+    metal = MetalModel(
+        id=uuid4(),
+        code=f"X{uuid4().hex[:4]}",
+        name="Silver",
+        default_unit=unit,
+        created_at=created_at,
+    )
+    bank = BankModel(
+        id=uuid4(),
+        code=f"bank_{uuid4().hex[:8]}",
+        name="Kuveyt Turk",
+        country_code="TR",
+        status="active",
+        created_at=created_at,
+    )
+    venue = ExecutionVenueModel(
+        id=uuid4(),
+        venue_type="bank",
+        bank=bank,
+        code=f"venue_{uuid4().hex[:8]}",
+        name="Kuveyt Turk",
+        status="active",
+        created_at=created_at,
+    )
+    user = UserModel(
+        id=uuid4(),
+        email=f"{uuid4().hex[:8]}@example.com",
+        status="active",
+        created_at=created_at,
+    )
+    account = VirtualAccountModel(
+        id=uuid4(),
+        user=user,
+        name="Paper account",
+        base_currency=currency,
+        execution_venue=venue,
+        starting_balance=Decimal("10000"),
+        status="active",
+        created_at=created_at,
+    )
+    strategy = StrategyModel(
+        id=uuid4(),
+        name="trend_up_pullback",
+        version=uuid4().hex[:8],
+        parameters={"cash_amount": "500"},
+        enabled=True,
+        created_at=created_at,
+    )
+    run = StrategyRunModel(
+        id=uuid4(),
+        strategy=strategy,
+        account=account,
+        instrument_type="reference",
+        instrument_id=metal.id,
+        source="reference-fixture",
+        timeframe="1h",
+        source_bar_end_at=created_at,
+        run_at=created_at,
+        input_hash="abc",
+        status="intent_created",
+        evidence={},
+        created_at=created_at,
+    )
+    intent = TradeIntentModel(
+        id=uuid4(),
+        account=account,
+        strategy_run=run,
+        side="buy",
+        cash_amount=Decimal("500"),
+        quantity=None,
+        signal_time=created_at,
+        status="pending_risk",
+        rationale="trend_up_pullback_long",
+        evidence={},
+        created_at=created_at,
+    )
+    session.add_all([metal, intent])
+    session.flush()
+    return account, run

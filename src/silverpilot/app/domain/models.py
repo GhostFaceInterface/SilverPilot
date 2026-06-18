@@ -10,6 +10,7 @@ from silverpilot.app.domain.enums import (
     BankStatus,
     InstrumentType,
     MarketRegime,
+    RiskDecisionOutcome,
     StrategyRunStatus,
     TradeIntentSide,
     TradeIntentStatus,
@@ -351,6 +352,62 @@ class TradeIntent(DomainModel):
     def validate_trade_intent(self) -> "TradeIntent":
         if not self.rationale.strip():
             raise ValueError("rationale is required")
+        return self
+
+
+class RiskDecision(DomainModel):
+    id: UUID
+    trade_intent_id: UUID
+    quote_id: UUID | None = None
+    decision: RiskDecisionOutcome
+    requested_cash_amount: Decimal
+    approved_cash_amount: Decimal | None = None
+    approved_quantity: Decimal | None = None
+    policy_version: str
+    reasons: list[str]
+    constraints_applied: dict[str, Any]
+    evaluated_at: datetime
+
+    @field_validator(
+        "requested_cash_amount",
+        "approved_cash_amount",
+        "approved_quantity",
+        mode="before",
+    )
+    @classmethod
+    def validate_risk_decimal(cls, value: Any) -> Decimal | None:
+        if value is None:
+            return None
+        parsed = parse_decimal(value)
+        if parsed < Decimal("0"):
+            raise ValueError("risk amounts cannot be negative")
+        return parsed
+
+    @field_validator("evaluated_at")
+    @classmethod
+    def validate_evaluated_at(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_risk_decision(self) -> "RiskDecision":
+        if not self.policy_version.strip():
+            raise ValueError("policy_version is required")
+        if not self.reasons:
+            raise ValueError("reasons are required")
+        if self.requested_cash_amount <= Decimal("0"):
+            raise ValueError("requested_cash_amount must be greater than zero")
+        if self.decision == RiskDecisionOutcome.REJECT:
+            if self.approved_cash_amount not in (None, Decimal("0")):
+                raise ValueError("rejected decisions cannot approve cash")
+            if self.approved_quantity not in (None, Decimal("0")):
+                raise ValueError("rejected decisions cannot approve quantity")
+        else:
+            if self.approved_cash_amount is None or self.approved_cash_amount <= Decimal("0"):
+                raise ValueError("approved decisions require positive approved cash")
+            if self.approved_quantity is None or self.approved_quantity <= Decimal("0"):
+                raise ValueError("approved decisions require positive approved quantity")
+            if self.approved_cash_amount > self.requested_cash_amount:
+                raise ValueError("approved_cash_amount cannot exceed requested_cash_amount")
         return self
 
 
