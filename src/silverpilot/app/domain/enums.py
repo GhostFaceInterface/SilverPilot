@@ -23,3 +23,16 @@ class MarketRegime(StrEnum):
     HIGH_VOLATILITY = "high_volatility"
     LOW_VOLATILITY = "low_volatility"
     NO_TRADE = "no_trade"
+
+
+class StrategyRunStatus(StrEnum):
+    INTENT_CREATED = "intent_created"
+    NO_INTENT = "no_intent"
+
+
+class TradeIntentSide(StrEnum):
+    BUY = "buy"
+
+
+class TradeIntentStatus(StrEnum):
+    PENDING_RISK = "pending_risk"

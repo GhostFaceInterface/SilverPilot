@@ -475,3 +475,89 @@ class MarketRegimeSnapshotModel(Base, TimestampMixin):
         Index("ix_market_regime_snapshots_confirmed", "confirmed_at"),
         Index("ix_market_regime_snapshots_regime", "regime"),
     )
+
+
+class StrategyModel(Base, TimestampMixin):
+    __tablename__ = "strategies"
+
+    id: Mapped[UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False)
+    parameters: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+
+    runs: Mapped[list["StrategyRunModel"]] = relationship(back_populates="strategy")
+
+    __table_args__ = (
+        UniqueConstraint("name", "version"),
+        Index("ix_strategies_enabled", "enabled"),
+    )
+
+
+class StrategyRunModel(Base, TimestampMixin):
+    __tablename__ = "strategy_runs"
+
+    id: Mapped[UUID] = uuid_pk()
+    strategy_id: Mapped[UUID] = mapped_column(ForeignKey("strategies.id"), nullable=False)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    instrument_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_bar_end_at: Mapped[datetime] = utc_datetime()
+    run_at: Mapped[datetime] = utc_datetime()
+    regime_snapshot_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("market_regime_snapshots.id"), nullable=True
+    )
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+    strategy: Mapped[StrategyModel] = relationship(back_populates="runs")
+    account: Mapped[VirtualAccountModel] = relationship()
+    regime_snapshot: Mapped[MarketRegimeSnapshotModel | None] = relationship()
+    trade_intents: Mapped[list["TradeIntentModel"]] = relationship(back_populates="strategy_run")
+
+    __table_args__ = (
+        CheckConstraint(
+            "instrument_type IN ('reference', 'execution')",
+            name="strategy_run_instrument_type_valid",
+        ),
+        CheckConstraint(
+            "status IN ('intent_created', 'no_intent')",
+            name="strategy_run_status_valid",
+        ),
+        CheckConstraint("run_at >= source_bar_end_at", name="strategy_run_at_gte_source_bar_end"),
+        Index("ix_strategy_runs_strategy_time", "strategy_id", "run_at"),
+        Index("ix_strategy_runs_account_time", "account_id", "run_at"),
+    )
+
+
+class TradeIntentModel(Base, TimestampMixin):
+    __tablename__ = "trade_intents"
+
+    id: Mapped[UUID] = uuid_pk()
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("virtual_accounts.id"), nullable=False)
+    strategy_run_id: Mapped[UUID] = mapped_column(ForeignKey("strategy_runs.id"), nullable=False)
+    side: Mapped[str] = mapped_column(String(16), nullable=False)
+    cash_amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    signal_time: Mapped[datetime] = utc_datetime()
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    rationale: Mapped[str] = mapped_column(String(500), nullable=False)
+    evidence: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+    account: Mapped[VirtualAccountModel] = relationship()
+    strategy_run: Mapped[StrategyRunModel] = relationship(back_populates="trade_intents")
+
+    __table_args__ = (
+        CheckConstraint("side IN ('buy')", name="trade_intent_side_valid"),
+        CheckConstraint(
+            "status IN ('pending_risk')",
+            name="trade_intent_status_valid",
+        ),
+        CheckConstraint("cash_amount > 0", name="trade_intent_cash_amount_positive"),
+        CheckConstraint("quantity IS NULL OR quantity > 0", name="trade_intent_quantity_positive"),
+        Index("ix_trade_intents_account_status", "account_id", "status"),
+        Index("ix_trade_intents_strategy_run", "strategy_run_id"),
+    )

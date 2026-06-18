@@ -14,10 +14,19 @@ from silverpilot.app.domain import (
     Money,
     PriceQuote,
     Quantity,
+    StrategyDefinition,
+    StrategyRun,
+    TradeIntent,
     Unit,
     VirtualAccount,
 )
-from silverpilot.app.domain.enums import InstrumentType, MarketRegime
+from silverpilot.app.domain.enums import (
+    InstrumentType,
+    MarketRegime,
+    StrategyRunStatus,
+    TradeIntentSide,
+    TradeIntentStatus,
+)
 
 
 def test_money_uses_decimal_and_rejects_float() -> None:
@@ -220,6 +229,58 @@ def test_market_regime_snapshot_validation() -> None:
             starts_at=source_bar_end_at,
             confirmed_at=source_bar_end_at,
             source_bar_end_at=source_bar_end_at,
+        )
+
+
+def test_strategy_run_and_trade_intent_validation() -> None:
+    source_bar_end_at = datetime(2026, 6, 17, 11, 0, tzinfo=UTC)
+    strategy = StrategyDefinition(
+        id=uuid4(),
+        name=" trend_up_pullback ",
+        version="1",
+        parameters={"cash_amount": "1000"},
+    )
+    run = StrategyRun(
+        id=uuid4(),
+        strategy_id=strategy.id,
+        account_id=uuid4(),
+        instrument_type=InstrumentType.REFERENCE,
+        instrument_id=uuid4(),
+        source="reference-fixture",
+        timeframe="1h",
+        source_bar_end_at=source_bar_end_at,
+        run_at=source_bar_end_at + timedelta(minutes=1),
+        input_hash="abc",
+        status=StrategyRunStatus.INTENT_CREATED,
+        evidence={},
+    )
+    intent = TradeIntent(
+        id=uuid4(),
+        account_id=run.account_id,
+        strategy_run_id=run.id,
+        side=TradeIntentSide.BUY,
+        cash_amount="1000",
+        signal_time=run.run_at,
+        status=TradeIntentStatus.PENDING_RISK,
+        rationale="trend_up_pullback_long",
+        evidence={},
+    )
+
+    assert strategy.name == "trend_up_pullback"
+    assert run.status == StrategyRunStatus.INTENT_CREATED
+    assert intent.cash_amount == Decimal("1000")
+
+    with pytest.raises(ValidationError):
+        TradeIntent(
+            id=uuid4(),
+            account_id=run.account_id,
+            strategy_run_id=run.id,
+            side=TradeIntentSide.BUY,
+            cash_amount="0",
+            signal_time=run.run_at,
+            status=TradeIntentStatus.PENDING_RISK,
+            rationale="trend_up_pullback_long",
+            evidence={},
         )
 
 

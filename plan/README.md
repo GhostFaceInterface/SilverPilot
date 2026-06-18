@@ -5,7 +5,7 @@ an implementation handoff companion: it records the current audit state for the
 completed Phase 0-4 slice and the detailed execution plan for the next five
 phases, Phase 5-9.
 
-The current implementation is entering Phase 6: One simple strategy.
+The current implementation is entering Phase 7: Risk manager.
 
 ## Phase Status
 
@@ -18,8 +18,8 @@ The current implementation is entering Phase 6: One simple strategy.
 | Phase 3: Price storage and bar builder | PASS | `phase-03-audit-price-storage-bars.md` |
 | Phase 4: Indicator service | PASS | `phase-04-audit-indicators.md` |
 | Phase 5: Rule-based regime detector | PASS | `phase-05-regime-detector.md` |
-| Phase 6: One simple strategy | NEXT | `phase-06-simple-strategy.md` |
-| Phase 7: Risk manager | Planned | `phase-07-risk-manager.md` |
+| Phase 6: One simple strategy | PASS | `phase-06-simple-strategy.md` |
+| Phase 7: Risk manager | NEXT | `phase-07-risk-manager.md` |
 | Phase 8: Paper broker and ledger | Planned | `phase-08-paper-broker-ledger.md` |
 | Phase 9: Backtest engine | Planned | `phase-09-backtest-engine.md` |
 

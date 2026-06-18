@@ -8,8 +8,21 @@ include direct execution.
 
 ## Current Evidence
 
-Phase 6 has not started. It depends on Phase 5 regime snapshots and Phase 4
-indicator snapshots.
+Phase 6 is implemented as of 2026-06-18.
+
+- `src/silverpilot/app/strategies/service.py` implements `StrategyEngine`,
+  `TrendUpPullbackConfig`, active-account checks, trend-up pullback evaluation,
+  deterministic input hashing, strategy run persistence, and trade intent
+  creation.
+- `src/silverpilot/app/db/models.py` includes `strategies`, `strategy_runs`,
+  and `trade_intents`.
+- `migrations/versions/20260618_0004_strategy_runs_trade_intents.py` adds the
+  schema with downgrade support.
+- `src/silverpilot/app/domain/models.py` includes `StrategyDefinition`,
+  `StrategyRun`, and `TradeIntent`.
+- `tests/test_strategies.py` covers intent generation, no-intent cases,
+  non-TREND_UP regime gating, missing/stale data, failed pullback rules,
+  long-only output, and absence of execution tables.
 
 ## Required Interfaces And Schema
 
@@ -61,9 +74,10 @@ failure states, it records a run and emits no intents.
 
 ## Done Gate
 
-The strategy engine deterministically records runs and emits trade intents only
-for the approved trend-up pullback case. No direct execution, risk approval,
-broker, ledger, backtest, API, ML, Hermes, or Telegram behavior exists.
+PASS. The strategy engine deterministically records runs and emits trade
+intents only for the approved trend-up pullback case. No direct execution, risk
+approval, broker, ledger, backtest, API, ML, Hermes, or Telegram behavior
+exists.
 
 ## Out Of Scope
 

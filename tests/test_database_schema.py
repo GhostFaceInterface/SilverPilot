@@ -21,6 +21,7 @@ from silverpilot.app.db.models import (
     MarketBarModel,
     MarketRegimeSnapshotModel,
     MetalModel,
+    StrategyModel,
     UnitModel,
     UserModel,
     VirtualAccountInstrumentModel,
@@ -40,6 +41,9 @@ CORE_TABLES = {
     "metals",
     "price_quotes",
     "reference_market_instruments",
+    "strategies",
+    "strategy_runs",
+    "trade_intents",
     "unit_conversion_rules",
     "units",
     "users",
@@ -279,6 +283,32 @@ def test_market_regime_snapshot_unique_cache_key(engine: Engine) -> None:
         confirmed_at=source_bar_end_at,
         source_bar_end_at=source_bar_end_at,
         created_at=source_bar_end_at,
+    )
+
+    with Session(engine) as session:
+        session.add_all([first, duplicate])
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_strategy_definition_unique_version(engine: Engine) -> None:
+    created_at = now()
+    first = StrategyModel(
+        id=uuid4(),
+        name="trend_up_pullback",
+        version="1",
+        parameters={"cash_amount": "1000"},
+        enabled=True,
+        created_at=created_at,
+    )
+    duplicate = StrategyModel(
+        id=uuid4(),
+        name="trend_up_pullback",
+        version="1",
+        parameters={"cash_amount": "2000"},
+        enabled=True,
+        created_at=created_at,
     )
 
     with Session(engine) as session:

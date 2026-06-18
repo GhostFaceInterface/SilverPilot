@@ -5,7 +5,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from silverpilot.app.domain.enums import AccountStatus, BankStatus, InstrumentType, MarketRegime
+from silverpilot.app.domain.enums import (
+    AccountStatus,
+    BankStatus,
+    InstrumentType,
+    MarketRegime,
+    StrategyRunStatus,
+    TradeIntentSide,
+    TradeIntentStatus,
+)
 from silverpilot.app.domain.value_objects import Money, parse_decimal
 
 
@@ -260,6 +268,89 @@ class MarketRegimeSnapshot(DomainModel):
             raise ValueError("source_bar_end_at cannot be after confirmed_at")
         if self.starts_at > self.confirmed_at:
             raise ValueError("starts_at cannot be after confirmed_at")
+        return self
+
+
+class StrategyDefinition(DomainModel):
+    id: UUID
+    name: str
+    version: str
+    parameters: dict[str, Any]
+    enabled: bool = True
+
+    @field_validator("name", "version")
+    @classmethod
+    def validate_strategy_identity(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("strategy identity fields are required")
+        return normalized
+
+
+class StrategyRun(DomainModel):
+    id: UUID
+    strategy_id: UUID
+    account_id: UUID
+    instrument_type: InstrumentType
+    instrument_id: UUID
+    source: str
+    timeframe: str
+    source_bar_end_at: datetime
+    run_at: datetime
+    regime_snapshot_id: UUID | None = None
+    input_hash: str
+    status: StrategyRunStatus
+    evidence: dict[str, Any]
+
+    @field_validator("source_bar_end_at", "run_at")
+    @classmethod
+    def validate_strategy_run_datetime(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_strategy_run(self) -> "StrategyRun":
+        if not self.source.strip():
+            raise ValueError("source is required")
+        if not self.timeframe.strip():
+            raise ValueError("timeframe is required")
+        if not self.input_hash.strip():
+            raise ValueError("input_hash is required")
+        if self.source_bar_end_at > self.run_at:
+            raise ValueError("source_bar_end_at cannot be after run_at")
+        return self
+
+
+class TradeIntent(DomainModel):
+    id: UUID
+    account_id: UUID
+    strategy_run_id: UUID
+    side: TradeIntentSide
+    cash_amount: Decimal
+    quantity: Decimal | None = None
+    signal_time: datetime
+    status: TradeIntentStatus
+    rationale: str
+    evidence: dict[str, Any]
+
+    @field_validator("cash_amount", "quantity", mode="before")
+    @classmethod
+    def validate_intent_decimal(cls, value: Any) -> Decimal | None:
+        if value is None:
+            return None
+        parsed = parse_decimal(value)
+        if parsed <= Decimal("0"):
+            raise ValueError("intent amounts must be greater than zero")
+        return parsed
+
+    @field_validator("signal_time")
+    @classmethod
+    def validate_signal_time(cls, value: datetime) -> datetime:
+        return _require_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_trade_intent(self) -> "TradeIntent":
+        if not self.rationale.strip():
+            raise ValueError("rationale is required")
         return self
 
 

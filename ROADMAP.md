@@ -585,6 +585,17 @@ Deliverables: strategy engine, one trend-up pullback strategy.
 Acceptance: intent generation and no-intent cases tested.
 Do not include: direct execution.
 
+Status as of 2026-06-18: completed for the first strategy slice.
+`StrategyEngine` runs one enabled `trend_up_pullback` strategy and persists
+`strategy_runs` for both intent and no-intent outcomes. In TREND_UP only, the
+strategy can emit a long-only `trade_intents` row with `pending_risk` status
+when EMA, RSI, ATR, pullback, freshness, and active-account checks pass.
+TREND_DOWN, RANGE, HIGH_VOLATILITY, LOW_VOLATILITY, NO_TRADE, stale data,
+missing indicators, missing regime, and failed pullback rules produce no
+intent with persisted rationale. Phase 6 does not create orders, trades,
+positions, ledger entries, risk decisions, API responses, ML, Hermes, or
+Telegram behavior.
+
 ### Phase 7: Risk manager
 
 Goal: every intent is approved, reduced, or rejected.
