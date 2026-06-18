@@ -21,7 +21,7 @@ from silverpilot.app.indicators import (
     calculate_rsi,
 )
 from silverpilot.app.indicators.calculators import BarLike
-from silverpilot.app.indicators.service import hash_parameters
+from silverpilot.app.indicators.service import IndicatorName, hash_parameters
 
 
 @pytest.fixture()
@@ -91,6 +91,57 @@ def test_indicator_service_caches_snapshot_for_closed_bar(engine: Engine) -> Non
         snapshots = list(session.scalars(select(IndicatorSnapshotModel)))
         assert len(snapshots) == 1
         assert snapshots[0].updated_at == calculated_at + timedelta(seconds=1)
+
+
+def test_indicator_service_persists_all_phase_4_indicators(engine: Engine) -> None:
+    instrument_id = uuid4()
+    source_bar_end_at = datetime(2026, 6, 18, 6, 0, tzinfo=UTC)
+    calculated_at = source_bar_end_at + timedelta(minutes=2)
+    scenarios: list[tuple[IndicatorName, dict[str, object], Decimal]] = [
+        ("ema", {"period": 14}, Decimal("49.527366199121")),
+        ("rsi", {"period": 14}, Decimal("79.441962744134")),
+        ("atr", {"period": 14}, Decimal("1.080126297391")),
+        ("adx", {"period": 14}, Decimal("57.880894366349")),
+        (
+            "bb_width",
+            {"period": 20, "standard_deviations": "2", "ddof": 1},
+            Decimal("13.718986112081"),
+        ),
+    ]
+
+    with Session(engine) as session:
+        session.add_all(_fixture_bars(instrument_id))
+        session.commit()
+        service = IndicatorService(session=session)
+
+        results = [
+            service.calculate_and_cache(
+                instrument_type=InstrumentType.REFERENCE,
+                instrument_id=instrument_id,
+                source="reference-fixture",
+                timeframe="1h",
+                indicator_name=indicator_name,
+                parameters=parameters,
+                source_bar_end_at=source_bar_end_at,
+                calculated_at=calculated_at,
+            )
+            for indicator_name, parameters, _expected_value in scenarios
+        ]
+
+        assert all(result.inserted for result in results)
+        snapshots = list(
+            session.scalars(
+                select(IndicatorSnapshotModel).order_by(IndicatorSnapshotModel.indicator_name)
+            )
+        )
+        assert len(snapshots) == 5
+
+        by_name = {snapshot.indicator_name: snapshot for snapshot in snapshots}
+        for indicator_name, parameters, expected_value in scenarios:
+            snapshot = by_name[indicator_name]
+            assert snapshot.parameters_hash == hash_parameters(parameters)
+            assert _same_timestamp(snapshot.source_bar_end_at, source_bar_end_at)
+            assert _rounded(snapshot.value) == expected_value
 
 
 def test_indicator_service_rejects_unavailable_source_bar_end(engine: Engine) -> None:
@@ -191,3 +242,9 @@ def _fixture_bars(instrument_id: UUID) -> list[MarketBarModel]:
 
 def _rounded(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.000000000001"))
+
+
+def _same_timestamp(left: datetime, right: datetime) -> bool:
+    if left.tzinfo is None or right.tzinfo is None:
+        return left.replace(tzinfo=None) == right.replace(tzinfo=None)
+    return left == right
