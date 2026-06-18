@@ -31,12 +31,13 @@ out of scope until a future promotion gate.
 | Phase 13: Reporting dashboard data | PASS | `phase-13-reporting-dashboard-data.md` |
 | Deployment readiness before Phase 14 | PASS | `deployment-readiness-before-phase-14.md` |
 | Phase 14: Offline ML edge experiments | PASS | `phase-14-ml-experiments.md` |
-| Phase 15: Roadmap-code closure audit | LOCAL PASS / REMOTE CI PENDING | `phase-15-architecture-closure.md` |
+| Phase 15: Roadmap-code closure audit | PASS | `phase-15-architecture-closure.md` |
 
 Phase 14 is complete as an offline experiment lane only. ML has no runtime
 authority over strategy, risk, broker, API, Telegram, scheduler, collector, or
 order behavior. Remote CI must pass after the optional-ML mypy fix is pushed
-before making an unqualified Phase 0-14 completion claim.
+before making an unqualified Phase 0-14 completion claim; GitHub Actions passed
+for commit `43d3b2d`.
 
 ## Verification Matrix
 
@@ -51,7 +52,7 @@ evidence and the latest verification run:
 | `mypy` | passed |
 | `bash .codex/scripts/verify-docker.sh` | passed |
 | `bash .codex/scripts/verify-docker.sh --build` | UNKNOWN/SKIPPED: Docker daemon not running |
-| latest GitHub Actions CI on `main` | failed before local optional-ML mypy fix; pending commit/push |
+| latest GitHub Actions CI on `main` | passed for commit `43d3b2d` |
 
 Rerun the same commands after each phase to prove code and documentation remain
 aligned.

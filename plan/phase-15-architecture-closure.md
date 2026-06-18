@@ -16,10 +16,9 @@ Phase 0-14 is locally verified after the optional-ML mypy fix:
 | `pytest` | 143 passed |
 | `bash .codex/scripts/verify-docker.sh` | passed |
 
-Remote GitHub Actions status is not yet closed in this working tree. The latest
-observed `main` CI run before this patch was still failed for the Phase 14
-commit. Treat "Phase 0-14 complete" as locally true only until this fix is
-committed, pushed, and CI passes on GitHub.
+Remote GitHub Actions is closed for this gate. The previous Phase 14 commit
+failed CI on the optional-ML mypy boundary; commit `43d3b2d` pushed the fix and
+the `main` CI run passed.
 
 ## Implemented Through Phase 14
 
