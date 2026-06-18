@@ -15,14 +15,11 @@ docker compose config >/dev/null
 echo "Validating collector profile Compose config..."
 docker compose --profile collector config >/dev/null
 
-echo "Validating dashboard profile Compose config..."
-docker compose --profile dashboard config >/dev/null
-
 if [ "${1:-}" = "--build" ]; then
   echo "Building API image..."
   docker compose build api
-  echo "Building dashboard image..."
-  docker compose --profile dashboard build dashboard
+  echo "Building collector image..."
+  docker compose --profile collector build collector
 else
   echo "Build skipped. Pass --build to build local images."
 fi

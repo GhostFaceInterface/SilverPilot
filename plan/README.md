@@ -2,10 +2,12 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-13 slice and the detailed execution boundary before Phase 14.
+completed Phase 0-13 slice, the deployment-readiness gate before Phase 14, and
+the detailed execution boundary before Phase 14.
 
 The current implementation has completed Phase 13: Reporting dashboard data.
-The next implementation boundary is Phase 14: ML experiments.
+The current infrastructure gate is deployment readiness before Phase 14. The
+next product implementation boundary remains Phase 14: ML experiments.
 
 ## Phase Status
 
@@ -26,20 +28,24 @@ The next implementation boundary is Phase 14: ML experiments.
 | Phase 11: Telegram adapter | PASS | `phase-11-telegram-adapter.md` |
 | Phase 12: News/Hermes risk module | PASS | `phase-12-news-hermes-risk.md` |
 | Phase 13: Reporting dashboard data | PASS | `phase-13-reporting-dashboard-data.md` |
+| Deployment readiness before Phase 14 | PASS | `deployment-readiness-before-phase-14.md` |
 
-Phase 14 ML experiments is the next boundary after Phase 13.
+Phase 14 ML experiments is the next product boundary after the deployment
+readiness gate.
 
 ## Verification Matrix
 
-The Phase 0-13 audit is based on local source evidence and the latest
-verification run:
+The Phase 0-13 audit and deployment-readiness gate are based on local source
+evidence and the latest verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 133 passed |
+| `pytest` | 137 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
+| `bash .codex/scripts/verify-docker.sh` | passed |
+| `bash .codex/scripts/verify-docker.sh --build` | UNKNOWN/SKIPPED: Docker daemon not running |
 
 Rerun the same commands after each phase to prove code and documentation remain
 aligned.
@@ -81,13 +87,21 @@ portfolio valuation, PnL, risk summary, and account health in one JSON contract
 for future web/mobile clients. Valuations use fresh indicative bank buy quotes
 and surface stale/missing quote status instead of fabricating prices.
 
+Deployment readiness before Phase 14 added backend container packaging,
+Docker Compose services for Postgres, one-shot migrations, API, and an optional
+bounded collector profile. It also added a VPS deployment runbook with local
+gates, migration gates, health checks, rollback requirements, and explicit
+approval rules. Remote deployment to `silverpilot-vps` has not been executed.
+
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
-- Do not add ML, dashboard UI, Docker, multi-bank routing, real money
-  execution, Telegram-owned decisions, live news fetching, report persistence,
-  or mutating remote API behavior inside the Phase 13 reporting boundary.
+- Do not add ML, dashboard UI, multi-bank routing, real money execution,
+  Telegram-owned decisions, live news fetching, report persistence, or mutating
+  remote API behavior inside the Phase 13 reporting boundary.
+- Do not run remote deployment, SSH service changes, production smoke checks,
+  or secret inspection without explicit user approval.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not
   invent a root `/agents` application directory.

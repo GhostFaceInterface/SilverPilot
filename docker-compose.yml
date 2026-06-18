@@ -1,0 +1,85 @@
+name: silverpilot
+
+x-app-environment: &app-environment
+  SILVERPILOT_APP_NAME: ${SILVERPILOT_APP_NAME:-SilverPilot}
+  SILVERPILOT_ENVIRONMENT: ${SILVERPILOT_ENVIRONMENT:-development}
+  SILVERPILOT_LOG_LEVEL: ${SILVERPILOT_LOG_LEVEL:-INFO}
+  SILVERPILOT_DATABASE_URL: ${SILVERPILOT_DATABASE_URL:-postgresql+psycopg://silverpilot:silverpilot_dev_password@db:5432/silverpilot}
+  SILVERPILOT_TELEGRAM_ENABLED: ${SILVERPILOT_TELEGRAM_ENABLED:-false}
+  SILVERPILOT_TELEGRAM_BOT_TOKEN: ${SILVERPILOT_TELEGRAM_BOT_TOKEN:-}
+  SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID: ${SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID:-}
+  SILVERPILOT_TELEGRAM_API_BASE_URL: ${SILVERPILOT_TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-silverpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-silverpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silverpilot_dev_password}
+    ports:
+      - "127.0.0.1:${SILVERPILOT_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+    environment:
+      <<: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+    environment:
+      <<: *app-environment
+    ports:
+      - "127.0.0.1:${SILVERPILOT_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3).read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  collector:
+    profiles: ["collector"]
+    build:
+      context: .
+    environment:
+      <<: *app-environment
+    command:
+      [
+        "silverpilot-collect-kuveyt",
+        "--bank-instrument-id",
+        "${SILVERPILOT_COLLECTOR_BANK_INSTRUMENT_ID:-00000000-0000-0000-0000-000000000000}",
+        "--repeat",
+        "${SILVERPILOT_COLLECTOR_REPEAT:-1}",
+        "--interval-seconds",
+        "${SILVERPILOT_COLLECTOR_INTERVAL_SECONDS:-60}",
+      ]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  postgres_data:

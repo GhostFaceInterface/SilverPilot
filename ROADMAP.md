@@ -452,6 +452,14 @@ Failures must be visible states, not silent empty success.
 
 Use Docker only after local architecture is clean.
 
+Status as of 2026-06-18: local deployment readiness scaffold is implemented
+before Phase 14. The repository now includes a backend `Dockerfile`,
+`docker-compose.yml` for Postgres, one-shot Alembic migrations, API, and an
+optional bounded collector profile, plus `docs/deployment.md` for local gates,
+migration gates, health checks, rollback, and explicit approval rules. This is
+not a remote VPS deployment, CD pipeline, Telegram bot polling/webhook, or
+production release.
+
 Initial deployment:
 
 - API service.
