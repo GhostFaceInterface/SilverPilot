@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from silverpilot.app.api.schemas import (
+    AccountDashboardReportResponse,
     AccountResponse,
     BacktestRunResponse,
     BacktestRunSummaryResponse,
@@ -217,6 +218,21 @@ def get_backtest_report(
     report = service.get_backtest_report(run_id)
     if report is None:
         raise _not_found("backtest", run_id)
+    return report
+
+
+@api_router.get(
+    "/reports/accounts/{account_id}/dashboard",
+    response_model=AccountDashboardReportResponse,
+    tags=["reports"],
+)
+def get_account_dashboard_report(
+    account_id: UUID,
+    service: Annotated[ApiQueryService, Depends(query_service)],
+) -> AccountDashboardReportResponse:
+    report = service.get_account_dashboard_report(account_id=account_id)
+    if report is None:
+        raise _not_found("account", account_id)
     return report
 
 

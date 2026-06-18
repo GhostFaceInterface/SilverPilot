@@ -1,5 +1,7 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
 from math import ceil
 from typing import Any, TypeVar
 from uuid import UUID
@@ -8,6 +10,8 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from silverpilot.app.api.schemas import (
+    AccountDashboardReportResponse,
+    AccountHealthReportResponse,
     AccountResponse,
     BacktestRunResponse,
     BacktestRunSummaryResponse,
@@ -18,9 +22,13 @@ from silverpilot.app.api.schemas import (
     PageMeta,
     PaginatedResponse,
     PaperTradeResponse,
+    PnlReportResponse,
+    PortfolioReportResponse,
     PositionResponse,
+    PositionValuationResponse,
     PriceQuoteResponse,
     ReportResponse,
+    RiskReportResponse,
     WalletResponse,
 )
 from silverpilot.app.db.models import (
@@ -32,11 +40,18 @@ from silverpilot.app.db.models import (
     PaperTradeModel,
     PositionModel,
     PriceQuoteModel,
+    RiskDecisionModel,
+    TradeIntentModel,
     VirtualAccountModel,
     WalletModel,
 )
 
 T = TypeVar("T")
+_MONEY_QUANTUM = Decimal("0.00000001")
+_INDICATIVE_PRICE_NOTE = (
+    "Portfolio valuation uses public indicative bank buy quotes; executable parity is not "
+    "guaranteed until manually verified against authenticated order screens."
+)
 
 
 @dataclass(frozen=True)
@@ -238,6 +253,78 @@ class ApiQueryService:
             return None
         return ReportResponse(id=run.id, report_type="backtest", payload=run.report_json)
 
+    def get_account_dashboard_report(
+        self,
+        *,
+        account_id: UUID,
+        captured_at: datetime | None = None,
+    ) -> AccountDashboardReportResponse | None:
+        account = self._session.scalar(
+            select(VirtualAccountModel)
+            .options(
+                joinedload(VirtualAccountModel.base_currency),
+                joinedload(VirtualAccountModel.execution_venue),
+            )
+            .where(VirtualAccountModel.id == account_id)
+        )
+        if account is None:
+            return None
+
+        captured = _aware_datetime(captured_at or datetime.now(UTC))
+        wallets = self._session.scalars(
+            select(WalletModel)
+            .options(joinedload(WalletModel.currency))
+            .where(WalletModel.virtual_account_id == account.id)
+        ).all()
+        positions = self._session.scalars(
+            select(PositionModel).where(PositionModel.account_id == account.id)
+        ).all()
+        trades = self._session.scalars(
+            select(PaperTradeModel)
+            .options(joinedload(PaperTradeModel.quote))
+            .where(PaperTradeModel.account_id == account.id)
+            .order_by(PaperTradeModel.executed_at.desc(), PaperTradeModel.id)
+        ).all()
+        risk_decisions = self._session.scalars(
+            select(RiskDecisionModel)
+            .join(TradeIntentModel, RiskDecisionModel.trade_intent_id == TradeIntentModel.id)
+            .where(TradeIntentModel.account_id == account.id)
+            .order_by(RiskDecisionModel.evaluated_at.desc(), RiskDecisionModel.id)
+        ).all()
+        latest_quotes = self._latest_quotes_by_bank_instrument(
+            [position.bank_instrument_id for position in positions],
+            captured_at=captured,
+        )
+
+        portfolio = _portfolio_report(
+            account=account,
+            wallets=wallets,
+            positions=positions,
+            latest_quotes=latest_quotes,
+            captured_at=captured,
+        )
+        pnl = _pnl_report(account_id=account.id, trades=trades, portfolio=portfolio)
+        risk = _risk_report(
+            account_id=account.id,
+            risk_decisions=risk_decisions,
+            pending_intent_count=self._pending_intent_count(account.id),
+        )
+        health = _account_health_report(
+            account=account,
+            wallets=wallets,
+            positions=positions,
+            portfolio=portfolio,
+            trades=trades,
+            risk=risk,
+        )
+        return AccountDashboardReportResponse(
+            account=_account_response(account),
+            portfolio=portfolio,
+            pnl=pnl,
+            risk=risk,
+            health=health,
+        )
+
     def _page(
         self,
         query: Select[tuple[T]],
@@ -250,6 +337,43 @@ class ApiQueryService:
             query.limit(pagination.page_size).offset(pagination.offset)
         ).all()
         return rows, int(total or 0)
+
+    def _latest_quotes_by_bank_instrument(
+        self,
+        bank_instrument_ids: list[UUID],
+        *,
+        captured_at: datetime,
+    ) -> dict[UUID, PriceQuoteModel]:
+        if not bank_instrument_ids:
+            return {}
+        quotes = self._session.scalars(
+            select(PriceQuoteModel)
+            .where(
+                PriceQuoteModel.bank_instrument_id.in_(bank_instrument_ids),
+                PriceQuoteModel.observed_at <= captured_at,
+            )
+            .order_by(
+                PriceQuoteModel.bank_instrument_id,
+                PriceQuoteModel.observed_at.desc(),
+                PriceQuoteModel.fetched_at.desc(),
+                PriceQuoteModel.id,
+            )
+        ).all()
+        latest: dict[UUID, PriceQuoteModel] = {}
+        for quote in quotes:
+            latest.setdefault(quote.bank_instrument_id, quote)
+        return latest
+
+    def _pending_intent_count(self, account_id: UUID) -> int:
+        count = self._session.scalar(
+            select(func.count())
+            .select_from(TradeIntentModel)
+            .where(
+                TradeIntentModel.account_id == account_id,
+                TradeIntentModel.status == "pending_risk",
+            )
+        )
+        return int(count or 0)
 
 
 def _apply_market_filters(  # noqa: UP047
@@ -438,3 +562,178 @@ def _backtest_summary_response(run: BacktestRunModel) -> BacktestRunSummaryRespo
 def _backtest_response(run: BacktestRunModel) -> BacktestRunResponse:
     summary = _backtest_summary_response(run)
     return BacktestRunResponse(**summary.model_dump(), report=run.report_json)
+
+
+def _portfolio_report(
+    *,
+    account: VirtualAccountModel,
+    wallets: Sequence[WalletModel],
+    positions: Sequence[PositionModel],
+    latest_quotes: dict[UUID, PriceQuoteModel],
+    captured_at: datetime,
+) -> PortfolioReportResponse:
+    base_wallets = [wallet for wallet in wallets if wallet.currency_id == account.base_currency_id]
+    cash_available = _sum_money(Decimal(wallet.available_amount) for wallet in base_wallets)
+    cash_reserved = _sum_money(Decimal(wallet.reserved_amount) for wallet in base_wallets)
+
+    position_reports = [
+        _position_valuation(position, latest_quotes.get(position.bank_instrument_id))
+        for position in positions
+    ]
+    positions_market_value = _sum_money(position.market_value for position in position_reports)
+    realized_pnl = _sum_money(position.realized_pnl for position in position_reports)
+    unrealized_pnl = _sum_money(position.unrealized_pnl for position in position_reports)
+    total_value = _money(cash_available + cash_reserved + positions_market_value)
+    net_pnl = _money(total_value - Decimal(account.starting_balance))
+    return_pct = (
+        (net_pnl / Decimal(account.starting_balance)).quantize(_MONEY_QUANTUM)
+        if Decimal(account.starting_balance) > Decimal("0")
+        else None
+    )
+    return PortfolioReportResponse(
+        account_id=account.id,
+        captured_at=captured_at,
+        base_currency_code=account.base_currency.code,
+        cash_available=cash_available,
+        cash_reserved=cash_reserved,
+        positions_market_value=positions_market_value,
+        total_value=total_value,
+        starting_balance=account.starting_balance,
+        realized_pnl=realized_pnl,
+        unrealized_pnl=unrealized_pnl,
+        net_pnl=net_pnl,
+        return_pct=return_pct,
+        indicative_pricing_note=_INDICATIVE_PRICE_NOTE,
+        positions=position_reports,
+    )
+
+
+def _position_valuation(
+    position: PositionModel,
+    latest_quote: PriceQuoteModel | None,
+) -> PositionValuationResponse:
+    quantity = Decimal(position.quantity)
+    average_cost = Decimal(position.average_cost)
+    cost_basis = _money(quantity * average_cost)
+    realized_pnl = _money(Decimal(position.realized_pnl))
+    if latest_quote is None:
+        market_value = Decimal("0.00000000")
+        unrealized_pnl = Decimal("0.00000000")
+        latest_bank_buy_price = None
+        valuation_status = "missing_quote"
+    elif latest_quote.freshness_status != "fresh":
+        market_value = Decimal("0.00000000")
+        unrealized_pnl = Decimal("0.00000000")
+        latest_bank_buy_price = Decimal(latest_quote.bank_buy_price)
+        valuation_status = "stale_quote"
+    else:
+        latest_bank_buy_price = Decimal(latest_quote.bank_buy_price)
+        market_value = _money(quantity * latest_bank_buy_price)
+        unrealized_pnl = _money(market_value - cost_basis)
+        valuation_status = "valued"
+    return PositionValuationResponse(
+        position_id=position.id,
+        bank_instrument_id=position.bank_instrument_id,
+        quantity=quantity,
+        average_cost=average_cost,
+        latest_bank_buy_price=latest_bank_buy_price,
+        market_value=market_value,
+        cost_basis=cost_basis,
+        unrealized_pnl=unrealized_pnl,
+        realized_pnl=realized_pnl,
+        valuation_status=valuation_status,
+    )
+
+
+def _pnl_report(
+    *,
+    account_id: UUID,
+    trades: Sequence[PaperTradeModel],
+    portfolio: PortfolioReportResponse,
+) -> PnlReportResponse:
+    return PnlReportResponse(
+        account_id=account_id,
+        gross_trade_cash=_sum_money(Decimal(trade.gross_cash_amount) for trade in trades),
+        fees=_sum_money(Decimal(trade.fees) for trade in trades),
+        taxes=_sum_money(Decimal(trade.taxes) for trade in trades),
+        spread_cost=_sum_money(Decimal(trade.spread_cost) for trade in trades),
+        realized_pnl=portfolio.realized_pnl,
+        unrealized_pnl=portfolio.unrealized_pnl,
+        net_pnl=portfolio.net_pnl,
+        trade_count=len(trades),
+    )
+
+
+def _risk_report(
+    *,
+    account_id: UUID,
+    risk_decisions: Sequence[RiskDecisionModel],
+    pending_intent_count: int,
+) -> RiskReportResponse:
+    decision_counts = {"approve": 0, "reduce": 0, "reject": 0}
+    rejection_reasons: dict[str, int] = {}
+    for decision in risk_decisions:
+        if decision.decision in decision_counts:
+            decision_counts[decision.decision] += 1
+        if decision.decision == "reject":
+            for reason in decision.reasons:
+                rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+    latest_decision_at = risk_decisions[0].evaluated_at if risk_decisions else None
+    return RiskReportResponse(
+        account_id=account_id,
+        pending_intent_count=pending_intent_count,
+        approved_decision_count=decision_counts["approve"],
+        reduced_decision_count=decision_counts["reduce"],
+        rejected_decision_count=decision_counts["reject"],
+        latest_decision_at=latest_decision_at,
+        rejection_reasons=rejection_reasons,
+    )
+
+
+def _account_health_report(
+    *,
+    account: VirtualAccountModel,
+    wallets: Sequence[WalletModel],
+    positions: Sequence[PositionModel],
+    portfolio: PortfolioReportResponse,
+    trades: Sequence[PaperTradeModel],
+    risk: RiskReportResponse,
+) -> AccountHealthReportResponse:
+    stale_count = sum(
+        1 for position in portfolio.positions if position.valuation_status != "valued"
+    )
+    latest_quote_dates = [
+        _aware_datetime(trade.quote.observed_at) for trade in trades if trade.quote is not None
+    ]
+    latest_quote_at = max(latest_quote_dates) if latest_quote_dates else None
+    latest_trade_at = trades[0].executed_at if trades else None
+    status = "ok"
+    if account.status != "active":
+        status = "account_inactive"
+    elif stale_count:
+        status = "degraded"
+    return AccountHealthReportResponse(
+        account_id=account.id,
+        account_status=account.status,
+        wallet_count=len(wallets),
+        open_position_count=len(positions),
+        stale_position_price_count=stale_count,
+        latest_quote_at=latest_quote_at,
+        latest_trade_at=latest_trade_at,
+        latest_risk_decision_at=risk.latest_decision_at,
+        status=status,
+    )
+
+
+def _money(value: Decimal) -> Decimal:
+    return value.quantize(_MONEY_QUANTUM)
+
+
+def _sum_money(values: Iterable[Decimal]) -> Decimal:
+    return _money(sum(values, Decimal("0")))
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value

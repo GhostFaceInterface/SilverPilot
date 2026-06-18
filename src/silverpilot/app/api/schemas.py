@@ -157,6 +157,78 @@ class BacktestRunResponse(BacktestRunSummaryResponse):
     report: dict[str, Any] = Field(default_factory=dict)
 
 
+class PositionValuationResponse(BaseModel):
+    position_id: UUID
+    bank_instrument_id: UUID
+    quantity: Decimal
+    average_cost: Decimal
+    latest_bank_buy_price: Decimal | None
+    market_value: Decimal
+    cost_basis: Decimal
+    unrealized_pnl: Decimal
+    realized_pnl: Decimal
+    valuation_status: str
+
+
+class PortfolioReportResponse(BaseModel):
+    account_id: UUID
+    captured_at: datetime
+    base_currency_code: str
+    cash_available: Decimal
+    cash_reserved: Decimal
+    positions_market_value: Decimal
+    total_value: Decimal
+    starting_balance: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    net_pnl: Decimal
+    return_pct: Decimal | None
+    indicative_pricing_note: str
+    positions: list[PositionValuationResponse]
+
+
+class PnlReportResponse(BaseModel):
+    account_id: UUID
+    gross_trade_cash: Decimal
+    fees: Decimal
+    taxes: Decimal
+    spread_cost: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    net_pnl: Decimal
+    trade_count: int
+
+
+class RiskReportResponse(BaseModel):
+    account_id: UUID
+    pending_intent_count: int
+    approved_decision_count: int
+    reduced_decision_count: int
+    rejected_decision_count: int
+    latest_decision_at: datetime | None
+    rejection_reasons: dict[str, int]
+
+
+class AccountHealthReportResponse(BaseModel):
+    account_id: UUID
+    account_status: str
+    wallet_count: int
+    open_position_count: int
+    stale_position_price_count: int
+    latest_quote_at: datetime | None
+    latest_trade_at: datetime | None
+    latest_risk_decision_at: datetime | None
+    status: str
+
+
+class AccountDashboardReportResponse(BaseModel):
+    account: AccountResponse
+    portfolio: PortfolioReportResponse
+    pnl: PnlReportResponse
+    risk: RiskReportResponse
+    health: AccountHealthReportResponse
+
+
 class ReportResponse(BaseModel):
     id: UUID
     report_type: str

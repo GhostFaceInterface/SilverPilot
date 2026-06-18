@@ -142,6 +142,23 @@ def test_read_api_exposes_trades_positions_backtests_reports_and_health(
     assert report.status_code == 200
     assert report.json()["report_type"] == "backtest"
 
+    dashboard = client.get(f"/api/v1/reports/accounts/{fixture.account_id}/dashboard")
+    assert dashboard.status_code == 200
+    dashboard_json = dashboard.json()
+    assert dashboard_json["account"]["id"] == str(fixture.account_id)
+    assert dashboard_json["portfolio"]["base_currency_code"] == "TRY"
+    assert dashboard_json["portfolio"]["cash_available"] == "1000.00000000"
+    assert dashboard_json["portfolio"]["positions_market_value"] == "500.00000000"
+    assert dashboard_json["portfolio"]["total_value"] == "1500.00000000"
+    assert dashboard_json["portfolio"]["net_pnl"] == "500.00000000"
+    assert dashboard_json["portfolio"]["positions"][0]["valuation_status"] == "valued"
+    assert "indicative bank buy quotes" in dashboard_json["portfolio"]["indicative_pricing_note"]
+    assert dashboard_json["pnl"]["trade_count"] == 1
+    assert dashboard_json["pnl"]["fees"] == "1.00000000"
+    assert dashboard_json["risk"]["approved_decision_count"] == 1
+    assert dashboard_json["risk"]["rejected_decision_count"] == 0
+    assert dashboard_json["health"]["status"] == "ok"
+
     health = client.get("/api/v1/system/health")
     assert health.status_code == 200
     assert health.json() == {"status": "ok", "app": "SilverPilot"}

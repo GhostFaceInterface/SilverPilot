@@ -2,10 +2,10 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-12 slice and the detailed execution boundary before Phase 13.
+completed Phase 0-13 slice and the detailed execution boundary before Phase 14.
 
-The current implementation has completed Phase 12: News/Hermes risk module.
-The next implementation boundary is Phase 13: Reporting dashboard data.
+The current implementation has completed Phase 13: Reporting dashboard data.
+The next implementation boundary is Phase 14: ML experiments.
 
 ## Phase Status
 
@@ -25,12 +25,13 @@ The next implementation boundary is Phase 13: Reporting dashboard data.
 | Phase 10: REST API | PASS | `phase-10-rest-api.md` |
 | Phase 11: Telegram adapter | PASS | `phase-11-telegram-adapter.md` |
 | Phase 12: News/Hermes risk module | PASS | `phase-12-news-hermes-risk.md` |
+| Phase 13: Reporting dashboard data | PASS | `phase-13-reporting-dashboard-data.md` |
 
-Phase 13 Reporting dashboard data is the next boundary after Phase 12.
+Phase 14 ML experiments is the next boundary after Phase 13.
 
 ## Verification Matrix
 
-The Phase 0-12 audit is based on local source evidence and the latest
+The Phase 0-13 audit is based on local source evidence and the latest
 verification run:
 
 | Check | Observed result |
@@ -74,13 +75,19 @@ RiskManager-only event-risk veto/no-trade/reduction handling. Stale news is
 ignored and event-risk context cannot create strategy signals, orders, trades,
 positions, or ledger entries.
 
+Phase 13 added read-only account dashboard reporting through
+`GET /api/v1/reports/accounts/{account_id}/dashboard`. The response combines
+portfolio valuation, PnL, risk summary, and account health in one JSON contract
+for future web/mobile clients. Valuations use fresh indicative bank buy quotes
+and surface stale/missing quote status instead of fabricating prices.
+
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
 - Do not add ML, dashboard UI, Docker, multi-bank routing, real money
-  execution, Telegram-owned decisions, live news fetching, or mutating remote
-  API behavior inside the Phase 12 event-risk boundary.
+  execution, Telegram-owned decisions, live news fetching, report persistence,
+  or mutating remote API behavior inside the Phase 13 reporting boundary.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not
   invent a root `/agents` application directory.

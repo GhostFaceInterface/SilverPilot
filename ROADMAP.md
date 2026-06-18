@@ -694,9 +694,17 @@ claims, Telegram commands, dashboard behavior, ML, or real-money execution.
 ### Phase 13: Reporting dashboard data
 
 Goal: expose portfolio, PnL, risk, and health data for future clients.
-Deliverables: report DTOs and API endpoints.
-Acceptance: web/mobile can consume same JSON.
-Do not include: heavy UI before backend is stable.
+Status: implemented as read-only account dashboard report JSON.
+Deliverables: account dashboard response DTOs for portfolio valuation, PnL,
+risk summary, and account health; `ApiQueryService.get_account_dashboard_report`;
+`GET /api/v1/reports/accounts/{account_id}/dashboard`.
+Acceptance: web/mobile can consume the same JSON; portfolio valuation uses
+latest fresh bank buy quote as the indicative liquidation price; stale or
+missing position quotes are visible in per-position valuation status and account
+health; reports label public bank quotes as indicative and do not mutate
+wallets, positions, trades, risk decisions, or orders.
+Do not include: heavy UI before backend is stable, report persistence,
+authentication/authorization, live quote fetching, ML, or real-money execution.
 
 ### Phase 14: ML experiments
 
