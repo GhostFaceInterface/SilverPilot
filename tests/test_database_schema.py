@@ -49,6 +49,9 @@ CORE_TABLES = {
     "indicator_snapshots",
     "market_bars",
     "market_regime_snapshots",
+    "ml_dataset_snapshots",
+    "ml_experiment_metrics",
+    "ml_experiment_runs",
     "metals",
     "event_risk_snapshots",
     "ledger_entries",
@@ -521,6 +524,30 @@ def test_backtest_schema_contains_dataset_and_report_tables(engine: Engine) -> N
     assert "input_ranges" in dataset_columns
     assert "report_json" in run_columns
     assert "ix_backtest_dataset_lookup" in dataset_indexes
+
+
+def test_ml_schema_contains_offline_metadata_tables(engine: Engine) -> None:
+    inspector = inspect(engine)
+    assert {"ml_dataset_snapshots", "ml_experiment_runs", "ml_experiment_metrics"}.issubset(
+        set(inspector.get_table_names())
+    )
+    dataset_columns = {column["name"] for column in inspector.get_columns("ml_dataset_snapshots")}
+    run_columns = {column["name"] for column in inspector.get_columns("ml_experiment_runs")}
+    metric_columns = {column["name"] for column in inspector.get_columns("ml_experiment_metrics")}
+    dataset_indexes = {index["name"] for index in inspector.get_indexes("ml_dataset_snapshots")}
+
+    assert {
+        "source_dataset_snapshot_id",
+        "feature_spec",
+        "label_spec",
+        "split_spec",
+        "artifact_uri",
+        "artifact_hash",
+        "data_hash",
+    }.issubset(dataset_columns)
+    assert {"model_family", "hyperparameters", "status", "report_json"}.issubset(run_columns)
+    assert {"split", "metric_name", "metric_value", "metric_metadata"}.issubset(metric_columns)
+    assert {"ix_ml_dataset_source", "ix_ml_dataset_lookup"}.issubset(dataset_indexes)
 
 
 def test_backtest_dataset_hash_is_unique(engine: Engine) -> None:

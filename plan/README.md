@@ -2,12 +2,12 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-13 slice, the deployment-readiness gate before Phase 14, and
-the detailed execution boundary before Phase 14.
+completed Phase 0-14 slice, the deployment-readiness gate before Phase 14, and
+the offline ML experiment boundary.
 
-The current implementation has completed Phase 13: Reporting dashboard data.
-The current infrastructure gate is deployment readiness before Phase 14. The
-next product implementation boundary remains Phase 14: ML experiments.
+The current implementation has completed Phase 14: Offline ML edge experiments.
+The next product implementation boundary is a separate post-Phase-14 decision;
+runtime ML remains explicitly out of scope until a future promotion gate.
 
 ## Phase Status
 
@@ -29,18 +29,20 @@ next product implementation boundary remains Phase 14: ML experiments.
 | Phase 12: News/Hermes risk module | PASS | `phase-12-news-hermes-risk.md` |
 | Phase 13: Reporting dashboard data | PASS | `phase-13-reporting-dashboard-data.md` |
 | Deployment readiness before Phase 14 | PASS | `deployment-readiness-before-phase-14.md` |
+| Phase 14: Offline ML edge experiments | PASS | `phase-14-ml-experiments.md` |
 
-Phase 14 ML experiments is the next product boundary after the deployment
-readiness gate.
+Phase 14 is complete as an offline experiment lane only. ML has no runtime
+authority over strategy, risk, broker, API, Telegram, scheduler, collector, or
+order behavior.
 
 ## Verification Matrix
 
-The Phase 0-13 audit and deployment-readiness gate are based on local source
+The Phase 0-14 audit and deployment-readiness gate are based on local source
 evidence and the latest verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 137 passed |
+| `pytest` | 143 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
@@ -91,16 +93,25 @@ Deployment readiness before Phase 14 added backend container packaging,
 Docker Compose services for Postgres, one-shot migrations, API, and an optional
 bounded collector profile. It also added a VPS deployment runbook with local
 gates, migration gates, health checks, rollback requirements, and explicit
-approval rules. Remote deployment to `silverpilot-vps` has not been executed.
+approval rules. Remote VPS deployment status is tracked outside this phase
+handoff; do not infer a new deployment from Phase 14.
+
+Phase 14 added `src/silverpilot/app/ml_experiments`, the
+`silverpilot-ml-experiment` CLI, optional `ml` dependency extra, ML metadata
+tables, deterministic `mlruns/phase14/` dataset artifacts, chronological
+embargo validation, rule-only/dummy/logistic experiment reports, and
+`insufficient_data` handling. It extracts a pure `trend_up_pullback` evaluator
+so offline candidate generation matches strategy behavior without persisting
+strategy runs or trade intents.
 
 ## Scope Rules
 
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
-- Do not add ML, dashboard UI, multi-bank routing, real money execution,
+- Do not add runtime ML, dashboard UI, multi-bank routing, real money execution,
   Telegram-owned decisions, live news fetching, report persistence, or mutating
-  remote API behavior inside the Phase 13 reporting boundary.
+  remote API behavior inside the Phase 14 offline experiment boundary.
 - Do not run remote deployment, SSH service changes, production smoke checks,
   or secret inspection without explicit user approval.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not

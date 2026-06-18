@@ -55,6 +55,46 @@ class StrategyEngineResult:
     intents: list[TradeIntentModel]
 
 
+@dataclass(frozen=True)
+class TrendUpPullbackDecision:
+    create_intent: bool
+    status: StrategyRunStatus
+    cash_amount: Decimal
+    reasons: list[str]
+    evidence_updates: dict[str, Any]
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        cash_amount: Decimal,
+        reasons: list[str],
+        evidence_updates: dict[str, Any],
+    ) -> "TrendUpPullbackDecision":
+        return cls(
+            create_intent=True,
+            status=StrategyRunStatus.INTENT_CREATED,
+            cash_amount=cash_amount,
+            reasons=reasons,
+            evidence_updates=evidence_updates,
+        )
+
+    @classmethod
+    def no_intent(
+        cls,
+        *,
+        reasons: list[str],
+        evidence_updates: dict[str, Any] | None = None,
+    ) -> "TrendUpPullbackDecision":
+        return cls(
+            create_intent=False,
+            status=StrategyRunStatus.NO_INTENT,
+            cash_amount=Decimal("0"),
+            reasons=reasons,
+            evidence_updates=evidence_updates or {},
+        )
+
+
 class StrategyEngine:
     """Runs the first deterministic trend-up pullback strategy."""
 
@@ -175,56 +215,20 @@ class StrategyEngine:
         run_at: datetime,
         evidence: dict[str, Any],
     ) -> "_StrategyDecision":
-        if not strategy.enabled:
-            evidence["reasons"].append("strategy_disabled")
-            return _StrategyDecision.no_intent()
-        if strategy.name != "trend_up_pullback":
-            evidence["reasons"].append("unsupported_strategy")
-            return _StrategyDecision.no_intent()
-        if bar is None:
-            evidence["reasons"].append("missing_closed_bar")
-            return _StrategyDecision.no_intent()
-        if run_at - source_bar_end_at > self._config.max_data_age:
-            evidence["reasons"].append("stale_bar")
-            return _StrategyDecision.no_intent()
-        if regime is None:
-            evidence["reasons"].append("missing_regime")
-            return _StrategyDecision.no_intent()
-        if regime.regime != MarketRegime.TREND_UP.value:
-            evidence["reasons"].append(f"regime_blocked:{regime.regime}")
-            return _StrategyDecision.no_intent()
-        if indicators.missing:
-            evidence["reasons"].append("missing_indicators")
-            evidence["missing_indicators"] = indicators.missing
-            return _StrategyDecision.no_intent()
-
-        close = Decimal(bar.close)
-        ema_50 = indicators.values["ema_50"]
-        ema_200 = indicators.values["ema_200"]
-        rsi_14 = indicators.values["rsi_14"]
-        atr_14 = indicators.values["atr_14"]
-        max_close = ema_50 * (Decimal("1") + self._config.max_close_above_ema_50_pct)
-        evidence["indicator_values"] = {key: str(value) for key, value in indicators.values.items()}
-        evidence["bar_close"] = str(close)
-        evidence["max_pullback_close"] = str(max_close)
-
-        if close > max_close:
-            evidence["reasons"].append("price_not_in_pullback_zone")
-            return _StrategyDecision.no_intent()
-        if close < ema_200:
-            evidence["reasons"].append("price_below_ema_200")
-            return _StrategyDecision.no_intent()
-        if rsi_14 < self._config.min_rsi or rsi_14 > self._config.max_rsi:
-            evidence["reasons"].append("rsi_outside_pullback_bounds")
-            return _StrategyDecision.no_intent()
-        if atr_14 <= Decimal("0"):
-            evidence["reasons"].append("atr_not_positive")
-            return _StrategyDecision.no_intent()
-
-        cash_amount = _strategy_cash_amount(strategy.parameters, self._config.default_cash_amount)
-        evidence["reasons"].append("trend_up_pullback_confirmed")
-        evidence["cash_amount"] = str(cash_amount)
-        return _StrategyDecision.create(cash_amount)
+        decision = evaluate_trend_up_pullback(
+            strategy=strategy,
+            bar=bar,
+            regime=regime,
+            indicators=indicators,
+            source_bar_end_at=source_bar_end_at,
+            run_at=run_at,
+            config=self._config,
+        )
+        evidence["reasons"].extend(decision.reasons)
+        evidence.update(decision.evidence_updates)
+        if decision.create_intent:
+            return _StrategyDecision.create(decision.cash_amount)
+        return _StrategyDecision.no_intent()
 
     def _load_strategy(self, strategy_id: UUID) -> StrategyModel:
         strategy = self._session.get(StrategyModel, strategy_id)
@@ -357,6 +361,77 @@ def _find_indicator_snapshot(
         ):
             return snapshot
     return None
+
+
+def evaluate_trend_up_pullback(
+    *,
+    strategy: StrategyModel,
+    bar: MarketBarModel | None,
+    regime: MarketRegimeSnapshotModel | None,
+    indicators: _IndicatorLookup,
+    source_bar_end_at: datetime,
+    run_at: datetime,
+    config: TrendUpPullbackConfig | None = None,
+) -> TrendUpPullbackDecision:
+    rule_config = config or TrendUpPullbackConfig()
+    if not strategy.enabled:
+        return TrendUpPullbackDecision.no_intent(reasons=["strategy_disabled"])
+    if strategy.name != "trend_up_pullback":
+        return TrendUpPullbackDecision.no_intent(reasons=["unsupported_strategy"])
+    if bar is None:
+        return TrendUpPullbackDecision.no_intent(reasons=["missing_closed_bar"])
+    if run_at - source_bar_end_at > rule_config.max_data_age:
+        return TrendUpPullbackDecision.no_intent(reasons=["stale_bar"])
+    if regime is None:
+        return TrendUpPullbackDecision.no_intent(reasons=["missing_regime"])
+    if regime.regime != MarketRegime.TREND_UP.value:
+        return TrendUpPullbackDecision.no_intent(reasons=[f"regime_blocked:{regime.regime}"])
+    if indicators.missing:
+        return TrendUpPullbackDecision.no_intent(
+            reasons=["missing_indicators"],
+            evidence_updates={"missing_indicators": indicators.missing},
+        )
+
+    close = Decimal(bar.close)
+    ema_50 = indicators.values["ema_50"]
+    ema_200 = indicators.values["ema_200"]
+    rsi_14 = indicators.values["rsi_14"]
+    atr_14 = indicators.values["atr_14"]
+    max_close = ema_50 * (Decimal("1") + rule_config.max_close_above_ema_50_pct)
+    evidence_updates: dict[str, Any] = {
+        "indicator_values": {key: str(value) for key, value in indicators.values.items()},
+        "bar_close": str(close),
+        "max_pullback_close": str(max_close),
+    }
+
+    if close > max_close:
+        return TrendUpPullbackDecision.no_intent(
+            reasons=["price_not_in_pullback_zone"],
+            evidence_updates=evidence_updates,
+        )
+    if close < ema_200:
+        return TrendUpPullbackDecision.no_intent(
+            reasons=["price_below_ema_200"],
+            evidence_updates=evidence_updates,
+        )
+    if rsi_14 < rule_config.min_rsi or rsi_14 > rule_config.max_rsi:
+        return TrendUpPullbackDecision.no_intent(
+            reasons=["rsi_outside_pullback_bounds"],
+            evidence_updates=evidence_updates,
+        )
+    if atr_14 <= Decimal("0"):
+        return TrendUpPullbackDecision.no_intent(
+            reasons=["atr_not_positive"],
+            evidence_updates=evidence_updates,
+        )
+
+    cash_amount = _strategy_cash_amount(strategy.parameters, rule_config.default_cash_amount)
+    evidence_updates["cash_amount"] = str(cash_amount)
+    return TrendUpPullbackDecision.create(
+        cash_amount=cash_amount,
+        reasons=["trend_up_pullback_confirmed"],
+        evidence_updates=evidence_updates,
+    )
 
 
 def _strategy_cash_amount(parameters: dict[str, object], default: Decimal) -> Decimal:

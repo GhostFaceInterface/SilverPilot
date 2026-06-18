@@ -329,14 +329,41 @@ The trading system uses Hermes only as veto, risk reducer, no-trade trigger, or 
 
 ## 14. ML Plan
 
-ML is delayed.
+ML is delayed until the deterministic paper-trading and backtest core is stable.
+Phase 14 implements only an offline experiment lane.
 
 - Phase 1: no ML; rule-based system only.
 - Phase 2: collect clean labeled data.
 - Phase 3: offline experiments only.
 - Phase 4: ML regime classifier as advisory signal only.
 
-ML must not be introduced before stable data collection, stable paper trading, stable backtesting, enough historical records, reliable labels, time-series validation, and transaction costs included.
+ML must not be introduced before stable data collection, stable paper trading,
+stable backtesting, enough historical records, reliable labels, time-series
+validation, and transaction costs included.
+
+Phase 14 edge target:
+
+- Candidate universe: BUY candidates where the existing `trend_up_pullback`
+  rule would create an intent.
+- Primary label: `forward_net_return_after_costs`.
+- Primary classifier target: `positive_edge = forward_net_return_after_costs >
+  min_edge_bps`.
+- Features use only closed bars and decision-time-known indicators, regimes,
+  quotes, and active event-risk summaries.
+- Validation is chronological expanding-window with an embargo at least as long
+  as the label horizon.
+
+Artifact and authority policy:
+
+- Row-level ML datasets and predictions are file artifacts under
+  `mlruns/phase14/`; they are not embedded in the database.
+- Experiment metadata and metrics are stored in `ml_dataset_snapshots`,
+  `ml_experiment_runs`, and `ml_experiment_metrics`.
+- Model binaries are not persisted in Phase 14.
+- ML output is advisory report data only. It must not create, veto, size,
+  approve, reduce, execute, or schedule trades.
+- Runtime trading, API, Telegram, scheduler, collector, `StrategyEngine`,
+  `RiskManager`, and `PaperBroker` must not depend on ML packages or artifacts.
 
 ## 15. Backtesting Plan
 
@@ -716,10 +743,17 @@ authentication/authorization, live quote fetching, ML, or real-money execution.
 
 ### Phase 14: ML experiments
 
-Goal: offline ML experiments after enough clean data exists.
-Deliverables: dataset builder, time-series validation, advisory-only model report.
-Acceptance: costs included; ablation shows value beyond rules.
-Do not include: ML authority over trades.
+Goal: offline ML experiments for the existing `trend_up_pullback` BUY candidate
+universe.
+Deliverables: `src/silverpilot/app/ml_experiments`, `silverpilot-ml-experiment`,
+ML metadata tables, deterministic `mlruns/phase14/` artifacts, time-series
+validation, rule-only/dummy/logistic advisory reports.
+Acceptance: costs included; no feature/label leakage; insufficient data is
+reported honestly; any future runtime promotion requires ablation value beyond
+the rule-only baseline.
+Do not include: ML authority over trades, runtime inference, model serving,
+model binaries, PyTorch, XGBoost, MLflow, or dependencies from API, Telegram,
+strategy, risk, broker, scheduler, or collector paths into ML artifacts.
 
 ## 22. Suggested New Folder Structure
 

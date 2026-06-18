@@ -25,9 +25,13 @@ dev = [
   "pytest>=8.3.0",
   "ruff>=0.6.0",
 ]
+ml = [
+  "scikit-learn>=1.5.0",
+]
 
 [project.scripts]
 silverpilot-collect-kuveyt = "silverpilot.app.collectors.cli:main"
+silverpilot-ml-experiment = "silverpilot.app.ml_experiments.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/silverpilot"]

@@ -911,6 +911,97 @@ class BacktestRunModel(Base, TimestampMixin):
     )
 
 
+class MLDatasetSnapshotModel(Base, TimestampMixin):
+    __tablename__ = "ml_dataset_snapshots"
+
+    id: Mapped[UUID] = uuid_pk()
+    source_dataset_snapshot_id: Mapped[UUID] = mapped_column(
+        ForeignKey("backtest_dataset_snapshots.id"), nullable=False
+    )
+    feature_spec: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    label_spec: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    split_spec: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    start_at: Mapped[datetime] = utc_datetime()
+    end_at: Mapped[datetime] = utc_datetime()
+    row_count: Mapped[int] = mapped_column(nullable=False)
+    class_balance: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    artifact_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    artifact_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    data_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+
+    source_dataset_snapshot: Mapped[BacktestDatasetSnapshotModel] = relationship()
+    experiment_runs: Mapped[list["MLExperimentRunModel"]] = relationship(
+        back_populates="dataset_snapshot"
+    )
+
+    __table_args__ = (
+        CheckConstraint("end_at > start_at", name="ml_dataset_window_valid"),
+        CheckConstraint("row_count >= 0", name="ml_dataset_row_count_non_negative"),
+        Index("ix_ml_dataset_source", "source_dataset_snapshot_id"),
+        Index("ix_ml_dataset_lookup", "start_at", "end_at", "row_count"),
+    )
+
+
+class MLExperimentRunModel(Base, TimestampMixin):
+    __tablename__ = "ml_experiment_runs"
+
+    id: Mapped[UUID] = uuid_pk()
+    dataset_snapshot_id: Mapped[UUID] = mapped_column(
+        ForeignKey("ml_dataset_snapshots.id"), nullable=False
+    )
+    model_family: Mapped[str] = mapped_column(String(80), nullable=False)
+    hyperparameters: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    random_seed: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = utc_datetime()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    report_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+    dataset_snapshot: Mapped[MLDatasetSnapshotModel] = relationship(
+        back_populates="experiment_runs"
+    )
+    metrics: Mapped[list["MLExperimentMetricModel"]] = relationship(back_populates="run")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('completed', 'failed', 'insufficient_data')",
+            name="ml_experiment_status_valid",
+        ),
+        CheckConstraint(
+            "completed_at IS NULL OR completed_at >= started_at",
+            name="ml_experiment_completed_gte_started",
+        ),
+        Index("ix_ml_experiment_runs_dataset", "dataset_snapshot_id"),
+        Index("ix_ml_experiment_runs_model_status", "model_family", "status"),
+    )
+
+
+class MLExperimentMetricModel(Base, TimestampMixin):
+    __tablename__ = "ml_experiment_metrics"
+
+    id: Mapped[UUID] = uuid_pk()
+    experiment_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("ml_experiment_runs.id"), nullable=False
+    )
+    split: Mapped[str] = mapped_column(String(40), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    metric_value: Mapped[Decimal] = mapped_column(Numeric(24, 12), nullable=False)
+    metric_metadata: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+    run: Mapped[MLExperimentRunModel] = relationship(back_populates="metrics")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_run_id",
+            "split",
+            "metric_name",
+            name="uq_ml_experiment_metrics_run_split_metric",
+        ),
+        Index("ix_ml_experiment_metrics_run", "experiment_run_id"),
+        Index("ix_ml_experiment_metrics_name", "metric_name"),
+    )
+
+
 @event.listens_for(LedgerEntryModel, "before_update")
 def _prevent_ledger_entry_update(
     _mapper: object,

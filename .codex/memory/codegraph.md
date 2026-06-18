@@ -13,11 +13,12 @@ current and compact; do not install an external codegraph tool for this purpose.
 
 ## App Entrypoints
 
-- FastAPI app and routers: `apps/api/app/`.
-- Runtime financial/data agents: `apps/api/app/agents/`.
-- Dashboard app: `apps/dashboard/`.
-- Database and migrations: `apps/api/alembic/`, `apps/api/app/models/`, and service/data-access modules under `apps/api/app/`.
-- Tests: `tests/`, `apps/api/tests/`, and any subsystem-local test roots discovered by `rg --files`.
+- FastAPI app and routers: `src/silverpilot/app/main.py` and `src/silverpilot/app/api/`.
+- Runtime financial/data agents: none currently under a root `/agents`; future runtime agents stay under `src/silverpilot/app/...`.
+- Dashboard/report data APIs: `src/silverpilot/app/api/`; no separate dashboard app exists in the current tree.
+- Database and migrations: `migrations/`, `src/silverpilot/app/db/models.py`, and service/data-access modules under `src/silverpilot/app/`.
+- Offline ML experiments: `src/silverpilot/app/ml_experiments/`; artifacts under ignored `mlruns/phase14/`.
+- Tests: `tests/` and any subsystem-local test roots discovered by `rg --files`.
 
 ## Codex Framework Entrypoints
 
