@@ -54,6 +54,20 @@ def test_parse_finance_portal_silver_quote_from_sanitized_fixture() -> None:
     assert parsed.indicative is True
 
 
+def test_parse_finance_portal_silver_quote_from_title_based_payload() -> None:
+    payload = (
+        b'[{"Title":"GMS (gr)","CurrencyCode":"GMS (gr)",'
+        b'"CurrencyDescription":"Gumus","BuyRate":95.10044,"SellRate":97.96861}]'
+    )
+
+    parsed = parse_finance_portal_silver_quote(payload)
+
+    assert parsed.bank_buy_price == Decimal("95.10044")
+    assert parsed.bank_sell_price == Decimal("97.96861")
+    assert parsed.source_symbol == "GMS (gr)"
+    assert parsed.source_name == "Gumus"
+
+
 def test_parser_fails_visibly_when_silver_row_is_missing() -> None:
     payload = b'{"Data":[{"Code":"USD","Symbol":"USD","BuyRate":"1","SellRate":"2"}]}'
 

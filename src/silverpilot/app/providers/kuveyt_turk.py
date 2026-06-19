@@ -284,7 +284,17 @@ def _iter_mappings(value: _JsonValue) -> Iterable[Mapping[str, _JsonValue]]:
 
 
 def _is_silver_gram_row(row: Mapping[str, _JsonValue]) -> bool:
-    fields = ("Code", "Symbol", "Name", "FullName", "DisplayName", "CurrencyName")
+    fields = (
+        "Code",
+        "Symbol",
+        "Title",
+        "CurrencyCode",
+        "Name",
+        "FullName",
+        "DisplayName",
+        "CurrencyName",
+        "CurrencyDescription",
+    )
     values = [str(row[field]) for field in fields if field in row and row[field] is not None]
     searchable = " ".join(values).casefold()
     has_gms_gram_symbol = _SILVER_GRAM_SYMBOL.casefold() in searchable
@@ -342,7 +352,7 @@ def _validate_buy_sell_prices(buy_price: Decimal, sell_price: Decimal) -> None:
 
 
 def _source_symbol(row: Mapping[str, _JsonValue]) -> str:
-    for field in ("Symbol", "Code", "FullName", "DisplayName"):
+    for field in ("Symbol", "Code", "Title", "CurrencyCode", "FullName", "DisplayName"):
         value = row.get(field)
         if value:
             return str(value)
@@ -350,7 +360,7 @@ def _source_symbol(row: Mapping[str, _JsonValue]) -> str:
 
 
 def _source_name(row: Mapping[str, _JsonValue]) -> str:
-    for field in ("Name", "CurrencyName", "FullName", "DisplayName"):
+    for field in ("Name", "CurrencyName", "CurrencyDescription", "FullName", "DisplayName"):
         value = row.get(field)
         if value:
             return str(value)
