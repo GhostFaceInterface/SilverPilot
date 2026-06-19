@@ -1,0 +1,62 @@
+name: Deploy VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref or exact SHA to deploy"
+        required: true
+        default: "main"
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve deploy SHA
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH
+        env:
+          SILVERPILOT_VPS_SSH_KEY: ${{ secrets.SILVERPILOT_VPS_SSH_KEY }}
+          SILVERPILOT_VPS_HOST: ${{ secrets.SILVERPILOT_VPS_HOST }}
+          SILVERPILOT_VPS_USER: ${{ secrets.SILVERPILOT_VPS_USER }}
+        run: |
+          test -n "$SILVERPILOT_VPS_SSH_KEY"
+          test -n "$SILVERPILOT_VPS_HOST"
+          test -n "$SILVERPILOT_VPS_USER"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SILVERPILOT_VPS_SSH_KEY" > ~/.ssh/silverpilot_vps
+          chmod 600 ~/.ssh/silverpilot_vps
+          ssh-keyscan -H "$SILVERPILOT_VPS_HOST" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host silverpilot-vps
+            HostName $SILVERPILOT_VPS_HOST
+            User $SILVERPILOT_VPS_USER
+            IdentityFile ~/.ssh/silverpilot_vps
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Deploy exact SHA
+        env:
+          DEPLOY_SHA: ${{ steps.rev.outputs.sha }}
+        run: |
+          ssh silverpilot-vps "cd /opt/silverpilot/SilverPilot && \
+            git fetch origin '$DEPLOY_SHA' && \
+            git checkout --detach '$DEPLOY_SHA' && \
+            mkdir -p /opt/silverpilot/backups && \
+            docker compose exec -T postgres pg_dump -U silverpilot silverpilot > /opt/silverpilot/backups/silverpilot-'$DEPLOY_SHA'.sql && \
+            SILVERPILOT_DEPLOYED_SHA='$DEPLOY_SHA' docker compose build && \
+            SILVERPILOT_DEPLOYED_SHA='$DEPLOY_SHA' docker compose run --rm migrate && \
+            SILVERPILOT_DEPLOYED_SHA='$DEPLOY_SHA' docker compose up -d api worker && \
+            docker compose exec -T api python -c \"from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)\""

@@ -161,7 +161,11 @@ def test_read_api_exposes_trades_positions_backtests_reports_and_health(
 
     health = client.get("/api/v1/system/health")
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "app": "SilverPilot"}
+    health_json = health.json()
+    assert health_json["status"] == "ok"
+    assert health_json["app"] == "SilverPilot"
+    assert health_json["seed_ready"] is True
+    assert "counts" in health_json
 
 
 def test_read_api_returns_structured_not_found_for_missing_resources(client: TestClient) -> None:

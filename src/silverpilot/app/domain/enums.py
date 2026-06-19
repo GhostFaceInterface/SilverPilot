@@ -32,6 +32,7 @@ class StrategyRunStatus(StrEnum):
 
 class TradeIntentSide(StrEnum):
     BUY = "buy"
+    SELL = "sell"
 
 
 class TradeIntentStatus(StrEnum):

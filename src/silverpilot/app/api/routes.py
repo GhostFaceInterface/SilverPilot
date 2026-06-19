@@ -24,6 +24,7 @@ from silverpilot.app.api.schemas import (
 from silverpilot.app.api.services import ApiQueryService, Pagination
 from silverpilot.app.core.settings import Settings, get_settings
 from silverpilot.app.db.session import get_db_session
+from silverpilot.app.runtime.health import SystemHealthService
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -39,14 +40,20 @@ def query_service(session: Annotated[Session, Depends(get_db_session)]) -> ApiQu
     return ApiQueryService(session)
 
 
-@api_router.get("/health", response_model=HealthResponse, tags=["health"])
+@api_router.get(
+    "/health", response_model=HealthResponse, response_model_exclude_none=True, tags=["health"]
+)
 def api_health(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
     return HealthResponse(status="ok", app=settings.app_name)
 
 
 @api_router.get("/system/health", response_model=HealthResponse, tags=["system"])
-def system_health(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
-    return HealthResponse(status="ok", app=settings.app_name)
+def system_health(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> HealthResponse:
+    snapshot = SystemHealthService(session=session, settings=settings).snapshot()
+    return HealthResponse.model_validate(snapshot.payload)
 
 
 @api_router.get("/accounts", response_model=PaginatedResponse[AccountResponse], tags=["accounts"])

@@ -11,6 +11,16 @@ T = TypeVar("T")
 class HealthResponse(BaseModel):
     status: str
     app: str
+    captured_at: datetime | None = None
+    deployed_sha: str | None = None
+    runtime_enabled: bool | None = None
+    seed_ready: bool | None = None
+    counts: dict[str, Any] | None = None
+    latest: dict[str, Any] | None = None
+    warmup: dict[str, Any] | None = None
+    runtime: dict[str, Any] | None = None
+    last_event: dict[str, Any] | None = None
+    telegram: dict[str, Any] | None = None
 
 
 class PageMeta(BaseModel):

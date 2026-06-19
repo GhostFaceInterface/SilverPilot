@@ -713,7 +713,7 @@ class TradeIntentModel(Base, TimestampMixin):
     risk_decisions: Mapped[list["RiskDecisionModel"]] = relationship(back_populates="trade_intent")
 
     __table_args__ = (
-        CheckConstraint("side IN ('buy')", name="trade_intent_side_valid"),
+        CheckConstraint("side IN ('buy', 'sell')", name="trade_intent_side_valid"),
         CheckConstraint(
             "status IN ('pending_risk')",
             name="trade_intent_status_valid",
@@ -722,6 +722,78 @@ class TradeIntentModel(Base, TimestampMixin):
         CheckConstraint("quantity IS NULL OR quantity > 0", name="trade_intent_quantity_positive"),
         Index("ix_trade_intents_account_status", "account_id", "status"),
         Index("ix_trade_intents_strategy_run", "strategy_run_id"),
+    )
+
+
+class SystemHealthEventModel(Base, TimestampMixin):
+    __tablename__ = "system_health_events"
+
+    id: Mapped[UUID] = uuid_pk()
+    component: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    occurred_at: Mapped[datetime] = utc_datetime()
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ok', 'warming_up', 'degraded', 'failed')",
+            name="system_health_event_status_valid",
+        ),
+        CheckConstraint(
+            "severity IN ('info', 'warning', 'error')",
+            name="system_health_event_severity_valid",
+        ),
+        Index("ix_system_health_events_component_time", "component", "occurred_at"),
+        Index("ix_system_health_events_status", "status"),
+    )
+
+
+class RuntimeTickModel(Base, TimestampMixin):
+    __tablename__ = "runtime_ticks"
+
+    id: Mapped[UUID] = uuid_pk()
+    account_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("virtual_accounts.id"), nullable=True
+    )
+    bank_instrument_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("bank_instruments.id"), nullable=True
+    )
+    execution_instrument_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("execution_instruments.id"), nullable=True
+    )
+    strategy_id: Mapped[UUID | None] = mapped_column(ForeignKey("strategies.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    summary: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    started_at: Mapped[datetime] = utc_datetime()
+    finished_at: Mapped[datetime] = utc_datetime()
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ok', 'warming_up', 'degraded', 'failed')",
+            name="runtime_tick_status_valid",
+        ),
+        CheckConstraint("finished_at >= started_at", name="runtime_tick_finished_gte_started"),
+        Index("ix_runtime_ticks_finished", "finished_at"),
+        Index("ix_runtime_ticks_status", "status"),
+    )
+
+
+class TelegramBotStateModel(Base, TimestampMixin):
+    __tablename__ = "telegram_bot_state"
+
+    id: Mapped[UUID] = uuid_pk()
+    bot_name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    last_update_id: Mapped[int | None] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="disabled")
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('disabled', 'polling', 'degraded', 'failed')",
+            name="telegram_bot_state_status_valid",
+        ),
     )
 
 

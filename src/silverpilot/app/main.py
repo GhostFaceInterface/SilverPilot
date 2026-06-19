@@ -9,7 +9,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     app = FastAPI(title=resolved_settings.app_name)
 
-    @app.get("/health", response_model=HealthResponse, tags=["health"])
+    @app.get(
+        "/health", response_model=HealthResponse, response_model_exclude_none=True, tags=["health"]
+    )
     def health() -> HealthResponse:
         return HealthResponse(status="ok", app=resolved_settings.app_name)
 

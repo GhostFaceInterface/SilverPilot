@@ -9,6 +9,18 @@ x-app-environment: &app-environment
   SILVERPILOT_TELEGRAM_BOT_TOKEN: ${SILVERPILOT_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}
   SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID: ${SILVERPILOT_TELEGRAM_DEFAULT_CHAT_ID:-${TELEGRAM_CHAT_ID:-}}
   SILVERPILOT_TELEGRAM_API_BASE_URL: ${SILVERPILOT_TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+  SILVERPILOT_DEPLOYED_SHA: ${SILVERPILOT_DEPLOYED_SHA:-}
+  SILVERPILOT_RUNTIME_ENABLED: ${SILVERPILOT_RUNTIME_ENABLED:-false}
+  SILVERPILOT_RUNTIME_ACCOUNT_ID: ${SILVERPILOT_RUNTIME_ACCOUNT_ID:-}
+  SILVERPILOT_RUNTIME_BANK_INSTRUMENT_ID: ${SILVERPILOT_RUNTIME_BANK_INSTRUMENT_ID:-}
+  SILVERPILOT_RUNTIME_EXECUTION_INSTRUMENT_ID: ${SILVERPILOT_RUNTIME_EXECUTION_INSTRUMENT_ID:-}
+  SILVERPILOT_RUNTIME_STRATEGY_ID: ${SILVERPILOT_RUNTIME_STRATEGY_ID:-}
+  SILVERPILOT_RUNTIME_COLLECT_INTERVAL_SECONDS: ${SILVERPILOT_RUNTIME_COLLECT_INTERVAL_SECONDS:-300}
+  SILVERPILOT_RUNTIME_BAR_TIMEFRAME: ${SILVERPILOT_RUNTIME_BAR_TIMEFRAME:-5m}
+  SILVERPILOT_RUNTIME_WARMUP_BARS: ${SILVERPILOT_RUNTIME_WARMUP_BARS:-201}
+  SILVERPILOT_RUNTIME_EXIT_STOP_LOSS_PCT: ${SILVERPILOT_RUNTIME_EXIT_STOP_LOSS_PCT:--0.03}
+  SILVERPILOT_RUNTIME_EXIT_TAKE_PROFIT_PCT: ${SILVERPILOT_RUNTIME_EXIT_TAKE_PROFIT_PCT:-0.05}
+  SILVERPILOT_RUNTIME_EXIT_HIGH_VOLATILITY_FRACTION: ${SILVERPILOT_RUNTIME_EXIT_HIGH_VOLATILITY_FRACTION:-0.5}
 
 services:
   postgres:
@@ -59,6 +71,29 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  worker:
+    build:
+      context: .
+    environment:
+      <<: *app-environment
+    command: ["silverpilot-paper-loop"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  telegram:
+    profiles: ["telegram"]
+    build:
+      context: .
+    environment:
+      <<: *app-environment
+    command: ["silverpilot-telegram-bot"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   collector:
     profiles: ["collector"]

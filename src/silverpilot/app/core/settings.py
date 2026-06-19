@@ -1,7 +1,8 @@
 from functools import lru_cache
 from typing import Literal
+from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,32 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_default_chat_id: str | None = None
     telegram_api_base_url: str = "https://api.telegram.org"
+    deployed_sha: str | None = None
+
+    runtime_enabled: bool = False
+    runtime_account_id: UUID | None = None
+    runtime_bank_instrument_id: UUID | None = None
+    runtime_execution_instrument_id: UUID | None = None
+    runtime_strategy_id: UUID | None = None
+    runtime_collect_interval_seconds: int = Field(default=300, ge=1)
+    runtime_bar_timeframe: str = "5m"
+    runtime_warmup_bars: int = Field(default=201, ge=1)
+    runtime_exit_stop_loss_pct: float = Field(default=-0.03, le=0)
+    runtime_exit_take_profit_pct: float = Field(default=0.05, ge=0)
+    runtime_exit_high_volatility_fraction: float = Field(default=0.5, ge=0, le=1)
+
+    @field_validator(
+        "runtime_account_id",
+        "runtime_bank_instrument_id",
+        "runtime_execution_instrument_id",
+        "runtime_strategy_id",
+        mode="before",
+    )
+    @classmethod
+    def empty_uuid_is_none(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
 
 @lru_cache

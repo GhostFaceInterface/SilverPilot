@@ -563,10 +563,10 @@ class AccountBoundExecutionResolver:
                     bank_instrument,
                     ["missing_reference_execution_mapping"],
                 )
-        elif (
-            strategy_run.instrument_type == "execution"
-            and strategy_run.instrument_id != execution_instrument.id
-        ):
+        elif strategy_run.instrument_type == "execution" and strategy_run.instrument_id not in {
+            execution_instrument.id,
+            execution_instrument.bank_instrument_id,
+        }:
             return ExecutionResolution(
                 execution_instrument,
                 bank_instrument,

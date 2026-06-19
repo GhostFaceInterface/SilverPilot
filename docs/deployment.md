@@ -36,13 +36,35 @@ bash .codex/scripts/verify-docker.sh --build
 - `migrate`: one-shot Alembic migration service. It must complete before `api`
   starts.
 - `api`: FastAPI service exposing `/health` on a loopback-bound host port.
+- `worker`: always-on paper-trading runtime. It uses seeded paper account ids
+  and never calls real-money bank execution.
 - `collector`: optional profile for bounded Kuveyt Turk quote collection. It is
-  not an always-on scheduler.
+  retained for one-shot checks; the normal live paper flow runs through
+  `worker`.
+- `telegram`: optional `telegram` profile for read-only status commands and
+  alerts. It must never initiate trades.
 
 Telegram is still an optional notification adapter. Enabling Telegram requires
 `SILVERPILOT_TELEGRAM_ENABLED=true`, a bot token, and a chat id in the runtime
-environment. Bot polling, webhooks, and remote command handling are not part of
-the current system.
+environment. The bot command surface is read-only: `/health`, `/prices`,
+`/portfolio`, `/trades`, `/risk`, and `/help`.
+
+## Paper Runtime Bootstrap
+
+Before enabling `worker`, run the idempotent bootstrap in the target Compose
+environment:
+
+```bash
+docker compose run --rm api silverpilot-bootstrap-paper
+```
+
+Record the returned `account_id`, `bank_instrument_id`,
+`execution_instrument_id`, and `strategy_id` in the target environment as
+`SILVERPILOT_RUNTIME_ACCOUNT_ID`,
+`SILVERPILOT_RUNTIME_BANK_INSTRUMENT_ID`,
+`SILVERPILOT_RUNTIME_EXECUTION_INSTRUMENT_ID`, and
+`SILVERPILOT_RUNTIME_STRATEGY_ID`. Bootstrap must not reset an existing wallet
+balance.
 
 ## Migration Gate
 
@@ -60,10 +82,11 @@ Required checks after container startup:
 ```bash
 curl -fsS http://127.0.0.1:${SILVERPILOT_API_PORT:-8000}/health
 curl -fsS http://127.0.0.1:${SILVERPILOT_API_PORT:-8000}/api/v1/health
+curl -fsS http://127.0.0.1:${SILVERPILOT_API_PORT:-8000}/api/v1/system/health
 ```
 
-Collector success must be verified from bounded collector JSON output or
-database state, not from Telegram messages.
+Runtime success must be verified from `/api/v1/system/health`, runtime tick
+rows, and database state, not from Telegram messages.
 
 ## Rollback
 

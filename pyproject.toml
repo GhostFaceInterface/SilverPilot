@@ -31,6 +31,10 @@ ml = [
 
 [project.scripts]
 silverpilot-collect-kuveyt = "silverpilot.app.collectors.cli:main"
+silverpilot-bootstrap-paper = "silverpilot.app.runtime.bootstrap:main"
+silverpilot-paper-loop = "silverpilot.app.runtime.paper_loop:main"
+silverpilot-telegram-bot = "silverpilot.app.runtime.telegram_bot:main"
+silverpilot-ops-status = "silverpilot.app.runtime.ops_status:main"
 silverpilot-ml-experiment = "silverpilot.app.ml_experiments.cli:main"
 
 [tool.hatch.build.targets.wheel]
