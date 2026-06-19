@@ -64,13 +64,14 @@ jobs:
           cd "$VPS_PROJECT_PATH"
           git fetch origin "$DEPLOY_SHA" </dev/null
           git checkout --detach "$DEPLOY_SHA" </dev/null
+          compose=(docker compose --env-file .env.production)
           backup_dir="$(dirname "$VPS_PROJECT_PATH")/backups"
           mkdir -p "$backup_dir"
-          docker compose exec -T postgres pg_dump -U silverpilot silverpilot > "$backup_dir/silverpilot-$DEPLOY_SHA.sql"
-          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose build
-          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose run --rm migrate
-          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose up -d api worker
-          docker compose exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"
+          "${compose[@]}" exec -T postgres pg_dump -U silverpilot silverpilot > "$backup_dir/silverpilot-$DEPLOY_SHA.sql"
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" build
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" run --rm migrate
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" up -d api worker
+          "${compose[@]}" exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"
           EOF
           scp /tmp/silverpilot-deploy.sh silverpilot-vps:/tmp/silverpilot-deploy.sh
           ssh silverpilot-vps "bash /tmp/silverpilot-deploy.sh '$DEPLOY_SHA' '$VPS_PROJECT_PATH'"

@@ -74,8 +74,9 @@ def test_vps_deploy_workflow_is_manual_and_environment_gated() -> None:
     assert "secrets.VPS_USER" in workflow
     assert 'git checkout --detach "$DEPLOY_SHA"' in workflow
     assert 'git fetch origin "$DEPLOY_SHA" </dev/null' in workflow
+    assert "compose=(docker compose --env-file .env.production)" in workflow
     assert "scp /tmp/silverpilot-deploy.sh silverpilot-vps:/tmp/silverpilot-deploy.sh" in workflow
     assert "bash /tmp/silverpilot-deploy.sh" in workflow
-    assert "docker compose build" in workflow
-    assert "docker compose run --rm migrate" in workflow
+    assert '"${compose[@]}" build' in workflow
+    assert '"${compose[@]}" run --rm migrate' in workflow
     assert "/api/v1/system/health" in workflow
