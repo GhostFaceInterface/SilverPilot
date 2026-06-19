@@ -22,7 +22,8 @@ the `main` CI run passed.
 
 ## Implemented Through Phase 14
 
-- Core schema and migrations through `20260618_0010_ml_experiments`.
+- Core schema and migrations through `20260618_0010_ml_experiments` at the time
+  of the Phase 15 audit.
 - Account-bound paper trading with `paper_orders`, `paper_trades`, positions,
   wallets, and append-only ledger entries.
 - Existing trade cost columns: `fees`, `taxes`, and `spread_cost`.
@@ -36,41 +37,36 @@ the `main` CI run passed.
 
 - `UnitConversionRule` is implemented as `UnitConversionRuleModel` with
   effective date bounds and an index on from/to units plus `effective_from`.
-- `UnitConversionService` exists as a `Protocol` in
-  `src/silverpilot/app/domain/interfaces.py`, but no concrete service currently
-  performs database-backed effective-date lookup.
 - Account-bound execution is represented through virtual account instruments,
   execution instruments, bank instruments, risk decisions, paper orders, and
-  paper trades. There is no separate `AccountBoundExecutionResolver` service yet.
-- `PaperCostModel` currently acts as a simple aggregate/config object consumed
-  by paper trading, backtests, and ML labels.
+  paper trades. `AccountBoundExecutionResolver` is implemented in
+  `src/silverpilot/app/risks/service.py`.
+- `PaperCostModel` acted as a simple aggregate/config object consumed by paper
+  trading, backtests, and ML labels at this audit point.
 
-## Deferred To Phase 16
+## Implemented In Phase 16
 
 - `CostBreakdown` and `CostModelService` with detailed spread, fee, tax,
   slippage, conversion cost, rounding adjustment, and total-cost output.
 - A detailed cost audit field on `paper_trades`, while preserving the existing
   `fees`, `taxes`, and `spread_cost` columns for compatibility.
-- A concrete `UnitConversionService` that uses `UnitConversionRuleModel`,
+- `DatabaseUnitConversionService` that uses `UnitConversionRuleModel`,
   effective dates, and Decimal-safe conversion.
-- `ExecutionPremiumSnapshot` or an equivalent persisted concept.
+- `ExecutionPremiumSnapshotModel`.
 - `ExecutionPremiumService` that compares reference converted price against
   account-bound bank buy/sell prices only when required FX and unit conversion
   data exists.
 - Explicit failure status such as `missing_fx_rate`; do not fabricate converted
   reference prices.
-- Terminology cleanup around `QuoteUnit`, `ExecutionUnit`, and `InstrumentUnit`.
-  The current schema has `UnitModel`, instrument mappings, execution
-  instruments, bank instruments, and reference instruments, but those three
-  named abstractions are roadmap language rather than implemented domain types.
 
-## Deferred To Phase 17
+## Implemented In Phase 17
 
 - Offline ML productization gate for manifest/data-hash/split/model-family
-  invalidation rules beyond the current Phase 14 baseline.
+  invalidation rules beyond the Phase 14 baseline.
 - Optional ML smoke testing under `.[dev,ml]` only.
 - Boundary regressions proving API, strategy, risk, paper broker, Telegram,
-  scheduler, and collector paths do not import `ml_experiments`.
+  notification, collector, and backtest runtime paths do not import
+  `ml_experiments`.
 - A hard rule that ML artifacts do not create trade intents, sizing, vetoes,
   approvals, executions, or model binaries.
 - Any runtime ML promotion plan. It remains blocked until offline evidence
@@ -89,9 +85,9 @@ the `main` CI run passed.
 
 Do not create `docs/ARCHITECTURE.md` in Phase 15. The current durable decisions
 are already captured in `docs/adr/`, and the phase handoff plus `ROADMAP.md`
-are sufficient for this closure. Reconsider a consolidated architecture doc
-only when Phase 16 introduces cost, conversion, and premium services that need
-stable cross-module contracts.
+are sufficient for this closure. Phase 16/17 details are captured in
+`phase-16-cost-conversion-premium.md` and
+`phase-17-ml-productization-boundary.md`.
 
 ## Acceptance For Closure
 
@@ -100,7 +96,6 @@ Phase 15 is complete when:
 - the local verification matrix above remains green;
 - the optional `sklearn` mypy boundary is committed and GitHub Actions passes;
 - `plan/README.md` points to this closure audit;
-- Phase 16/17 items remain explicitly deferred rather than described as
-  implemented;
+- Phase 16/17 items are tracked in their own handoff files;
 - no runtime ML, real-money execution, remote deployment, or cross-bank routing
   behavior is introduced.

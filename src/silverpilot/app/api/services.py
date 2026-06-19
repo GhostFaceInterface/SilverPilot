@@ -35,6 +35,7 @@ from silverpilot.app.db.models import (
     BacktestRunModel,
     BankModel,
     ExecutionInstrumentModel,
+    ExecutionPremiumSnapshotModel,
     IndicatorSnapshotModel,
     MarketRegimeSnapshotModel,
     PaperTradeModel,
@@ -308,6 +309,9 @@ class ApiQueryService:
             account_id=account.id,
             risk_decisions=risk_decisions,
             pending_intent_count=self._pending_intent_count(account.id),
+            latest_premium_snapshot=self._latest_premium_snapshot(
+                [decision.execution_instrument_id for decision in risk_decisions]
+            ),
         )
         health = _account_health_report(
             account=account,
@@ -374,6 +378,22 @@ class ApiQueryService:
             )
         )
         return int(count or 0)
+
+    def _latest_premium_snapshot(
+        self,
+        execution_instrument_ids: Sequence[UUID | None],
+    ) -> ExecutionPremiumSnapshotModel | None:
+        ids = [instrument_id for instrument_id in execution_instrument_ids if instrument_id]
+        if not ids:
+            return None
+        return self._session.scalar(
+            select(ExecutionPremiumSnapshotModel)
+            .where(ExecutionPremiumSnapshotModel.execution_instrument_id.in_(ids))
+            .order_by(
+                ExecutionPremiumSnapshotModel.captured_at.desc(),
+                ExecutionPremiumSnapshotModel.id,
+            )
+        )
 
 
 def _apply_market_filters(  # noqa: UP047
@@ -527,6 +547,7 @@ def _trade_response(trade: PaperTradeModel) -> PaperTradeResponse:
         spread_cost=trade.spread_cost,
         net_cash_amount=trade.net_cash_amount,
         realized_pnl=trade.realized_pnl,
+        cost_breakdown=trade.cost_breakdown,
         executed_at=trade.executed_at,
     )
 
@@ -669,6 +690,7 @@ def _risk_report(
     account_id: UUID,
     risk_decisions: Sequence[RiskDecisionModel],
     pending_intent_count: int,
+    latest_premium_snapshot: ExecutionPremiumSnapshotModel | None = None,
 ) -> RiskReportResponse:
     decision_counts = {"approve": 0, "reduce": 0, "reject": 0}
     rejection_reasons: dict[str, int] = {}
@@ -687,6 +709,12 @@ def _risk_report(
         rejected_decision_count=decision_counts["reject"],
         latest_decision_at=latest_decision_at,
         rejection_reasons=rejection_reasons,
+        latest_execution_premium_snapshot_id=(
+            latest_premium_snapshot.id if latest_premium_snapshot is not None else None
+        ),
+        latest_execution_premium_status=(
+            latest_premium_snapshot.status if latest_premium_snapshot is not None else None
+        ),
     )
 
 

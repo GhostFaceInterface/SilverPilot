@@ -126,6 +126,7 @@ class PaperTradeResponse(BaseModel):
     spread_cost: Decimal
     net_cash_amount: Decimal
     realized_pnl: Decimal
+    cost_breakdown: dict[str, Any] | None = None
     executed_at: datetime
 
 
@@ -207,6 +208,8 @@ class RiskReportResponse(BaseModel):
     rejected_decision_count: int
     latest_decision_at: datetime | None
     rejection_reasons: dict[str, int]
+    latest_execution_premium_snapshot_id: UUID | None = None
+    latest_execution_premium_status: str | None = None
 
 
 class AccountHealthReportResponse(BaseModel):

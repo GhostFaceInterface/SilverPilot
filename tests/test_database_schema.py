@@ -44,6 +44,7 @@ CORE_TABLES = {
     "bank_instruments",
     "currencies",
     "execution_instruments",
+    "execution_premium_snapshots",
     "execution_venues",
     "instrument_mappings",
     "indicator_snapshots",
@@ -453,13 +454,37 @@ def test_paper_trading_schema_contains_execution_and_ledger_tables(engine: Engin
         "ledger_entries",
     }.issubset(set(inspector.get_table_names()))
     paper_order_columns = {column["name"] for column in inspector.get_columns("paper_orders")}
+    paper_trade_columns = {column["name"] for column in inspector.get_columns("paper_trades")}
     paper_order_indexes = {index["name"] for index in inspector.get_indexes("paper_orders")}
     ledger_indexes = {index["name"] for index in inspector.get_indexes("ledger_entries")}
 
     assert "risk_decision_id" in paper_order_columns
     assert "approved_quantity" in paper_order_columns
+    assert "cost_breakdown" in paper_trade_columns
     assert "ix_paper_orders_risk_decision" in paper_order_indexes
     assert "ix_ledger_entries_reference" in ledger_indexes
+
+
+def test_execution_premium_schema_contains_snapshot_table(engine: Engine) -> None:
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("execution_premium_snapshots")}
+    indexes = {index["name"] for index in inspector.get_indexes("execution_premium_snapshots")}
+
+    assert {
+        "execution_instrument_id",
+        "bank_instrument_id",
+        "reference_price",
+        "fx_rate",
+        "converted_reference_price",
+        "buy_discount",
+        "sell_premium",
+        "status",
+        "provenance",
+    }.issubset(columns)
+    assert {
+        "ix_execution_premium_instrument_captured",
+        "ix_execution_premium_status",
+    }.issubset(indexes)
 
 
 def test_paper_order_unique_per_risk_decision(engine: Engine) -> None:

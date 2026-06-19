@@ -24,12 +24,19 @@ from silverpilot.app.db.models import (
     StrategyModel,
     StrategyRunModel,
     TradeIntentModel,
+    UnitConversionRuleModel,
     UnitModel,
     UserModel,
     VirtualAccountModel,
     WalletModel,
 )
 from silverpilot.app.domain.enums import PaperOrderSide
+from silverpilot.app.execution_premium import (
+    DatabaseUnitConversionService,
+    ExecutionPremiumInput,
+    ExecutionPremiumService,
+    UnitConversionError,
+)
 from silverpilot.app.paper_trading import PaperBroker, PaperCostModel, PaperOrderRequest
 
 BASE_TIME = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
@@ -61,6 +68,16 @@ def test_paper_broker_buy_posts_trade_position_wallet_and_ledger(engine: Engine)
         assert result.order.status == "executed"
         assert result.trade.execution_price == Decimal("50.00000000")
         assert result.trade.net_cash_amount == Decimal("500.50000000")
+        assert result.trade.cost_breakdown == {
+            "spread": "10.00000000",
+            "fee": "0.50000000",
+            "tax": "0.00000000",
+            "slippage": "0.00000000",
+            "conversion_cost": "0.00000000",
+            "rounding_adjustment": "0.00000000",
+            "total_cost": "10.50000000",
+            "model_version": "paper-cost-v1",
+        }
         assert wallet is not None
         assert wallet.available_amount == Decimal("9499.50000000")
         assert position is not None
@@ -231,6 +248,156 @@ def test_ledger_entries_are_append_only(engine: Engine) -> None:
 
         with pytest.raises(ValueError, match="append-only"):
             session.flush()
+
+
+def test_database_unit_conversion_uses_effective_rule(engine: Engine) -> None:
+    with Session(engine) as session:
+        fixture = _seed_fixture(session)
+        execution_instrument = session.get(
+            ExecutionInstrumentModel, fixture.execution_instrument_id
+        )
+        assert execution_instrument is not None
+        ounce = UnitModel(
+            id=uuid4(),
+            code=f"OZ{uuid4().hex[:3]}",
+            name="Ounce",
+            precision=8,
+            created_at=BASE_TIME,
+        )
+        rule = UnitConversionRuleModel(
+            id=uuid4(),
+            from_unit=ounce,
+            to_unit=execution_instrument.unit,
+            factor=Decimal("31.1034768"),
+            effective_from=BASE_TIME - timedelta(days=1),
+            created_at=BASE_TIME,
+        )
+        session.add(rule)
+        session.flush()
+
+        result = DatabaseUnitConversionService(session=session).convert(
+            value=Decimal("2"),
+            from_unit_id=ounce.id,
+            to_unit_id=execution_instrument.unit_id,
+            effective_at=BASE_TIME,
+        )
+
+        assert result.value == Decimal("62.2069536")
+        assert result.rule_id == rule.id
+
+
+def test_database_unit_conversion_same_unit_is_direct(engine: Engine) -> None:
+    with Session(engine) as session:
+        fixture = _seed_fixture(session)
+        execution_instrument = session.get(
+            ExecutionInstrumentModel, fixture.execution_instrument_id
+        )
+        assert execution_instrument is not None
+        result = DatabaseUnitConversionService(session=session).convert(
+            value=Decimal("1.234567890123"),
+            from_unit_id=execution_instrument.unit_id,
+            to_unit_id=execution_instrument.unit_id,
+            effective_at=BASE_TIME,
+        )
+
+        assert result.value == Decimal("1.234567890123")
+        assert result.rule_id is None
+
+
+def test_database_unit_conversion_rejects_missing_or_ambiguous_rule(engine: Engine) -> None:
+    with Session(engine) as session:
+        fixture = _seed_fixture(session)
+        execution_instrument = session.get(
+            ExecutionInstrumentModel, fixture.execution_instrument_id
+        )
+        assert execution_instrument is not None
+        ounce = UnitModel(
+            id=uuid4(),
+            code=f"OZ{uuid4().hex[:3]}",
+            name="Ounce",
+            precision=8,
+            created_at=BASE_TIME,
+        )
+        session.add(ounce)
+        session.flush()
+        service = DatabaseUnitConversionService(session=session)
+
+        with pytest.raises(UnitConversionError, match="missing_unit_conversion_rule"):
+            service.convert(
+                value=Decimal("1"),
+                from_unit_id=ounce.id,
+                to_unit_id=execution_instrument.unit_id,
+                effective_at=BASE_TIME,
+            )
+
+        for factor in (Decimal("31.1034768"), Decimal("31.1035000")):
+            session.add(
+                UnitConversionRuleModel(
+                    id=uuid4(),
+                    from_unit_id=ounce.id,
+                    to_unit_id=execution_instrument.unit_id,
+                    factor=factor,
+                    effective_from=BASE_TIME - timedelta(days=1),
+                    created_at=BASE_TIME,
+                )
+            )
+        session.flush()
+
+        with pytest.raises(UnitConversionError, match="ambiguous_unit_conversion_rule"):
+            service.convert(
+                value=Decimal("1"),
+                from_unit_id=ounce.id,
+                to_unit_id=execution_instrument.unit_id,
+                effective_at=BASE_TIME,
+            )
+
+
+def test_execution_premium_snapshot_succeeds_with_explicit_fx(engine: Engine) -> None:
+    with Session(engine) as session:
+        fixture = _seed_fixture(session)
+        snapshot = ExecutionPremiumService(session=session).create_snapshot(
+            ExecutionPremiumInput(
+                execution_instrument_id=fixture.execution_instrument_id,
+                reference_price=Decimal("1.50"),
+                reference_currency_code="USD",
+                reference_unit_code="GRAM",
+                bank_buy_price=Decimal("49"),
+                bank_sell_price=Decimal("50"),
+                price_quote_id=fixture.quote_id,
+                fx_rate=Decimal("32"),
+                fx_source="manual-test",
+                captured_at=BASE_TIME,
+                provenance={"reference_source": "fixture"},
+            )
+        )
+
+        assert snapshot.status == "ok"
+        assert snapshot.converted_reference_price == Decimal("48.00000000")
+        assert snapshot.buy_discount == Decimal("-1.00000000")
+        assert snapshot.sell_premium == Decimal("2.00000000")
+        assert snapshot.provenance["reference_source"] == "fixture"
+
+
+def test_execution_premium_snapshot_marks_missing_fx_rate(engine: Engine) -> None:
+    with Session(engine) as session:
+        fixture = _seed_fixture(session)
+        snapshot = ExecutionPremiumService(session=session).create_snapshot(
+            ExecutionPremiumInput(
+                execution_instrument_id=fixture.execution_instrument_id,
+                reference_price=Decimal("1.50"),
+                reference_currency_code="USD",
+                reference_unit_code="GRAM",
+                bank_buy_price=Decimal("49"),
+                bank_sell_price=Decimal("50"),
+                price_quote_id=fixture.quote_id,
+                captured_at=BASE_TIME,
+            )
+        )
+
+        assert snapshot.status == "missing_fx_rate"
+        assert snapshot.converted_reference_price is None
+        assert snapshot.buy_discount is None
+        assert snapshot.sell_premium is None
 
 
 @dataclass(frozen=True)

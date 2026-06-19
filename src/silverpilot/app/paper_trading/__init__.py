@@ -1,6 +1,8 @@
 """Paper trading execution and ledger services."""
 
 from silverpilot.app.paper_trading.service import (
+    CostBreakdown,
+    CostModelService,
     LedgerService,
     PaperBroker,
     PaperBrokerResult,
@@ -9,6 +11,8 @@ from silverpilot.app.paper_trading.service import (
 )
 
 __all__ = [
+    "CostBreakdown",
+    "CostModelService",
     "LedgerService",
     "PaperBroker",
     "PaperBrokerResult",

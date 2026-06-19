@@ -354,6 +354,59 @@ class PriceQuoteModel(Base, TimestampMixin):
     )
 
 
+class ExecutionPremiumSnapshotModel(Base, TimestampMixin):
+    __tablename__ = "execution_premium_snapshots"
+
+    id: Mapped[UUID] = uuid_pk()
+    execution_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("execution_instruments.id"), nullable=False
+    )
+    bank_instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("bank_instruments.id"), nullable=False
+    )
+    price_quote_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("price_quotes.id"), nullable=True
+    )
+    reference_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    reference_currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    reference_unit_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    execution_currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    execution_unit_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(36, 18), nullable=True)
+    fx_source: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    unit_conversion: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    converted_reference_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    bank_buy_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    bank_sell_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    bank_spread: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    buy_discount: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    sell_premium: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    provenance: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    captured_at: Mapped[datetime] = utc_datetime()
+
+    execution_instrument: Mapped[ExecutionInstrumentModel] = relationship()
+    bank_instrument: Mapped[BankInstrumentModel] = relationship()
+    price_quote: Mapped[PriceQuoteModel | None] = relationship()
+
+    __table_args__ = (
+        CheckConstraint("reference_price > 0", name="premium_reference_price_positive"),
+        CheckConstraint("bank_buy_price >= 0", name="premium_bank_buy_non_negative"),
+        CheckConstraint("bank_sell_price >= bank_buy_price", name="premium_sell_gte_buy"),
+        CheckConstraint("bank_spread >= 0", name="premium_spread_non_negative"),
+        CheckConstraint(
+            "fx_rate IS NULL OR fx_rate > 0",
+            name="premium_fx_rate_positive",
+        ),
+        CheckConstraint(
+            "status IN ('ok', 'missing_fx_rate')",
+            name="premium_status_valid",
+        ),
+        Index("ix_execution_premium_instrument_captured", "execution_instrument_id", "captured_at"),
+        Index("ix_execution_premium_status", "status"),
+    )
+
+
 class NewsSourceModel(Base, TimestampMixin):
     __tablename__ = "news_sources"
 
@@ -778,6 +831,7 @@ class PaperTradeModel(Base, TimestampMixin):
     spread_cost: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     net_cash_amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     realized_pnl: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    cost_breakdown: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     executed_at: Mapped[datetime] = utc_datetime()
 
     order: Mapped[PaperOrderModel] = relationship(back_populates="trade")

@@ -1,7 +1,9 @@
+import ast
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import Engine, create_engine, select
@@ -61,6 +63,13 @@ def test_ml_dataset_is_deterministic_and_cost_label_is_decimal_safe(tmp_path: Pa
         assert first.manifest["artifact_hash"] == second.manifest["artifact_hash"]
         assert first.snapshot.row_count == len(first.rows) == 8
         assert first.snapshot.class_balance == {"positive": 4, "negative": 4}
+        assert first.manifest["artifact_schema_version"] == "ml-artifact-v2"
+        assert first.manifest["advisory_only"] is True
+        config_hashes = cast(dict[str, object], first.manifest["config_hashes"])
+        model_family_spec = cast(dict[str, object], first.manifest["model_family_spec"])
+        model_families = cast(list[dict[str, object]], model_family_spec["families"])
+        assert config_hashes["source"] == first.manifest["source_data_hash"]
+        assert model_families[0]["advisory_only"] is True
         assert len(list(session.scalars(select(MLDatasetSnapshotModel)))) == 1
         first_row = first.rows[0]
         assert first_row["forward_net_return_after_costs"] == "0.048"
@@ -113,6 +122,7 @@ def test_ml_experiment_runner_persists_advisory_metrics(tmp_path: Path) -> None:
 
         assert [run.status for run in runs] == ["completed", "completed"]
         assert all(run.report_json["advisory_only"] is True for run in runs)
+        assert all("runtime_boundary" in run.report_json for run in runs)
         assert len(list(session.scalars(select(BacktestDatasetSnapshotModel)))) == 1
         assert len(list(session.scalars(select(MLExperimentRunModel)))) == 2
         metrics = list(session.scalars(select(MLExperimentMetricModel)))
@@ -133,6 +143,65 @@ def test_ml_experiment_reports_insufficient_data_without_fake_success(tmp_path: 
         assert runs[0].status == "insufficient_data"
         assert runs[0].report_json["status"] == "insufficient_data"
         assert list(session.scalars(select(MLExperimentMetricModel))) == []
+
+
+def test_ml_data_hash_includes_model_family_config(tmp_path: Path) -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        fixture = _seed_ml_fixture(session)
+        rule_only = MLFeatureDatasetBuilder(session=session).build(
+            config=_experiment_config(fixture, tmp_path, model_families=("rule_only",))
+        )
+        dummy = MLFeatureDatasetBuilder(session=session).build(
+            config=_experiment_config(fixture, tmp_path, model_families=("dummy",))
+        )
+
+        assert rule_only.snapshot.data_hash != dummy.snapshot.data_hash
+        rule_only_hashes = cast(dict[str, object], rule_only.manifest["config_hashes"])
+        dummy_hashes = cast(dict[str, object], dummy.manifest["config_hashes"])
+        assert rule_only_hashes["model_family"] != dummy_hashes["model_family"]
+
+
+def test_ml_artifact_writer_does_not_emit_model_binaries(tmp_path: Path) -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        fixture = _seed_ml_fixture(session)
+        result = MLFeatureDatasetBuilder(session=session).build(
+            config=_experiment_config(fixture, tmp_path)
+        )
+
+        artifact_dir = Path(str(result.manifest["manifest_uri"])).parent
+        banned_suffixes = {".bin", ".joblib", ".onnx", ".pkl", ".pt"}
+        assert {path.suffix for path in artifact_dir.rglob("*")}.isdisjoint(banned_suffixes)
+        artifact_policy = cast(dict[str, Any], result.manifest["artifact_policy"])
+        assert artifact_policy["model_binary_persisted"] is False
+
+
+def test_runtime_paths_do_not_import_ml_experiments() -> None:
+    runtime_roots = [
+        Path("src/silverpilot/app/api"),
+        Path("src/silverpilot/app/strategies"),
+        Path("src/silverpilot/app/risks"),
+        Path("src/silverpilot/app/paper_trading"),
+        Path("src/silverpilot/app/notifications"),
+        Path("src/silverpilot/app/collectors"),
+        Path("src/silverpilot/app/backtests"),
+    ]
+    offenders: list[str] = []
+    for root in runtime_roots:
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                if any("ml_experiments" in name for name in names):
+                    offenders.append(str(path))
+
+    assert offenders == []
 
 
 @dataclass(frozen=True)

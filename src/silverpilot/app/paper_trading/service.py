@@ -21,15 +21,99 @@ _MONEY_QUANTUM = Decimal("0.00000001")
 
 
 @dataclass(frozen=True)
-class PaperCostModel:
+class CostBreakdown:
+    spread: Decimal
+    fee: Decimal
+    tax: Decimal
+    slippage: Decimal
+    conversion_cost: Decimal
+    rounding_adjustment: Decimal
+    total_cost: Decimal
+    model_version: str
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "spread": _money_json(self.spread),
+            "fee": _money_json(self.fee),
+            "tax": _money_json(self.tax),
+            "slippage": _money_json(self.slippage),
+            "conversion_cost": _money_json(self.conversion_cost),
+            "rounding_adjustment": _money_json(self.rounding_adjustment),
+            "total_cost": _money_json(self.total_cost),
+            "model_version": self.model_version,
+        }
+
+
+@dataclass(frozen=True)
+class CostCalculation:
+    gross_cash_amount: Decimal
+    fees: Decimal
+    taxes: Decimal
+    spread_cost: Decimal
+    net_cash_amount: Decimal
+    breakdown: CostBreakdown
+
+
+@dataclass(frozen=True)
+class CostModelService:
     fee_rate: Decimal = Decimal("0.001")
     tax_rate: Decimal = Decimal("0")
+    model_version: str = "paper-cost-v1"
 
     def __post_init__(self) -> None:
         if self.fee_rate < Decimal("0"):
             raise ValueError("fee_rate cannot be negative")
         if self.tax_rate < Decimal("0"):
             raise ValueError("tax_rate cannot be negative")
+
+    def calculate(
+        self,
+        *,
+        side: PaperOrderSide,
+        quantity: Decimal,
+        bank_buy_price: Decimal,
+        bank_sell_price: Decimal,
+    ) -> CostCalculation:
+        if quantity <= Decimal("0"):
+            raise ValueError("quantity must be positive")
+        if bank_buy_price < Decimal("0"):
+            raise ValueError("bank_buy_price cannot be negative")
+        if bank_sell_price < bank_buy_price:
+            raise ValueError("bank_sell_price cannot be lower than bank_buy_price")
+        execution_price = bank_sell_price if side == PaperOrderSide.BUY else bank_buy_price
+        gross_unrounded = quantity * execution_price
+        gross_cash_amount = _money(gross_unrounded)
+        fees = _money(gross_cash_amount * self.fee_rate)
+        taxes = _money(gross_cash_amount * self.tax_rate)
+        spread_cost = _money((bank_sell_price - bank_buy_price) * quantity)
+        net_cash_amount = (
+            _money(gross_cash_amount + fees + taxes)
+            if side == PaperOrderSide.BUY
+            else _money(gross_cash_amount - fees - taxes)
+        )
+        explicit_costs = _money(fees + taxes + spread_cost)
+        breakdown = CostBreakdown(
+            spread=spread_cost,
+            fee=fees,
+            tax=taxes,
+            slippage=_money(Decimal("0")),
+            conversion_cost=_money(Decimal("0")),
+            rounding_adjustment=_money(gross_cash_amount - gross_unrounded),
+            total_cost=explicit_costs,
+            model_version=self.model_version,
+        )
+        return CostCalculation(
+            gross_cash_amount=gross_cash_amount,
+            fees=fees,
+            taxes=taxes,
+            spread_cost=spread_cost,
+            net_cash_amount=net_cash_amount,
+            breakdown=breakdown,
+        )
+
+
+class PaperCostModel(CostModelService):
+    """Backward-compatible import name for the Phase 8 paper cost config."""
 
 
 @dataclass(frozen=True)
@@ -71,11 +155,11 @@ class PaperBroker:
         self,
         *,
         session: Session,
-        cost_model: PaperCostModel | None = None,
+        cost_model: CostModelService | None = None,
         ledger: LedgerService | None = None,
     ) -> None:
         self._session = session
-        self._cost_model = cost_model or PaperCostModel()
+        self._cost_model = cost_model or CostModelService()
         self._ledger = ledger or LedgerService(session=session)
 
     def execute(self, request: PaperOrderRequest) -> PaperBrokerResult:
@@ -106,32 +190,30 @@ class PaperBroker:
             if request.side == PaperOrderSide.BUY
             else Decimal(quote.bank_buy_price)
         )
-        gross_cash_amount = _money(quantity * execution_price)
-        fees = _money(gross_cash_amount * self._cost_model.fee_rate)
-        taxes = _money(gross_cash_amount * self._cost_model.tax_rate)
-        spread_cost = _money(
-            (Decimal(quote.bank_sell_price) - Decimal(quote.bank_buy_price)) * quantity
+        costs = self._cost_model.calculate(
+            side=request.side,
+            quantity=quantity,
+            bank_buy_price=Decimal(quote.bank_buy_price),
+            bank_sell_price=Decimal(quote.bank_sell_price),
         )
 
         if request.side == PaperOrderSide.BUY:
-            net_cash_amount = _money(gross_cash_amount + fees + taxes)
             realized_pnl = Decimal("0.00000000")
             self._apply_buy(
                 wallet=wallet,
                 decision=decision,
                 position=position,
                 quantity=quantity,
-                gross_cash_amount=gross_cash_amount,
-                net_cash_amount=net_cash_amount,
+                gross_cash_amount=costs.gross_cash_amount,
+                net_cash_amount=costs.net_cash_amount,
                 executed_at=request.executed_at,
             )
         else:
-            net_cash_amount = _money(gross_cash_amount - fees - taxes)
             realized_pnl = self._apply_sell(
                 wallet=wallet,
                 position=position,
                 quantity=quantity,
-                net_cash_amount=net_cash_amount,
+                net_cash_amount=costs.net_cash_amount,
                 executed_at=request.executed_at,
             )
 
@@ -159,12 +241,13 @@ class PaperBroker:
             side=request.side.value,
             quantity=quantity,
             execution_price=execution_price,
-            gross_cash_amount=gross_cash_amount,
-            fees=fees,
-            taxes=taxes,
-            spread_cost=spread_cost,
-            net_cash_amount=net_cash_amount,
+            gross_cash_amount=costs.gross_cash_amount,
+            fees=costs.fees,
+            taxes=costs.taxes,
+            spread_cost=costs.spread_cost,
+            net_cash_amount=costs.net_cash_amount,
             realized_pnl=realized_pnl,
+            cost_breakdown=costs.breakdown.to_json(),
             executed_at=request.executed_at,
             created_at=request.executed_at,
         )
@@ -173,9 +256,9 @@ class PaperBroker:
         self._append_trade_ledger(
             decision=decision,
             trade=trade,
-            gross_cash_amount=gross_cash_amount,
-            fees=fees,
-            taxes=taxes,
+            gross_cash_amount=costs.gross_cash_amount,
+            fees=costs.fees,
+            taxes=costs.taxes,
             executed_at=request.executed_at,
         )
         self._session.flush()
@@ -359,3 +442,7 @@ class PaperBroker:
 
 def _money(value: Decimal) -> Decimal:
     return value.quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+
+
+def _money_json(value: Decimal) -> str:
+    return f"{_money(value):.8f}"

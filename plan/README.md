@@ -2,13 +2,13 @@
 
 `ROADMAP.md` remains the canonical product and phase source. This directory is
 an implementation handoff companion: it records the current audit state for the
-completed Phase 0-14 slice, the deployment-readiness gate before Phase 14, and
+completed Phase 0-17 slice, the deployment-readiness gate before Phase 14, and
 the offline ML experiment boundary.
 
-The current implementation has completed Phase 14: Offline ML edge experiments
-locally. Phase 15 records the roadmap-code closure audit and separates verified
-Phase 0-14 behavior from Phase 16/17 hardening. Runtime ML remains explicitly
-out of scope until a future promotion gate.
+The current implementation has completed Phase 17 locally. Phase 15 records the
+roadmap-code closure audit, Phase 16 adds cost/conversion/premium hardening, and
+Phase 17 productizes offline ML artifacts while preserving the no-runtime-ML
+boundary.
 
 ## Phase Status
 
@@ -32,12 +32,13 @@ out of scope until a future promotion gate.
 | Deployment readiness before Phase 14 | PASS | `deployment-readiness-before-phase-14.md` |
 | Phase 14: Offline ML edge experiments | PASS | `phase-14-ml-experiments.md` |
 | Phase 15: Roadmap-code closure audit | PASS | `phase-15-architecture-closure.md` |
+| Phase 16: Cost, conversion, and execution premium hardening | PASS | `phase-16-cost-conversion-premium.md` |
+| Phase 17: Offline ML productization and boundary regressions | PASS | `phase-17-ml-productization-boundary.md` |
 
-Phase 14 is complete as an offline experiment lane only. ML has no runtime
+ML remains complete as an offline experiment lane only. It has no runtime
 authority over strategy, risk, broker, API, Telegram, scheduler, collector, or
-order behavior. Remote CI must pass after the optional-ML mypy fix is pushed
-before making an unqualified Phase 0-14 completion claim; GitHub Actions passed
-for commit `43d3b2d`.
+order behavior. Runtime promotion remains blocked until a future explicitly
+approved phase.
 
 ## Verification Matrix
 
@@ -46,13 +47,13 @@ evidence and the latest verification run:
 
 | Check | Observed result |
 | --- | --- |
-| `pytest` | 143 passed |
+| `pytest tests/test_paper_trading.py tests/test_database_schema.py tests/test_backtests.py tests/test_ml_experiments.py tests/test_api_phase10.py` | 45 passed |
 | `ruff check .` | passed |
 | `ruff format --check .` | passed |
 | `mypy` | passed |
+| `pytest` | 152 passed |
 | `bash .codex/scripts/verify-docker.sh` | passed |
-| `bash .codex/scripts/verify-docker.sh --build` | UNKNOWN/SKIPPED: Docker daemon not running |
-| latest GitHub Actions CI on `main` | passed for commit `43d3b2d` |
+| latest GitHub Actions CI on `main` | pending until commit/push requested |
 
 Rerun the same commands after each phase to prove code and documentation remain
 aligned.
@@ -109,12 +110,24 @@ embargo validation, rule-only/dummy/logistic experiment reports, and
 so offline candidate generation matches strategy behavior without persisting
 strategy runs or trade intents.
 
-Phase 15 added a closure audit that classifies roadmap-only concepts after
-Phase 14. `ExecutionPremiumService`, `ExecutionPremiumSnapshot`, concrete
-database-backed unit conversion, detailed cost breakdowns, and `QuoteUnit` /
-`ExecutionUnit` / `InstrumentUnit` terminology are deferred to Phase 16.
-Offline ML productization gates and runtime-boundary regressions are deferred
-to Phase 17.
+Phase 15 added a closure audit that classified roadmap-only concepts after
+Phase 14 and corrected the account-bound execution handoff: the
+`AccountBoundExecutionResolver` implementation lives in
+`src/silverpilot/app/risks/service.py`.
+
+Phase 16 added `CostModelService`, `CostBreakdown`, nullable
+`paper_trades.cost_breakdown`, database-backed unit conversion,
+`ExecutionPremiumSnapshotModel`, and `ExecutionPremiumService`. Premium
+snapshots require explicit FX/unit conversion input; cross-currency snapshots
+without FX are stored with `missing_fx_rate` and no fabricated converted price.
+Existing trade/report fields remain backward compatible, with additive optional
+cost and premium summary fields.
+
+Phase 17 hardened the offline ML lane with artifact schema versioning,
+feature/label/split/source/model-family config hashes, advisory-only metadata,
+runtime import-boundary regressions, and model-binary artifact regression tests.
+Default CI installs `.[dev]`; optional logistic-regression smoke remains scoped
+to an explicit `.[dev,ml]` environment.
 
 ## Scope Rules
 
@@ -123,7 +136,7 @@ to Phase 17.
   executable prices.
 - Do not add runtime ML, dashboard UI, multi-bank routing, real money execution,
   Telegram-owned decisions, live news fetching, report persistence, or mutating
-  remote API behavior inside the Phase 14 offline experiment boundary.
+  remote API behavior inside the offline experiment boundary.
 - Do not run remote deployment, SSH service changes, production smoke checks,
   or secret inspection without explicit user approval.
 - Keep runtime financial/data code under `src/silverpilot/app/...`; do not

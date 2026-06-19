@@ -32,6 +32,7 @@ from silverpilot.app.strategies.service import _IndicatorLookup
 
 _FEATURE_SPEC_VERSION = "phase14_v1"
 _LABEL_SPEC_VERSION = "forward_net_return_after_costs_v1"
+_ARTIFACT_SCHEMA_VERSION = "ml-artifact-v2"
 _REQUIRED_INDICATORS: dict[str, tuple[str, dict[str, object]]] = {
     "ema_50": ("ema", {"period": 50}),
     "ema_200": ("ema", {"period": 200}),
@@ -122,6 +123,7 @@ class MLFeatureDatasetBuilder:
         feature_spec = _feature_spec()
         label_spec = _label_spec(config)
         split_spec = _split_spec(config)
+        model_family_spec = _model_family_spec(config)
         class_balance = _class_balance(rows)
         data_hash = _hash_json(
             {
@@ -129,6 +131,7 @@ class MLFeatureDatasetBuilder:
                 "feature_spec": feature_spec,
                 "label_spec": label_spec,
                 "split_spec": split_spec,
+                "model_family_spec": model_family_spec,
                 "rows": rows,
             }
         )
@@ -137,11 +140,21 @@ class MLFeatureDatasetBuilder:
             data_hash=data_hash,
             manifest={
                 "phase": "phase14",
+                "artifact_schema_version": _ARTIFACT_SCHEMA_VERSION,
                 "source_dataset_snapshot_id": str(source_snapshot.id),
                 "source_data_hash": source_snapshot.data_hash,
                 "feature_spec": feature_spec,
                 "label_spec": label_spec,
                 "split_spec": split_spec,
+                "config_hashes": {
+                    "feature_spec": _hash_json(feature_spec),
+                    "label_spec": _hash_json(label_spec),
+                    "split_spec": _hash_json(split_spec),
+                    "source": source_snapshot.data_hash,
+                    "model_family": _hash_json(model_family_spec),
+                },
+                "model_family_spec": model_family_spec,
+                "advisory_only": True,
                 "row_count": len(rows),
                 "class_balance": class_balance,
                 "data_hash": data_hash,
@@ -409,9 +422,11 @@ class MLArtifactWriter:
             "artifact_hash": artifact_hash,
             "manifest_uri": str(artifact_dir / "manifest.json"),
             "artifact_policy": {
+                "advisory_only": True,
                 "model_binary_persisted": False,
                 "row_level_database_storage": False,
                 "raw_provider_payloads": False,
+                "disallowed_model_binary_extensions": [".bin", ".joblib", ".onnx", ".pkl", ".pt"],
             },
         }
         manifest_path = artifact_dir / "manifest.json"
@@ -468,6 +483,7 @@ class MLExperimentRunner:
                 "reason": "not enough chronological rows or label classes",
                 "row_count": len(dataset.rows),
                 "class_balance": dataset.snapshot.class_balance,
+                "advisory_only": True,
             }
             self._session.flush()
             return run
@@ -511,9 +527,14 @@ class MLExperimentRunner:
             run.report_json = {
                 "status": "completed",
                 "model_family": model_family,
+                "model_family_metadata": _model_family_metadata(model_family),
                 "advisory_only": True,
                 "folds": fold_reports,
-                "promotion_gate": "compare against rule_only baseline before any runtime ML task",
+                "runtime_boundary": (
+                    "offline advisory metrics only; no trade intent, sizing, veto, "
+                    "approval, or execution output"
+                ),
+                "promotion_gate": "compare against rule_only baseline before any future review",
             }
         except (ImportError, ValueError) as exc:
             run.status = "failed"
@@ -654,6 +675,23 @@ def _label_spec(config: MLExperimentConfig) -> dict[str, object]:
 def _split_spec(config: MLExperimentConfig) -> dict[str, object]:
     spec = config.split_spec or TimeSeriesSplitSpec(embargo_bars=config.label_horizon_bars)
     return {"strategy": "chronological_expanding_window", **asdict(spec)}
+
+
+def _model_family_spec(config: MLExperimentConfig) -> dict[str, object]:
+    return {
+        "random_seed": config.random_seed,
+        "families": [
+            _model_family_metadata(model_family) for model_family in config.model_families
+        ],
+    }
+
+
+def _model_family_metadata(model_family: str) -> dict[str, object]:
+    return {
+        "model_family": model_family,
+        "hyperparameters": _hyperparameters(model_family),
+        "advisory_only": True,
+    }
 
 
 def _class_balance(rows: list[dict[str, object]]) -> dict[str, object]:
