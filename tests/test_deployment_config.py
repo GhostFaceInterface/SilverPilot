@@ -79,4 +79,6 @@ def test_vps_deploy_workflow_is_manual_and_environment_gated() -> None:
     assert "bash /tmp/silverpilot-deploy.sh" in workflow
     assert '"${compose[@]}" build' in workflow
     assert '"${compose[@]}" run --rm migrate' in workflow
+    assert "for attempt in {1..30}" in workflow
+    assert '"${compose[@]}" logs --tail=100 api' in workflow
     assert "/api/v1/system/health" in workflow

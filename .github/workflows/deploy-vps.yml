@@ -71,7 +71,14 @@ jobs:
           SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" build
           SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" run --rm migrate
           SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" up -d api worker
-          "${compose[@]}" exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"
+          for attempt in {1..30}; do
+            if "${compose[@]}" exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          "${compose[@]}" logs --tail=100 api
+          exit 1
           EOF
           scp /tmp/silverpilot-deploy.sh silverpilot-vps:/tmp/silverpilot-deploy.sh
           ssh silverpilot-vps "bash /tmp/silverpilot-deploy.sh '$DEPLOY_SHA' '$VPS_PROJECT_PATH'"
