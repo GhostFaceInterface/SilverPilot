@@ -27,18 +27,53 @@ def _audit_columns() -> list[sa.Column[sa.DateTime]]:
     ]
 
 
+def _replace_trade_intent_side_constraint(check_sql: str) -> None:
+    op.execute(
+        sa.text(
+            f"""
+            DO $$
+            DECLARE
+                constraint_name text;
+            BEGIN
+                FOR constraint_name IN
+                    SELECT con.conname
+                    FROM pg_constraint con
+                    JOIN pg_class rel ON rel.oid = con.conrelid
+                    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+                    WHERE rel.relname = 'trade_intents'
+                      AND nsp.nspname = current_schema()
+                      AND con.contype = 'c'
+                      AND pg_get_constraintdef(con.oid) LIKE '%side%'
+                      AND pg_get_constraintdef(con.oid) LIKE '%buy%'
+                LOOP
+                    EXECUTE format(
+                        'ALTER TABLE trade_intents DROP CONSTRAINT %I',
+                        constraint_name
+                    );
+                END LOOP;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint con
+                    JOIN pg_class rel ON rel.oid = con.conrelid
+                    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+                    WHERE rel.relname = 'trade_intents'
+                      AND nsp.nspname = current_schema()
+                      AND con.conname = 'ck_trade_intents_trade_intent_side_valid'
+                ) THEN
+                    ALTER TABLE trade_intents
+                    ADD CONSTRAINT ck_trade_intents_trade_intent_side_valid
+                    CHECK ({check_sql});
+                END IF;
+            END $$;
+            """
+        )
+    )
+
+
 def upgrade() -> None:
     if op.get_bind().dialect.name != "sqlite":
-        op.drop_constraint(
-            "ck_trade_intents_trade_intent_side_valid",
-            "trade_intents",
-            type_="check",
-        )
-        op.create_check_constraint(
-            "trade_intent_side_valid",
-            "trade_intents",
-            "side IN ('buy', 'sell')",
-        )
+        _replace_trade_intent_side_constraint("side IN ('buy', 'sell')")
 
     op.create_table(
         "system_health_events",
@@ -142,13 +177,4 @@ def downgrade() -> None:
     op.drop_table("system_health_events")
 
     if op.get_bind().dialect.name != "sqlite":
-        op.drop_constraint(
-            "ck_trade_intents_trade_intent_side_valid",
-            "trade_intents",
-            type_="check",
-        )
-        op.create_check_constraint(
-            "trade_intent_side_valid",
-            "trade_intents",
-            "side IN ('buy')",
-        )
+        _replace_trade_intent_side_constraint("side IN ('buy')")
