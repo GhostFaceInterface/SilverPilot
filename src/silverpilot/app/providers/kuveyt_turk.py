@@ -29,7 +29,7 @@ LAST_KNOWN_FINANCE_PORTAL_PATH = "/ck0d84?B83A1EF44DD940F2FEC85646BDB25EA0"
 LAST_KNOWN_FINANCE_PORTAL_URL = f"{KUVEYT_TURK_BASE_URL}{LAST_KNOWN_FINANCE_PORTAL_PATH}"
 _SILVER_GRAM_SYMBOL = "GMS (gr)"
 _FINANCE_PORTAL_ADDRESS_KEY = "fn-rlrtd"
-_FINANCE_PORTAL_PATH_PATTERN = re.compile(r"^/ck0d84\?[A-Fa-f0-9]{32}$")
+_FINANCE_PORTAL_PATH_PATTERN = re.compile(r"^/?ck0d84\?[A-Fa-f0-9]{32}$")
 _HTTP_GET = Callable[[str, float], bytes]
 _JsonValue = Any
 
@@ -247,7 +247,8 @@ def _extract_finance_portal_path_from_core_js(document: str) -> str | None:
 def _finance_portal_absolute_url(path: str, *, base_url: str = KUVEYT_TURK_BASE_URL) -> str:
     if not _FINANCE_PORTAL_PATH_PATTERN.fullmatch(path):
         raise ProviderParseError("Kuveyt Turk finance portal endpoint path is not allowed")
-    return urljoin(base_url, path)
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return urljoin(base_url, normalized_path)
 
 
 def _default_http_get(url: str, timeout_seconds: float) -> bytes:

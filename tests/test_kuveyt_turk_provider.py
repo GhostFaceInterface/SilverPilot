@@ -103,6 +103,19 @@ def test_endpoint_resolver_discovers_endpoint_from_inline_addresses() -> None:
     assert resolver.resolve_finance_portal_url() == DISCOVERED_URL
 
 
+def test_endpoint_resolver_normalizes_discovered_path_without_leading_slash() -> None:
+    def fake_http_get(_url: str, _timeout_seconds: float) -> bytes:
+        return (
+            "<script>const addresses = {"
+            f'"fn-rlrtd": "{DISCOVERED_PATH.removeprefix("/")}"'
+            "};</script>"
+        ).encode()
+
+    resolver = KuveytTurkEndpointResolver(http_get=fake_http_get)
+
+    assert resolver.resolve_finance_portal_url() == DISCOVERED_URL
+
+
 def test_endpoint_resolver_falls_back_to_core_js_finance_portal() -> None:
     seen_urls: list[str] = []
 
