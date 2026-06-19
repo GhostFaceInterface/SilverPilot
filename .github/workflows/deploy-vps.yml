@@ -56,11 +56,14 @@ jobs:
           VPS_PROJECT_PATH: ${{ secrets.VPS_PROJECT_PATH }}
         run: |
           test -n "$VPS_PROJECT_PATH"
-          ssh silverpilot-vps "DEPLOY_SHA='$DEPLOY_SHA' VPS_PROJECT_PATH='$VPS_PROJECT_PATH' bash -s" <<'EOF'
+          cat > /tmp/silverpilot-deploy.sh <<'EOF'
+          #!/usr/bin/env bash
           set -euo pipefail
+          DEPLOY_SHA="$1"
+          VPS_PROJECT_PATH="$2"
           cd "$VPS_PROJECT_PATH"
-          git fetch origin "$DEPLOY_SHA"
-          git checkout --detach "$DEPLOY_SHA"
+          git fetch origin "$DEPLOY_SHA" </dev/null
+          git checkout --detach "$DEPLOY_SHA" </dev/null
           backup_dir="$(dirname "$VPS_PROJECT_PATH")/backups"
           mkdir -p "$backup_dir"
           docker compose exec -T postgres pg_dump -U silverpilot silverpilot > "$backup_dir/silverpilot-$DEPLOY_SHA.sql"
@@ -69,3 +72,5 @@ jobs:
           SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose up -d api worker
           docker compose exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"
           EOF
+          scp /tmp/silverpilot-deploy.sh silverpilot-vps:/tmp/silverpilot-deploy.sh
+          ssh silverpilot-vps "bash /tmp/silverpilot-deploy.sh '$DEPLOY_SHA' '$VPS_PROJECT_PATH'"
