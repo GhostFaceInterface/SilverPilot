@@ -67,7 +67,12 @@ def test_vps_deploy_workflow_is_manual_and_environment_gated() -> None:
 
     assert "workflow_dispatch:" in workflow
     assert "environment: production" in workflow
-    assert "git checkout --detach '$DEPLOY_SHA'" in workflow
+    assert "secrets.VPS_HOST" in workflow
+    assert "secrets.VPS_PORT" in workflow
+    assert "secrets.VPS_PROJECT_PATH" in workflow
+    assert "secrets.VPS_SSH_KEY" in workflow
+    assert "secrets.VPS_USER" in workflow
+    assert 'git checkout --detach "$DEPLOY_SHA"' in workflow
     assert "docker compose build" in workflow
     assert "docker compose run --rm migrate" in workflow
     assert "/api/v1/system/health" in workflow

@@ -28,21 +28,24 @@ jobs:
 
       - name: Configure SSH
         env:
-          SILVERPILOT_VPS_SSH_KEY: ${{ secrets.SILVERPILOT_VPS_SSH_KEY }}
-          SILVERPILOT_VPS_HOST: ${{ secrets.SILVERPILOT_VPS_HOST }}
-          SILVERPILOT_VPS_USER: ${{ secrets.SILVERPILOT_VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          test -n "$SILVERPILOT_VPS_SSH_KEY"
-          test -n "$SILVERPILOT_VPS_HOST"
-          test -n "$SILVERPILOT_VPS_USER"
+          test -n "$VPS_HOST"
+          test -n "$VPS_PORT"
+          test -n "$VPS_SSH_KEY"
+          test -n "$VPS_USER"
           mkdir -p ~/.ssh
-          printf '%s\n' "$SILVERPILOT_VPS_SSH_KEY" > ~/.ssh/silverpilot_vps
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/silverpilot_vps
           chmod 600 ~/.ssh/silverpilot_vps
-          ssh-keyscan -H "$SILVERPILOT_VPS_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
           cat >> ~/.ssh/config <<EOF
           Host silverpilot-vps
-            HostName $SILVERPILOT_VPS_HOST
-            User $SILVERPILOT_VPS_USER
+            HostName $VPS_HOST
+            Port $VPS_PORT
+            User $VPS_USER
             IdentityFile ~/.ssh/silverpilot_vps
             StrictHostKeyChecking yes
           EOF
@@ -50,13 +53,19 @@ jobs:
       - name: Deploy exact SHA
         env:
           DEPLOY_SHA: ${{ steps.rev.outputs.sha }}
+          VPS_PROJECT_PATH: ${{ secrets.VPS_PROJECT_PATH }}
         run: |
-          ssh silverpilot-vps "cd /opt/silverpilot/SilverPilot && \
-            git fetch origin '$DEPLOY_SHA' && \
-            git checkout --detach '$DEPLOY_SHA' && \
-            mkdir -p /opt/silverpilot/backups && \
-            docker compose exec -T postgres pg_dump -U silverpilot silverpilot > /opt/silverpilot/backups/silverpilot-'$DEPLOY_SHA'.sql && \
-            SILVERPILOT_DEPLOYED_SHA='$DEPLOY_SHA' docker compose build && \
-            SILVERPILOT_DEPLOYED_SHA='$DEPLOY_SHA' docker compose run --rm migrate && \
-            SILVERPILOT_DEPLOYED_SHA='$DEPLOY_SHA' docker compose up -d api worker && \
-            docker compose exec -T api python -c \"from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)\""
+          test -n "$VPS_PROJECT_PATH"
+          ssh silverpilot-vps "DEPLOY_SHA='$DEPLOY_SHA' VPS_PROJECT_PATH='$VPS_PROJECT_PATH' bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$VPS_PROJECT_PATH"
+          git fetch origin "$DEPLOY_SHA"
+          git checkout --detach "$DEPLOY_SHA"
+          backup_dir="$(dirname "$VPS_PROJECT_PATH")/backups"
+          mkdir -p "$backup_dir"
+          docker compose exec -T postgres pg_dump -U silverpilot silverpilot > "$backup_dir/silverpilot-$DEPLOY_SHA.sql"
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose build
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose run --rm migrate
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" docker compose up -d api worker
+          docker compose exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"
+          EOF
