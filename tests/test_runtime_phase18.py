@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from silverpilot.app.core.settings import Settings
 from silverpilot.app.db.base import Base
 from silverpilot.app.db.models import (
+    InstrumentMappingModel,
     MarketBarModel,
+    ReferenceMarketInstrumentModel,
     RuntimeTickModel,
     TelegramBotStateModel,
     TradeIntentModel,
@@ -21,6 +23,7 @@ from silverpilot.app.domain.enums import IndicatorSourcePolicy
 from silverpilot.app.domain.models import BankInstrument, PriceQuote
 from silverpilot.app.domain.value_objects import Money
 from silverpilot.app.main import create_app
+from silverpilot.app.providers.yahoo_finance import YAHOO_RESEARCH_SOURCE_NAME
 from silverpilot.app.runtime.bootstrap import bootstrap_paper_runtime
 from silverpilot.app.runtime.health import SystemHealthService
 from silverpilot.app.runtime.paper_loop import PaperRuntime, PaperRuntimeConfig
@@ -71,6 +74,35 @@ def test_bootstrap_paper_runtime_is_idempotent_and_preserves_wallet_balance() ->
         assert second.strategy_id == first.strategy_id
         assert wallet is not None
         assert wallet.available_amount == Decimal("9000.00000000")
+
+
+def test_bootstrap_paper_runtime_seeds_yahoo_research_reference_instruments() -> None:
+    db_engine = engine()
+    with Session(db_engine) as session:
+        first = bootstrap_paper_runtime(session, now=_time())
+        session.commit()
+
+        second = bootstrap_paper_runtime(session, now=_time())
+        session.commit()
+
+        references = session.scalars(
+            select(ReferenceMarketInstrumentModel)
+            .where(ReferenceMarketInstrumentModel.source == YAHOO_RESEARCH_SOURCE_NAME)
+            .order_by(ReferenceMarketInstrumentModel.symbol)
+        ).all()
+        mapping = session.scalar(select(InstrumentMappingModel))
+
+        assert first.yahoo_reference_instrument_ids == second.yahoo_reference_instrument_ids
+        assert [reference.symbol for reference in references] == ["GC=F", "SI=F"]
+        assert {reference.source_terms_status for reference in references} == {"research_only"}
+        assert {reference.delay_policy for reference in references} == {"manual_review"}
+        assert {reference.data_delay_seconds for reference in references} == {None}
+        assert mapping is not None
+        assert (
+            mapping.reference_market_instrument_id == first.yahoo_reference_instrument_ids["SI=F"]
+        )
+        assert mapping.execution_instrument_id == first.execution_instrument_id
+        assert mapping.fx_pair == "USDTRY"
 
 
 def test_paper_runtime_records_warmup_tick_after_first_closed_bar() -> None:

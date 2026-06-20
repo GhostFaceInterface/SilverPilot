@@ -17,7 +17,9 @@ from silverpilot.app.db.models import (
     CurrencyModel,
     ExecutionInstrumentModel,
     ExecutionVenueModel,
+    InstrumentMappingModel,
     MetalModel,
+    ReferenceMarketInstrumentModel,
     StrategyModel,
     UnitConversionRuleModel,
     UnitModel,
@@ -27,6 +29,7 @@ from silverpilot.app.db.models import (
     WalletModel,
 )
 from silverpilot.app.db.session import create_db_engine
+from silverpilot.app.providers.yahoo_finance import YAHOO_RESEARCH_SOURCE_NAME
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ class BootstrapResult:
     execution_instrument_id: UUID
     strategy_id: UUID
     wallet_id: UUID
+    yahoo_reference_instrument_ids: dict[str, UUID]
     created: dict[str, bool]
 
     def to_json(self) -> dict[str, object]:
@@ -45,6 +49,10 @@ class BootstrapResult:
             "execution_instrument_id": str(self.execution_instrument_id),
             "strategy_id": str(self.strategy_id),
             "wallet_id": str(self.wallet_id),
+            "yahoo_reference_instrument_ids": {
+                symbol: str(instrument_id)
+                for symbol, instrument_id in self.yahoo_reference_instrument_ids.items()
+            },
             "created": self.created,
         }
 
@@ -93,6 +101,17 @@ def bootstrap_paper_runtime(
         decimal_places=2,
         created_at=created_at,
     )
+    usd_currency = _get_or_create(
+        session,
+        CurrencyModel,
+        CurrencyModel.code == "USD",
+        created,
+        "currency_usd",
+        code="USD",
+        name="US Dollar",
+        decimal_places=2,
+        created_at=created_at,
+    )
     metal = _get_or_create(
         session,
         MetalModel,
@@ -101,6 +120,17 @@ def bootstrap_paper_runtime(
         "metal_xag",
         code="XAG",
         name="Silver",
+        default_unit=gram,
+        created_at=created_at,
+    )
+    gold = _get_or_create(
+        session,
+        MetalModel,
+        MetalModel.code == "XAU",
+        created,
+        "metal_xau",
+        code="XAU",
+        name="Gold",
         default_unit=gram,
         created_at=created_at,
     )
@@ -182,6 +212,64 @@ def bootstrap_paper_runtime(
         status="active",
         created_at=created_at,
     )
+    silver_reference = _get_or_create(
+        session,
+        ReferenceMarketInstrumentModel,
+        (ReferenceMarketInstrumentModel.symbol == "SI=F")
+        & (ReferenceMarketInstrumentModel.source == YAHOO_RESEARCH_SOURCE_NAME),
+        created,
+        "reference_yahoo_si_f",
+        symbol="SI=F",
+        source=YAHOO_RESEARCH_SOURCE_NAME,
+        metal=metal,
+        currency=usd_currency,
+        unit=ounce,
+        status="active",
+        provider="yahoo_finance_chart",
+        exchange="COMEX",
+        timezone="America/New_York",
+        data_delay_seconds=None,
+        delay_policy="manual_review",
+        session_calendar_code="yahoo-research-manual-review",
+        source_terms_status="research_only",
+        created_at=created_at,
+    )
+    gold_reference = _get_or_create(
+        session,
+        ReferenceMarketInstrumentModel,
+        (ReferenceMarketInstrumentModel.symbol == "GC=F")
+        & (ReferenceMarketInstrumentModel.source == YAHOO_RESEARCH_SOURCE_NAME),
+        created,
+        "reference_yahoo_gc_f",
+        symbol="GC=F",
+        source=YAHOO_RESEARCH_SOURCE_NAME,
+        metal=gold,
+        currency=usd_currency,
+        unit=ounce,
+        status="active",
+        provider="yahoo_finance_chart",
+        exchange="COMEX",
+        timezone="America/New_York",
+        data_delay_seconds=None,
+        delay_policy="manual_review",
+        session_calendar_code="yahoo-research-manual-review",
+        source_terms_status="research_only",
+        created_at=created_at,
+    )
+    _get_or_create(
+        session,
+        InstrumentMappingModel,
+        (InstrumentMappingModel.reference_market_instrument_id == silver_reference.id)
+        & (InstrumentMappingModel.execution_instrument_id == execution_instrument.id),
+        created,
+        "mapping_yahoo_si_f_to_kuveyt_xag",
+        reference_market_instrument=silver_reference,
+        execution_instrument=execution_instrument,
+        fx_pair="USDTRY",
+        unit_conversion_rule=None,
+        status="active",
+        created_at=created_at,
+    )
     user = _get_or_create(
         session,
         UserModel,
@@ -250,6 +338,10 @@ def bootstrap_paper_runtime(
         execution_instrument_id=execution_instrument.id,
         strategy_id=strategy.id,
         wallet_id=wallet.id,
+        yahoo_reference_instrument_ids={
+            silver_reference.symbol: silver_reference.id,
+            gold_reference.symbol: gold_reference.id,
+        },
         created=created,
     )
 

@@ -129,12 +129,15 @@ Preferred low-cost research path:
 3. Allow bounded manual backfill through `silverpilot-backfill-reference` only
    when the matching instrument is marked `source_terms_status=research_only`
    and `data_delay_seconds` is explicitly configured.
-4. Use `4h` as the default research timeframe. `1h` may be measured during the
+4. Seed `SI=F` and `GC=F` as research-only reference instruments. Do not seed
+   `TRY=X` into `reference_market_instruments`; FX source modeling needs a
+   separate schema/service decision.
+5. Use `4h` as the default research timeframe. `1h` may be measured during the
    spike. `15m` remains blocked for V1 runtime.
-5. Record observed history depth, interval support, timestamp quality, delay
+6. Record observed history depth, interval support, timestamp quality, delay
    policy, duplicate behavior, and data hash results before any runtime source
    decision.
-6. Keep runtime ingestion disabled until legal/terms approval is recorded.
+7. Keep runtime ingestion disabled until legal/terms approval is recorded.
 
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,

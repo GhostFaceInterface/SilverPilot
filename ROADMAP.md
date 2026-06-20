@@ -1600,9 +1600,17 @@ Delayed Reference V1 next steps:
 
 - Keep CI green first; format-only fixes should be committed separately from
   behavior or roadmap changes.
+- Current implementation status as of 2026-06-21: `yahoo_research` backfill
+  code exists, CI is green, and the paper bootstrap seeds research-only
+  reference instruments for `SI=F` and `GC=F`. These rows deliberately keep
+  `data_delay_seconds` empty; manual dry-runs must pass the delay explicitly
+  until the provider/exchange delay has been verified and documented.
 - Implement Yahoo only as a bounded `yahoo_research` backfill spike first, not
   as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
   optional `TRY=X`; `4h` is the default research timeframe.
+- `TRY=X` is not seeded into `reference_market_instruments` because that table
+  represents metal reference instruments. FX source modeling remains a separate
+  Stage 6 gate item.
 - Do not start Stage 6 until `docs/source-feasibility-v1.md` approves a
   reference source, FX source, terms/licensing status, timestamp policy,
   session calendar, timeframe, and historical depth.
