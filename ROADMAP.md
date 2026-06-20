@@ -1600,13 +1600,19 @@ Delayed Reference V1 next steps:
 
 - Keep CI green first; format-only fixes should be committed separately from
   behavior or roadmap changes.
+- Implement Yahoo only as a bounded `yahoo_research` backfill spike first, not
+  as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
+  optional `TRY=X`; `4h` is the default research timeframe.
 - Do not start Stage 6 until `docs/source-feasibility-v1.md` approves a
   reference source, FX source, terms/licensing status, timestamp policy,
   session calendar, timeframe, and historical depth.
-- After source approval, implement the `ReferenceMarketDataProvider` for only
-  the approved source. Backfill must support dry-run, resume/idempotency,
+- Yahoo research backfill may run only for instruments marked
+  `source_terms_status=research_only` and with an explicit
+  `data_delay_seconds`. It must support dry-run, resume/idempotency,
   conservative rate limits, duplicate prevention, data hashes, and
   `reference_data_backfill_runs` audit rows.
+- After source approval, promote only the approved source path into the normal
+  `ReferenceMarketDataProvider` runtime workflow.
 - Switch indicators, regimes, and strategy inputs to delayed reference bars
   only after backfilled reference data has populated `signal_available_at`.
   Bank-derived execution bars remain diagnostic.

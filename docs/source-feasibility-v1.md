@@ -1,7 +1,7 @@
 # SilverPilot V1 Source Feasibility Matrix
 
 Stage: 5
-Status: feasibility documented; no runtime source approved yet
+Status: Yahoo research backfill spike planned; no runtime source approved yet
 Last reviewed: 2026-06-21
 
 This document is a hard gate before reference ingestion. It does not implement
@@ -51,7 +51,7 @@ timeframe must be reduced to daily.
 | Candidate | Public no-key fetch | Historical depth | Intraday | Timestamp/session | Terms/licensing | V1 status |
 | --- | --- | --- | --- | --- | --- | --- |
 | CME official silver futures data, such as SI futures | Not approved as free/no-key runtime access | Strong through official data products | Yes through licensed feeds/products | Strong exchange session calendar | CME presents real-time and historical market data as data products; licensing required for practical use | Best quality, not approved for free V1 runtime |
-| Yahoo Finance `SI=F` / `XAGUSD`-like pages or chart endpoints | Web-visible, but automated collection is not approved | Often useful | Often intraday | Exchange timestamps exist but must be validated | Yahoo terms restrict automated collection/scraping and reuse without permission | Research only; not approved |
+| Yahoo Finance `SI=F` / `GC=F` / `TRY=X` chart endpoints | Web-visible, but automated collection is not approved for runtime | Often useful, must be measured per interval/range | Often intraday, exact interval limits must be measured | Exchange/provider timestamps exist but delay and timezone semantics must be validated | Yahoo terms restrict automated collection/scraping and reuse without permission | Research backfill spike only; not runtime-approved |
 | Stooq commodity or futures symbols | Possibly public, but current web access can require browser verification | Unknown until manually verified | Unknown | Unknown | Terms and automated collection suitability not yet verified | Research only; not approved |
 | Kuveyt Turk public `GUMUS ONS/$`-style row, if available | Public finance portal | Sparse/current only unless stored by us | Indicative updates only | Bank/source session ambiguous | Same public bank indicative limitation as execution quotes | Diagnostic only; not V1 reference source |
 | LBMA Silver Price | Public information page; tabulated data requires portal/licence path | Licensed historical benchmark | No, daily auction benchmark | Daily London auction, not weekends/UK holidays | IBA licence required for many valuation/pricing uses | Benchmark/future research only, not intraday V1 |
@@ -123,10 +123,18 @@ Preferred production-quality path:
 
 Preferred low-cost research path:
 
-1. Manually evaluate Stooq and Yahoo access/terms outside runtime.
-2. If one is acceptable, add offline fixtures first.
-3. Run deterministic parser and timestamp/session tests before any live fetch.
-4. Keep runtime ingestion disabled until legal/terms approval is recorded.
+1. Implement Yahoo as `yahoo_research`, not as a runtime-approved source.
+2. Start with offline fixtures and parser tests for `SI=F`, `GC=F`, and
+   optional `TRY=X`.
+3. Allow bounded manual backfill through `silverpilot-backfill-reference` only
+   when the matching instrument is marked `source_terms_status=research_only`
+   and `data_delay_seconds` is explicitly configured.
+4. Use `4h` as the default research timeframe. `1h` may be measured during the
+   spike. `15m` remains blocked for V1 runtime.
+5. Record observed history depth, interval support, timestamp quality, delay
+   policy, duplicate behavior, and data hash results before any runtime source
+   decision.
+6. Keep runtime ingestion disabled until legal/terms approval is recorded.
 
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,
