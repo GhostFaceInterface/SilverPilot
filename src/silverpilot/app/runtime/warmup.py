@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -51,6 +52,7 @@ def calculate_warmup_progress(
     reference_instrument_id: UUID | None = None,
     reference_source: str | None = None,
     reference_timeframe: str | None = None,
+    decision_at: datetime | None = None,
 ) -> WarmupProgress:
     total_bars = _count_relevant_bars(
         session,
@@ -94,6 +96,7 @@ def calculate_warmup_progress(
         instrument_id=instrument_id,
         source=source,
         timeframe=timeframe,
+        decision_at=decision_at,
     )
     return WarmupProgress(
         bars=eligible_bars,
@@ -180,15 +183,24 @@ def _count_bars(
     instrument_id: UUID,
     source: str,
     timeframe: str,
+    decision_at: datetime | None,
 ) -> int:
+    clauses = [
+        MarketBarModel.instrument_type == instrument_type.value,
+        MarketBarModel.instrument_id == instrument_id,
+        MarketBarModel.source == source,
+        MarketBarModel.timeframe == timeframe,
+    ]
+    if decision_at is not None:
+        clauses.append(
+            or_(
+                MarketBarModel.signal_available_at.is_(None),
+                MarketBarModel.signal_available_at <= decision_at,
+            )
+        )
     return (
         session.scalar(
-            select(func.count(MarketBarModel.id)).where(
-                MarketBarModel.instrument_type == instrument_type.value,
-                MarketBarModel.instrument_id == instrument_id,
-                MarketBarModel.source == source,
-                MarketBarModel.timeframe == timeframe,
-            )
+            select(func.count(MarketBarModel.id)).where(*clauses)
         )
         or 0
     )

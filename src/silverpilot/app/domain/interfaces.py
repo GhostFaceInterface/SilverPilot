@@ -1,12 +1,24 @@
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Protocol
 
-from silverpilot.app.domain.models import BankInstrument, PriceQuote, Unit
+from silverpilot.app.domain.models import BankInstrument, MarketBar, PriceQuote, Unit
 
 
 class PriceProvider(Protocol):
     def fetch_quote(self, instrument: BankInstrument) -> PriceQuote:
         """Fetch a quote candidate for the provided bank instrument."""
+
+
+class ReferenceMarketDataProvider(Protocol):
+    def fetch_bars(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        period: str,
+    ) -> Sequence[MarketBar]:
+        """Fetch normalized delayed reference OHLCV bars with source attribution."""
 
 
 class UnitConversionService(Protocol):

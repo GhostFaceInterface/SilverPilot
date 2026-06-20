@@ -182,6 +182,29 @@ def test_indicator_service_rejects_lookahead_calculation(engine: Engine) -> None
             )
 
 
+def test_indicator_service_rejects_delayed_bar_before_signal_available_at(
+    engine: Engine,
+) -> None:
+    instrument_id = uuid4()
+    delayed_bars = _fixture_bars(instrument_id)
+    delayed_bars[-1].signal_available_at = datetime(2026, 6, 18, 6, 15, tzinfo=UTC)
+    with Session(engine) as session:
+        session.add_all(delayed_bars)
+        session.commit()
+
+        with pytest.raises(ValueError, match="not yet signal-available"):
+            IndicatorService(session=session).calculate_and_cache(
+                instrument_type=InstrumentType.REFERENCE,
+                instrument_id=instrument_id,
+                source="reference-fixture",
+                timeframe="1h",
+                indicator_name="ema",
+                parameters={"period": 14},
+                source_bar_end_at=datetime(2026, 6, 18, 6, 0, tzinfo=UTC),
+                calculated_at=datetime(2026, 6, 18, 6, 14, tzinfo=UTC),
+            )
+
+
 def _fixture_bars(instrument_id: UUID) -> list[MarketBarModel]:
     start = datetime(2026, 6, 17, 0, 0, tzinfo=UTC)
     closes = [

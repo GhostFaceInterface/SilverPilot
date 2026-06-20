@@ -5,7 +5,12 @@ from uuid import UUID
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from silverpilot.app.domain.enums import ExecutionSourcePolicy, IndicatorSourcePolicy
+from silverpilot.app.domain.enums import (
+    DelayPolicy,
+    ExecutionQuoteSelectionPolicy,
+    ExecutionSourcePolicy,
+    IndicatorSourcePolicy,
+)
 
 
 class Settings(BaseSettings):
@@ -29,9 +34,15 @@ class Settings(BaseSettings):
     runtime_strategy_id: UUID | None = None
     runtime_reference_source: str | None = None
     runtime_fx_source: str | None = None
-    runtime_reference_timeframe: str = "1h"
+    runtime_reference_timeframe: str = "4h"
     indicator_source_policy: IndicatorSourcePolicy = IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
     execution_source_policy: ExecutionSourcePolicy = ExecutionSourcePolicy.ACCOUNT_BOUND_BANK_QUOTE
+    reference_delay_policy: DelayPolicy = DelayPolicy.PROVIDER_DELAYED
+    reference_ingestion_delay_seconds: int = Field(default=60, ge=0)
+    execution_quote_selection_policy: ExecutionQuoteSelectionPolicy = (
+        ExecutionQuoteSelectionPolicy.LATEST_BEFORE_OR_AT_DECISION
+    )
+    max_quote_lag_seconds: int = Field(default=300, ge=0)
     runtime_collect_interval_seconds: int = Field(default=300, ge=1)
     runtime_bar_timeframe: str = "5m"
     runtime_warmup_bars: int = Field(default=201, ge=1)

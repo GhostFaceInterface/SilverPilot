@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Literal, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from silverpilot.app.db.models import IndicatorSnapshotModel, MarketBarModel
@@ -60,6 +60,10 @@ class IndicatorService:
                     MarketBarModel.source == source,
                     MarketBarModel.timeframe == timeframe,
                     MarketBarModel.bar_end_at <= source_bar_end_at,
+                    or_(
+                        MarketBarModel.signal_available_at.is_(None),
+                        MarketBarModel.signal_available_at <= calculated_at,
+                    ),
                 )
                 .order_by(MarketBarModel.bar_start_at.asc())
             )
@@ -67,6 +71,19 @@ class IndicatorService:
         if not bars:
             raise ValueError("cannot calculate indicator without bars")
         if not _timestamps_equal(bars[-1].bar_end_at, source_bar_end_at):
+            gated_bar = self._session.scalar(
+                select(MarketBarModel).where(
+                    MarketBarModel.instrument_type == instrument_type.value,
+                    MarketBarModel.instrument_id == instrument_id,
+                    MarketBarModel.source == source,
+                    MarketBarModel.timeframe == timeframe,
+                    MarketBarModel.bar_end_at == source_bar_end_at,
+                    MarketBarModel.signal_available_at.is_not(None),
+                    MarketBarModel.signal_available_at > calculated_at,
+                )
+            )
+            if gated_bar is not None:
+                raise ValueError("source_bar_end_at is not yet signal-available")
             raise ValueError("source_bar_end_at must reference an available closed bar")
 
         normalized_parameters = _normalize_parameters(parameters)

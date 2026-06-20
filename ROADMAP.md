@@ -47,6 +47,7 @@ Only silver and Kuveyt Turk are implemented in the first vertical slice. However
 - Currency: ISO-style currency entity; key fields are code, name, decimal_places.
 - PriceQuote: raw bank quote candidate; links BankInstrument; key fields are bank_buy_price, bank_sell_price, observed_at, fetched_at, source, freshness_status, and source usability metadata. Public bank quotes must remain indicative unless executable parity with internet/mobile branch prices has been manually verified.
 - MarketBar: OHLC-like aggregate from quotes or historical data; key fields are instrument_type (`reference` or `execution`), instrument_id, source, timeframe, open, high, low, close, quote_count, bar_start_at, bar_end_at.
+- Delayed reference bars must also record provider/source timing metadata where available: provider_reported_at, fetched_at, stored_at, data_delay_seconds, signal_available_at, data_quality_status, session_status, and backfill provenance. Signals must not consume a reference bar before signal_available_at.
 - IndicatorSnapshot: calculated indicator values for one instrument/timeframe/bar; key fields are indicator_name, parameters, value, calculated_at, source_bar_end_at.
 - MarketRegime: detected market state; key fields are regime, confidence, evidence, starts_at, confirmed_at.
 - Strategy: deterministic rule set that reads bars, indicators, and regimes; key fields are name, version, parameters, enabled.
@@ -79,6 +80,7 @@ Use PostgreSQL. Do not use a single-table design. All money and quantity fields 
 - instrument_mappings: maps reference instruments to execution instruments and required FX/unit conversion assumptions; indexes on reference_market_instrument_id and execution_instrument_id.
 - price_quotes: append-only bank quote candidates; indexes on bank_instrument_id/observed_at and fetched_at; retain raw quote metadata long-term or archive by age. Public bank quote rows may be indicative and must not imply execution eligibility by themselves.
 - market_bars: aggregated bars for reference or execution instruments; unique index on instrument_type/instrument_id/timeframe/bar_start_at; retain long-term for backtests.
+- reference_data_backfill_runs: idempotent audit rows for approved reference backfills; records source, instrument, timeframe, requested/actual range, row counts, data hash, status, and errors.
 - indicator_snapshots: calculated indicators; unique index on instrument/timeframe/indicator/parameters/bar_end_at; retain as reproducible cache.
 - market_regime_snapshots: detected regimes; indexes on instrument/timeframe/confirmed_at/regime; retain long-term for audit.
 - strategies: strategy definitions and versions; unique index on name/version.

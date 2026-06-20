@@ -6,7 +6,9 @@ from pydantic import ValidationError
 
 from silverpilot.app.core.settings import Settings
 from silverpilot.app.domain.enums import (
+    DelayPolicy,
     EndpointStatus,
+    ExecutionQuoteSelectionPolicy,
     ExecutionSourcePolicy,
     IndicatorSourcePolicy,
     InstrumentType,
@@ -94,6 +96,12 @@ def test_settings_expose_behavior_neutral_source_policy_fields() -> None:
     assert settings.runtime_reference_instrument_id is None
     assert settings.runtime_reference_source is None
     assert settings.runtime_fx_source is None
-    assert settings.runtime_reference_timeframe == "1h"
+    assert settings.runtime_reference_timeframe == "4h"
     assert settings.indicator_source_policy == IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
     assert settings.execution_source_policy == ExecutionSourcePolicy.ACCOUNT_BOUND_BANK_QUOTE
+    assert settings.reference_delay_policy == DelayPolicy.PROVIDER_DELAYED
+    assert settings.reference_ingestion_delay_seconds == 60
+    assert settings.execution_quote_selection_policy == (
+        ExecutionQuoteSelectionPolicy.LATEST_BEFORE_OR_AT_DECISION
+    )
+    assert settings.max_quote_lag_seconds == 300

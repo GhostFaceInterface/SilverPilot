@@ -220,6 +220,13 @@ class ReferenceMarketInstrumentModel(Base, TimestampMixin):
     currency_id: Mapped[UUID] = mapped_column(ForeignKey("currencies.id"), nullable=False)
     unit_id: Mapped[UUID] = mapped_column(ForeignKey("units.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    provider: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    data_delay_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    delay_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    session_calendar_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_terms_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     metal: Mapped[MetalModel] = relationship()
     currency: Mapped[CurrencyModel] = relationship()
@@ -227,6 +234,20 @@ class ReferenceMarketInstrumentModel(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("symbol", "source"),
+        CheckConstraint(
+            "data_delay_seconds IS NULL OR data_delay_seconds >= 0",
+            name="reference_market_data_delay_non_negative",
+        ),
+        CheckConstraint(
+            "delay_policy IS NULL OR delay_policy IN "
+            "('none', 'provider_delayed', 'end_of_day', 'manual_review')",
+            name="reference_market_delay_policy_valid",
+        ),
+        CheckConstraint(
+            "source_terms_status IS NULL OR source_terms_status IN "
+            "('unknown', 'research_only', 'not_approved', 'approved')",
+            name="reference_market_terms_status_valid",
+        ),
         Index("ix_reference_market_instruments_status", "status"),
     )
 
@@ -557,9 +578,26 @@ class MarketBarModel(Base, TimestampMixin):
     quote_count: Mapped[int] = mapped_column(nullable=False)
     bar_start_at: Mapped[datetime] = utc_datetime()
     bar_end_at: Mapped[datetime] = utc_datetime()
+    provider_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_delay_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    signal_available_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    adjusted_close: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(Numeric(36, 8), nullable=True)
+    data_quality_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    session_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_backfilled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    backfill_batch_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("reference_data_backfill_runs.id"), nullable=True
+    )
 
     __table_args__ = (
-        UniqueConstraint("instrument_type", "instrument_id", "timeframe", "bar_start_at"),
+        UniqueConstraint("instrument_type", "instrument_id", "source", "timeframe", "bar_start_at"),
         CheckConstraint(
             "instrument_type IN ('reference', 'execution')", name="instrument_type_valid"
         ),
@@ -570,7 +608,101 @@ class MarketBarModel(Base, TimestampMixin):
         CheckConstraint("low <= open AND low <= close AND low <= high", name="low_is_lowest"),
         CheckConstraint("quote_count > 0", name="quote_count_positive"),
         CheckConstraint("bar_end_at > bar_start_at", name="bar_window_valid"),
+        CheckConstraint(
+            "provider_reported_at IS NULL OR fetched_at IS NULL OR "
+            "fetched_at >= provider_reported_at",
+            name="market_bar_fetched_gte_provider_reported",
+        ),
+        CheckConstraint(
+            "fetched_at IS NULL OR stored_at IS NULL OR stored_at >= fetched_at",
+            name="market_bar_stored_gte_fetched",
+        ),
+        CheckConstraint(
+            "data_delay_seconds IS NULL OR data_delay_seconds >= 0",
+            name="market_bar_data_delay_non_negative",
+        ),
+        CheckConstraint(
+            "signal_available_at IS NULL OR signal_available_at >= bar_end_at",
+            name="market_bar_signal_available_gte_bar_end",
+        ),
+        CheckConstraint(
+            "adjusted_close IS NULL OR adjusted_close >= 0",
+            name="market_bar_adjusted_close_non_negative",
+        ),
+        CheckConstraint("volume IS NULL OR volume >= 0", name="market_bar_volume_non_negative"),
+        CheckConstraint(
+            "data_quality_status IS NULL OR data_quality_status IN "
+            "('unknown', 'ok', 'degraded', 'rejected')",
+            name="market_bar_data_quality_status_valid",
+        ),
+        CheckConstraint(
+            "session_status IS NULL OR session_status IN "
+            "('unknown', 'open', 'closed', 'indicative_only')",
+            name="market_bar_session_status_valid",
+        ),
         Index("ix_market_bars_instrument_time", "instrument_type", "instrument_id", "bar_start_at"),
+        Index("ix_market_bars_signal_available", "signal_available_at"),
+    )
+
+
+class ReferenceDataBackfillRunModel(Base, TimestampMixin):
+    __tablename__ = "reference_data_backfill_runs"
+
+    id: Mapped[UUID] = uuid_pk()
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    instrument_id: Mapped[UUID] = mapped_column(
+        ForeignKey("reference_market_instruments.id"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(120), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    period: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    requested_start_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    requested_end_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    actual_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    actual_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rows_inserted: Mapped[int] = mapped_column(nullable=False, default=0)
+    rows_updated: Mapped[int] = mapped_column(nullable=False, default=0)
+    data_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_summary: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime] = utc_datetime()
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    instrument: Mapped[ReferenceMarketInstrumentModel] = relationship()
+
+    __table_args__ = (
+        CheckConstraint(
+            "requested_start_at IS NULL OR requested_end_at IS NULL OR "
+            "requested_end_at > requested_start_at",
+            name="reference_backfill_requested_window_valid",
+        ),
+        CheckConstraint(
+            "actual_start_at IS NULL OR actual_end_at IS NULL OR actual_end_at > actual_start_at",
+            name="reference_backfill_actual_window_valid",
+        ),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at >= started_at",
+            name="reference_backfill_finished_gte_started",
+        ),
+        CheckConstraint("rows_inserted >= 0", name="reference_backfill_rows_inserted_non_negative"),
+        CheckConstraint("rows_updated >= 0", name="reference_backfill_rows_updated_non_negative"),
+        CheckConstraint(
+            "status IN ('blocked', 'dry_run', 'running', 'completed', 'failed')",
+            name="reference_backfill_status_valid",
+        ),
+        Index(
+            "ix_reference_backfill_runs_lookup",
+            "source",
+            "instrument_id",
+            "timeframe",
+            "started_at",
+        ),
+        Index("ix_reference_backfill_runs_status", "status"),
     )
 
 

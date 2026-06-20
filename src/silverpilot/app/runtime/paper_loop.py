@@ -107,7 +107,7 @@ class PaperRuntime:
             summary["bar_id"] = str(bar.id)
             summary["bar_inserted"] = True
 
-            warmup = self._warmup_progress()
+            warmup = self._warmup_progress(now)
             summary["warmup"] = warmup.as_dict()
             if not warmup.complete:
                 status = "warming_up"
@@ -292,7 +292,7 @@ class PaperRuntime:
             expected_edge_after_costs=Decimal("0"),
         )
 
-    def _warmup_progress(self) -> WarmupProgress:
+    def _warmup_progress(self, decision_at: datetime) -> WarmupProgress:
         return calculate_warmup_progress(
             self._session,
             indicator_source_policy=self._config.indicator_source_policy,
@@ -303,6 +303,7 @@ class PaperRuntime:
             reference_instrument_id=self._config.reference_instrument_id,
             reference_source=self._config.reference_source,
             reference_timeframe=self._config.reference_timeframe,
+            decision_at=decision_at,
         )
 
     def _record_tick(

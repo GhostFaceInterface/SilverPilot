@@ -88,6 +88,7 @@ class SystemHealthService:
             reference_instrument_id=self._settings.runtime_reference_instrument_id,
             reference_source=self._settings.runtime_reference_source,
             reference_timeframe=self._settings.runtime_reference_timeframe,
+            decision_at=captured_at,
         ).as_dict()
         status = "ok"
         if not seed_ready:

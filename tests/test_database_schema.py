@@ -27,6 +27,8 @@ from silverpilot.app.db.models import (
     NewsEventModel,
     NewsSourceModel,
     PaperOrderModel,
+    ReferenceDataBackfillRunModel,
+    ReferenceMarketInstrumentModel,
     RiskDecisionModel,
     StrategyModel,
     StrategyRunModel,
@@ -63,6 +65,7 @@ CORE_TABLES = {
     "price_quotes",
     "positions",
     "reference_market_instruments",
+    "reference_data_backfill_runs",
     "risk_decisions",
     "strategies",
     "strategy_runs",
@@ -233,6 +236,99 @@ def test_market_bar_constraints_reject_invalid_price_shape(engine: Engine) -> No
 
         with pytest.raises(IntegrityError):
             session.commit()
+
+
+def test_reference_metadata_schema_accepts_delayed_reference_bars(engine: Engine) -> None:
+    created_at = now()
+    currency = CurrencyModel(
+        id=uuid4(),
+        code=f"U{uuid4().hex[:2]}",
+        name="US Dollar",
+        decimal_places=2,
+        created_at=created_at,
+    )
+    unit = UnitModel(
+        id=uuid4(),
+        code=f"OZ{uuid4().hex[:3]}",
+        name="Ounce",
+        precision=6,
+        created_at=created_at,
+    )
+    metal = MetalModel(
+        id=uuid4(),
+        code=f"X{uuid4().hex[:4]}",
+        name="Silver",
+        default_unit=unit,
+        created_at=created_at,
+    )
+    reference = ReferenceMarketInstrumentModel(
+        id=uuid4(),
+        symbol=f"XAGUSD-{uuid4().hex[:4]}",
+        source="approved-fixture",
+        metal=metal,
+        currency=currency,
+        unit=unit,
+        status="active",
+        provider="fixture",
+        exchange="fixture-exchange",
+        timezone="UTC",
+        data_delay_seconds=900,
+        delay_policy="provider_delayed",
+        session_calendar_code="fixture-24x5",
+        source_terms_status="approved",
+        created_at=created_at,
+    )
+    run = ReferenceDataBackfillRunModel(
+        id=uuid4(),
+        source="approved-fixture",
+        instrument=reference,
+        symbol=reference.symbol,
+        timeframe="4h",
+        period="2y",
+        rows_inserted=1,
+        rows_updated=0,
+        data_hash="a" * 64,
+        status="completed",
+        dry_run=False,
+        started_at=created_at,
+        finished_at=created_at,
+        created_at=created_at,
+    )
+    bar_start = datetime(2026, 6, 17, 8, 0, tzinfo=UTC)
+    bar = MarketBarModel(
+        id=uuid4(),
+        instrument_type="reference",
+        instrument_id=reference.id,
+        source="approved-fixture",
+        timeframe="4h",
+        open=Decimal("29.10"),
+        high=Decimal("29.60"),
+        low=Decimal("29.00"),
+        close=Decimal("29.50"),
+        quote_count=1,
+        bar_start_at=bar_start,
+        bar_end_at=bar_start.replace(hour=12),
+        provider_reported_at=bar_start.replace(hour=12),
+        fetched_at=bar_start.replace(hour=12, minute=15),
+        stored_at=bar_start.replace(hour=12, minute=16),
+        data_delay_seconds=900,
+        signal_available_at=bar_start.replace(hour=12, minute=16),
+        adjusted_close=Decimal("29.50"),
+        volume=Decimal("1234"),
+        data_quality_status="ok",
+        session_status="open",
+        is_backfilled=True,
+        backfill_batch_id=run.id,
+        created_at=created_at,
+    )
+
+    with Session(engine) as session:
+        session.add_all([run, bar])
+        session.commit()
+
+        stored_bar = session.get(MarketBarModel, bar.id)
+        assert stored_bar is not None
+        assert stored_bar.signal_available_at == bar.signal_available_at
 
 
 def test_news_event_risk_schema_constraints(engine: Engine) -> None:

@@ -44,6 +44,31 @@ class ExecutionSourcePolicy(StrEnum):
     ACCOUNT_BOUND_BANK_QUOTE = "account_bound_bank_quote"
 
 
+class DelayPolicy(StrEnum):
+    NONE = "none"
+    PROVIDER_DELAYED = "provider_delayed"
+    END_OF_DAY = "end_of_day"
+    MANUAL_REVIEW = "manual_review"
+
+
+class SourceTermsStatus(StrEnum):
+    UNKNOWN = "unknown"
+    RESEARCH_ONLY = "research_only"
+    NOT_APPROVED = "not_approved"
+    APPROVED = "approved"
+
+
+class DataQualityStatus(StrEnum):
+    UNKNOWN = "unknown"
+    OK = "ok"
+    DEGRADED = "degraded"
+    REJECTED = "rejected"
+
+
+class ExecutionQuoteSelectionPolicy(StrEnum):
+    LATEST_BEFORE_OR_AT_DECISION = "latest_before_or_at_decision"
+
+
 class EndpointStatus(StrEnum):
     UNKNOWN = "unknown"
     OK = "ok"

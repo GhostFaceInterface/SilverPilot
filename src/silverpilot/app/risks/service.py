@@ -17,7 +17,7 @@ from silverpilot.app.db.models import (
     VirtualAccountModel,
     WalletModel,
 )
-from silverpilot.app.domain.enums import RiskDecisionOutcome
+from silverpilot.app.domain.enums import ExecutionQuoteSelectionPolicy, RiskDecisionOutcome
 
 _MONEY_QUANTUM = Decimal("0.00000001")
 
@@ -36,6 +36,10 @@ class RiskPolicy:
     max_source_divergence_pct: Decimal | None = None
     min_event_risk_confidence: Decimal = Decimal("0.50")
     event_risk_reduction_factor: Decimal = Decimal("0.50")
+    execution_quote_selection_policy: ExecutionQuoteSelectionPolicy = (
+        ExecutionQuoteSelectionPolicy.LATEST_BEFORE_OR_AT_DECISION
+    )
+    max_quote_lag: timedelta = timedelta(minutes=5)
 
     def __post_init__(self) -> None:
         if not self.version.strip():
@@ -60,6 +64,8 @@ class RiskPolicy:
             raise ValueError("min_order_cash must be greater than zero")
         if self.min_quote_freshness <= timedelta(0):
             raise ValueError("min_quote_freshness must be greater than zero")
+        if self.max_quote_lag < timedelta(0):
+            raise ValueError("max_quote_lag cannot be negative")
         if self.min_event_risk_confidence > Decimal("1"):
             raise ValueError("min_event_risk_confidence cannot exceed one")
         if self.event_risk_reduction_factor <= Decimal(
@@ -190,6 +196,8 @@ class RiskManager:
             "max_drawdown": str(self._policy.max_drawdown),
             "max_spread_pct": str(self._policy.max_spread_pct),
             "min_quote_freshness_seconds": int(self._policy.min_quote_freshness.total_seconds()),
+            "execution_quote_selection_policy": self._policy.execution_quote_selection_policy.value,
+            "max_quote_lag_seconds": int(self._policy.max_quote_lag.total_seconds()),
             "execution_instrument_id": str(context.execution_instrument_id),
         }
         event_risk_action = self._event_risk_action(context, constraints)
@@ -224,7 +232,7 @@ class RiskManager:
 
         if quote is None:
             return _RiskDecisionPayload.reject(
-                reasons=["missing_quote"],
+                reasons=["missing_execution_quote"],
                 constraints_applied=constraints,
             )
         constraints["quote_id"] = str(quote.id)
@@ -235,7 +243,7 @@ class RiskManager:
 
         if quote.freshness_status != "fresh":
             return _RiskDecisionPayload.reject(
-                reasons=["stale_quote"],
+                reasons=["stale_execution_quote"],
                 constraints_applied=constraints,
             )
         if observed_at > context.evaluated_at:
@@ -245,7 +253,12 @@ class RiskManager:
             )
         if context.evaluated_at - observed_at > self._policy.min_quote_freshness:
             return _RiskDecisionPayload.reject(
-                reasons=["stale_quote"],
+                reasons=["stale_execution_quote"],
+                constraints_applied=constraints,
+            )
+        if context.evaluated_at - observed_at > self._policy.max_quote_lag:
+            return _RiskDecisionPayload.reject(
+                reasons=["stale_execution_quote"],
                 constraints_applied=constraints,
             )
 

@@ -2,7 +2,7 @@
 
 Stage: 5
 Status: feasibility documented; no runtime source approved yet
-Last reviewed: 2026-06-20
+Last reviewed: 2026-06-21
 
 This document is a hard gate before reference ingestion. It does not implement
 fetching, does not approve a runtime provider, and does not change production
@@ -115,8 +115,9 @@ Preferred production-quality path:
    exchange-grade SI/XAG family source with explicit timestamps and session
    calendar.
 2. Use a matching or explicitly compatible FX source for USD/TRY.
-3. Start with `1h` bars only after historical depth and session handling are
-   validated.
+3. Start with `4h` bars only after historical depth and session handling are
+   validated. `1h` is allowed only after explicit timestamp, delay, FX, and
+   quote-lag validation; `15m` is rejected for V1.
 4. Store raw provider payload hashes and normalized bars separately from bank
    execution bars.
 
@@ -152,4 +153,3 @@ values:
 | FX terms/licensing status | none |
 | Fixture source and data hash policy | none |
 | Manual approval owner/date | none |
-

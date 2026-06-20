@@ -9,8 +9,10 @@ from silverpilot.app.domain.enums import (
     AccountStatus,
     BacktestRunStatus,
     BankStatus,
+    DataQualityStatus,
     InstrumentType,
     MarketRegime,
+    MarketSessionStatus,
     PaperOrderSide,
     PaperOrderStatus,
     RiskDecisionOutcome,
@@ -164,15 +166,37 @@ class MarketBar(DomainModel):
     quote_count: int = Field(gt=0)
     bar_start_at: datetime
     bar_end_at: datetime
+    provider_reported_at: datetime | None = None
+    fetched_at: datetime | None = None
+    stored_at: datetime | None = None
+    data_delay_seconds: int | None = Field(default=None, ge=0)
+    signal_available_at: datetime | None = None
+    adjusted_close: Decimal | None = None
+    volume: Decimal | None = None
+    data_quality_status: DataQualityStatus = DataQualityStatus.UNKNOWN
+    session_status: MarketSessionStatus = MarketSessionStatus.UNKNOWN
+    is_backfilled: bool = False
+    backfill_batch_id: UUID | None = None
 
-    @field_validator("open", "high", "low", "close", mode="before")
+    @field_validator("open", "high", "low", "close", "adjusted_close", "volume", mode="before")
     @classmethod
-    def validate_decimal(cls, value: Any) -> Decimal:
+    def validate_decimal(cls, value: Any) -> Decimal | None:
+        if value is None:
+            return None
         return parse_decimal(value)
 
-    @field_validator("bar_start_at", "bar_end_at")
+    @field_validator(
+        "bar_start_at",
+        "bar_end_at",
+        "provider_reported_at",
+        "fetched_at",
+        "stored_at",
+        "signal_available_at",
+    )
     @classmethod
-    def validate_datetime(cls, value: datetime) -> datetime:
+    def validate_datetime(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         return _require_aware_datetime(value)
 
     @model_validator(mode="after")
@@ -185,10 +209,89 @@ class MarketBar(DomainModel):
             raise ValueError("high must be at least open, close, and low")
         if self.low > min(self.open, self.close, self.high):
             raise ValueError("low must be no greater than open, close, and high")
+        if self.adjusted_close is not None and self.adjusted_close < Decimal("0"):
+            raise ValueError("adjusted_close cannot be negative")
+        if self.volume is not None and self.volume < Decimal("0"):
+            raise ValueError("volume cannot be negative")
+        if (
+            self.provider_reported_at is not None
+            and self.fetched_at is not None
+            and self.fetched_at < self.provider_reported_at
+        ):
+            raise ValueError("fetched_at cannot be before provider_reported_at")
+        if (
+            self.stored_at is not None
+            and self.fetched_at is not None
+            and self.stored_at < self.fetched_at
+        ):
+            raise ValueError("stored_at cannot be before fetched_at")
+        if self.signal_available_at is not None and self.signal_available_at < self.bar_end_at:
+            raise ValueError("signal_available_at cannot be before bar_end_at")
         if not self.source.strip():
             raise ValueError("source is required")
         if not self.timeframe.strip():
             raise ValueError("timeframe is required")
+        return self
+
+
+class ReferenceBackfillRun(DomainModel):
+    id: UUID
+    source: str
+    instrument_id: UUID
+    symbol: str
+    timeframe: str
+    period: str | None = None
+    requested_start_at: datetime | None = None
+    requested_end_at: datetime | None = None
+    actual_start_at: datetime | None = None
+    actual_end_at: datetime | None = None
+    rows_inserted: int = Field(ge=0)
+    rows_updated: int = Field(ge=0)
+    data_hash: str | None = None
+    status: str
+    error_summary: str | None = None
+    dry_run: bool = False
+    started_at: datetime
+    finished_at: datetime | None = None
+
+    @field_validator(
+        "requested_start_at",
+        "requested_end_at",
+        "actual_start_at",
+        "actual_end_at",
+        "started_at",
+        "finished_at",
+    )
+    @classmethod
+    def validate_backfill_datetime(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return _require_aware_datetime(value)
+
+    @field_validator("source", "symbol", "timeframe", "status")
+    @classmethod
+    def validate_backfill_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value is required")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_backfill_run(self) -> "ReferenceBackfillRun":
+        if (
+            self.requested_start_at
+            and self.requested_end_at
+            and self.requested_end_at <= self.requested_start_at
+        ):
+            raise ValueError("requested_end_at must be after requested_start_at")
+        if (
+            self.actual_start_at
+            and self.actual_end_at
+            and self.actual_end_at <= self.actual_start_at
+        ):
+            raise ValueError("actual_end_at must be after actual_start_at")
+        if self.finished_at and self.finished_at < self.started_at:
+            raise ValueError("finished_at cannot be before started_at")
         return self
 
 

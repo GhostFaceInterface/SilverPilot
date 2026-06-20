@@ -82,3 +82,29 @@ If any item is missing, Stage 6 reference ingestion must not start.
 Stage 5 status: the feasibility matrix lives in
 `docs/source-feasibility-v1.md`. As of 2026-06-20 it approves no runtime
 reference source and no FX source, so Stage 6 remains blocked.
+
+## Delayed Reference Signal Rules
+
+Phase 18 metadata primitives are now present in code before any provider is
+approved. Reference bars must carry source provenance and, when the provider
+supports it, `provider_reported_at`, `fetched_at`, `stored_at`,
+`data_delay_seconds`, `signal_available_at`, session status, and data quality.
+
+`signal_available_at` is the earliest decision time at which a bar may influence
+indicators, regimes, strategies, or backtests:
+
+`signal_available_at = bar_end_at + data_delay_seconds + ingestion_delay_seconds`
+
+If a legacy diagnostic row has no `signal_available_at`, existing diagnostic
+behavior may continue. New approved reference rows should populate it. Live
+decisions must also require the row to have been stored by the decision time.
+
+The V1 default timeframe is `4h`. `15m` remains rejected for V1 because source
+delay, FX compatibility, and execution quote alignment are not yet proven. If
+only daily official reference/FX data is approved, V1 must fall back to `1d`.
+
+Execution quote selection remains account-bound. Risk uses the latest bank
+quote at or before the decision time and rejects with
+`missing_execution_quote` or `stale_execution_quote` when no eligible quote is
+available within the configured lag window. The default maximum lag is 300
+seconds.

@@ -36,6 +36,7 @@ silverpilot-paper-loop = "silverpilot.app.runtime.paper_loop:main"
 silverpilot-telegram-bot = "silverpilot.app.runtime.telegram_bot:main"
 silverpilot-ops-status = "silverpilot.app.runtime.ops_status:main"
 silverpilot-ml-experiment = "silverpilot.app.ml_experiments.cli:main"
+silverpilot-backfill-reference = "silverpilot.app.collectors.reference_backfill_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/silverpilot"]

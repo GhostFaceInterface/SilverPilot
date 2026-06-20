@@ -106,8 +106,8 @@ def test_risk_manager_reduces_intent_above_max_order_or_position(engine: Engine)
 @pytest.mark.parametrize(
     ("quote_freshness_status", "quote_observed_at", "expected_reason"),
     [
-        ("stale", BASE_TIME, "stale_quote"),
-        ("fresh", BASE_TIME - timedelta(minutes=6), "stale_quote"),
+        ("stale", BASE_TIME, "stale_execution_quote"),
+        ("fresh", BASE_TIME - timedelta(minutes=6), "stale_execution_quote"),
     ],
 )
 def test_risk_manager_rejects_stale_quote(
@@ -151,6 +151,24 @@ def test_risk_manager_rejects_spread_above_threshold(engine: Engine) -> None:
 
         assert result.decision.decision == "reject"
         assert result.decision.reasons == ["spread_above_threshold"]
+
+
+def test_risk_manager_rejects_missing_execution_quote(engine: Engine) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(session, evaluated_at=evaluated_at)
+
+        result = RiskManager(session=session, policy=_policy()).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(
+                fixture.execution_instrument_id,
+                evaluated_at=evaluated_at,
+                quote_source="missing_source",
+            ),
+        )
+
+        assert result.decision.decision == "reject"
+        assert result.decision.reasons == ["missing_execution_quote"]
 
 
 def test_risk_manager_rejects_insufficient_balance(engine: Engine) -> None:
@@ -507,6 +525,7 @@ def _context(
     execution_instrument_id: UUID,
     *,
     evaluated_at: datetime,
+    quote_source: str = SOURCE,
     current_position_cash: Decimal | None = Decimal("0"),
     current_drawdown: Decimal | None = Decimal("0.02"),
     current_daily_loss: Decimal | None = Decimal("0"),
@@ -515,7 +534,7 @@ def _context(
 ) -> RiskContext:
     return RiskContext(
         execution_instrument_id=execution_instrument_id,
-        quote_source=SOURCE,
+        quote_source=quote_source,
         evaluated_at=evaluated_at,
         current_position_cash=current_position_cash,
         current_drawdown=current_drawdown,
