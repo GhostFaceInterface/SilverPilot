@@ -139,6 +139,20 @@ Preferred low-cost research path:
    decision.
 7. Keep runtime ingestion disabled until legal/terms approval is recorded.
 
+Research smoke result on 2026-06-21:
+
+- `silverpilot-backfill-reference --source yahoo_research --symbol SI=F
+  --timeframe 4h --period 2y --data-delay-seconds 900 --dry-run` fetched 2476
+  normalized bars and wrote no market bars. Data hash:
+  `89c03722a84612079950ad89d5187bdcc5de2fe5a5018bbcb4407f56d92a0cdc`.
+- `silverpilot-backfill-reference --source yahoo_research --symbol GC=F
+  --timeframe 4h --period 2y --data-delay-seconds 900 --dry-run` fetched 2478
+  normalized bars and wrote no market bars. Data hash:
+  `81d92e76b74f4a3029b95a6744c1bd170dcd97e4b99e51737e620d13e5b80b6a`.
+- The `900` second delay used in the smoke is an explicit research parameter,
+  not an approved source delay. Runtime use remains blocked until the Stage 6
+  entry checklist is filled.
+
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,
 timeframe, history depth, timestamp policy, session calendar, and terms status.

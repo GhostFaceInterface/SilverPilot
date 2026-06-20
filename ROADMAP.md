@@ -1605,6 +1605,11 @@ Delayed Reference V1 next steps:
   reference instruments for `SI=F` and `GC=F`. These rows deliberately keep
   `data_delay_seconds` empty; manual dry-runs must pass the delay explicitly
   until the provider/exchange delay has been verified and documented.
+- Temporary dry-run smoke on 2026-06-21 with explicit
+  `--data-delay-seconds 900` and no persisted bars fetched 2476 normalized 4h
+  bars for `SI=F` over `2y` and 2478 normalized 4h bars for `GC=F` over `2y`.
+  This proves the research parser/backfill path can read public Yahoo chart
+  data under manual testing, but it does not approve Yahoo for runtime use.
 - Implement Yahoo only as a bounded `yahoo_research` backfill spike first, not
   as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
   optional `TRY=X`; `4h` is the default research timeframe.
