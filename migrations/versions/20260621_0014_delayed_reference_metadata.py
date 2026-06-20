@@ -27,12 +27,8 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("timezone", sa.String(length=80), nullable=True))
         batch_op.add_column(sa.Column("data_delay_seconds", sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column("delay_policy", sa.String(length=32), nullable=True))
-        batch_op.add_column(
-            sa.Column("session_calendar_code", sa.String(length=80), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("source_terms_status", sa.String(length=32), nullable=True)
-        )
+        batch_op.add_column(sa.Column("session_calendar_code", sa.String(length=80), nullable=True))
+        batch_op.add_column(sa.Column("source_terms_status", sa.String(length=32), nullable=True))
         batch_op.create_check_constraint(
             "ck_reference_market_instruments_reference_market_data_delay_non_negative",
             "data_delay_seconds IS NULL OR data_delay_seconds >= 0",
@@ -85,11 +81,15 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "rows_inserted >= 0",
-            name=op.f("ck_reference_data_backfill_runs_reference_backfill_rows_inserted_non_negative"),
+            name=op.f(
+                "ck_reference_data_backfill_runs_reference_backfill_rows_inserted_non_negative"
+            ),
         ),
         sa.CheckConstraint(
             "rows_updated >= 0",
-            name=op.f("ck_reference_data_backfill_runs_reference_backfill_rows_updated_non_negative"),
+            name=op.f(
+                "ck_reference_data_backfill_runs_reference_backfill_rows_updated_non_negative"
+            ),
         ),
         sa.CheckConstraint(
             "status IN ('blocked', 'dry_run', 'running', 'completed', 'failed')",

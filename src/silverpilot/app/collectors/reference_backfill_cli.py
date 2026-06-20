@@ -11,9 +11,7 @@ from silverpilot.app.db.session import create_db_engine
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Backfill approved delayed reference market bars."
-    )
+    parser = argparse.ArgumentParser(description="Backfill approved delayed reference market bars.")
     parser.add_argument("--source", required=True, help="Approved reference source code.")
     parser.add_argument("--symbol", required=True, help="Reference symbol to backfill.")
     parser.add_argument("--timeframe", default="4h", help="Reference bar timeframe.")

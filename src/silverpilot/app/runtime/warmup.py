@@ -198,9 +198,4 @@ def _count_bars(
                 MarketBarModel.signal_available_at <= decision_at,
             )
         )
-    return (
-        session.scalar(
-            select(func.count(MarketBarModel.id)).where(*clauses)
-        )
-        or 0
-    )
+    return session.scalar(select(func.count(MarketBarModel.id)).where(*clauses)) or 0
