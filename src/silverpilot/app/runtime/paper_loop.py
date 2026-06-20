@@ -7,7 +7,7 @@ from decimal import Decimal
 from time import sleep
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from silverpilot.app.collectors.price_collector import (
@@ -26,13 +26,19 @@ from silverpilot.app.db.models import (
     TradeIntentModel,
 )
 from silverpilot.app.db.session import create_db_engine
-from silverpilot.app.domain.enums import InstrumentType, PaperOrderSide, TradeIntentStatus
+from silverpilot.app.domain.enums import (
+    IndicatorSourcePolicy,
+    InstrumentType,
+    PaperOrderSide,
+    TradeIntentStatus,
+)
 from silverpilot.app.domain.interfaces import PriceProvider
 from silverpilot.app.indicators.service import IndicatorName, IndicatorService
 from silverpilot.app.paper_trading.service import PaperBroker, PaperOrderRequest
 from silverpilot.app.providers.kuveyt_turk import KUVEYT_TURK_SOURCE_NAME, KuveytTurkPriceProvider
 from silverpilot.app.regimes.service import RegimeDetector
 from silverpilot.app.risks.service import RiskContext, RiskManager
+from silverpilot.app.runtime.warmup import WarmupProgress, calculate_warmup_progress
 from silverpilot.app.strategies.service import StrategyEngine
 
 
@@ -42,6 +48,10 @@ class PaperRuntimeConfig:
     bank_instrument_id: UUID
     execution_instrument_id: UUID
     strategy_id: UUID
+    indicator_source_policy: IndicatorSourcePolicy = IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
+    reference_instrument_id: UUID | None = None
+    reference_source: str | None = None
+    reference_timeframe: str | None = None
     source: str = KUVEYT_TURK_SOURCE_NAME
     timeframe: str = "5m"
     warmup_bars: int = 201
@@ -97,13 +107,9 @@ class PaperRuntime:
             summary["bar_id"] = str(bar.id)
             summary["bar_inserted"] = True
 
-            bar_count = self._bar_count()
-            summary["warmup"] = {
-                "bars": bar_count,
-                "required_bars": self._config.warmup_bars,
-                "complete": bar_count >= self._config.warmup_bars,
-            }
-            if bar_count < self._config.warmup_bars:
+            warmup = self._warmup_progress()
+            summary["warmup"] = warmup.as_dict()
+            if not warmup.complete:
                 status = "warming_up"
                 return self._record_tick(status, summary, started_at, now)
 
@@ -286,17 +292,17 @@ class PaperRuntime:
             expected_edge_after_costs=Decimal("0"),
         )
 
-    def _bar_count(self) -> int:
-        return (
-            self._session.scalar(
-                select(func.count(MarketBarModel.id)).where(
-                    MarketBarModel.instrument_type == InstrumentType.EXECUTION.value,
-                    MarketBarModel.instrument_id == self._config.bank_instrument_id,
-                    MarketBarModel.source == self._config.source,
-                    MarketBarModel.timeframe == self._config.timeframe,
-                )
-            )
-            or 0
+    def _warmup_progress(self) -> WarmupProgress:
+        return calculate_warmup_progress(
+            self._session,
+            indicator_source_policy=self._config.indicator_source_policy,
+            required_bars=self._config.warmup_bars,
+            execution_bar_instrument_id=self._config.bank_instrument_id,
+            execution_source=self._config.source,
+            execution_timeframe=self._config.timeframe,
+            reference_instrument_id=self._config.reference_instrument_id,
+            reference_source=self._config.reference_source,
+            reference_timeframe=self._config.reference_timeframe,
         )
 
     def _record_tick(
@@ -358,6 +364,10 @@ def config_from_settings(settings: Settings) -> PaperRuntimeConfig:
         bank_instrument_id=settings.runtime_bank_instrument_id,
         execution_instrument_id=settings.runtime_execution_instrument_id,
         strategy_id=settings.runtime_strategy_id,
+        indicator_source_policy=settings.indicator_source_policy,
+        reference_instrument_id=settings.runtime_reference_instrument_id,
+        reference_source=settings.runtime_reference_source,
+        reference_timeframe=settings.runtime_reference_timeframe,
         timeframe=settings.runtime_bar_timeframe,
         warmup_bars=settings.runtime_warmup_bars,
         stop_loss_pct=Decimal(str(settings.runtime_exit_stop_loss_pct)),

@@ -39,6 +39,12 @@ Stage 3 status: `price_quotes` now stores nullable `provider_reported_at`,
 metadata. This makes the distinction observable but does not yet change
 RiskManager, PaperBroker, warm-up, or strategy behavior.
 
+Stage 4 status: warm-up progress is now counted from bars eligible for the
+configured indicator source policy. Under the default `reference_market_first`
+policy, bank-derived execution bars remain visible as collected bars but do not
+advance indicator warm-up. The `execution_bank_diagnostic` policy can count
+bank-derived execution bars for diagnostic runs only; it is not the V1 default.
+
 Purposes that must be distinguishable:
 
 - collection

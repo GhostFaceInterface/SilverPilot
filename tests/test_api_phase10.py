@@ -176,6 +176,9 @@ def test_read_api_exposes_trades_positions_backtests_reports_and_health(
     assert health_json["quote_quality"]["usability"]["unknown"] == 1
     assert health_json["quote_quality"]["latest"]["freshness_status"] == "fresh"
     assert health_json["quote_quality"]["latest"]["quote_usability"] == "unknown"
+    assert health_json["warmup"]["eligible_bars"] == 0
+    assert health_json["warmup"]["total_bars"] == 0
+    assert health_json["warmup"]["reason"] == "reference_source_not_configured"
 
 
 def test_read_api_returns_structured_not_found_for_missing_resources(client: TestClient) -> None:

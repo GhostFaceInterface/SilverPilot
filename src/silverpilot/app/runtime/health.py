@@ -21,6 +21,8 @@ from silverpilot.app.db.models import (
     TelegramBotStateModel,
     VirtualAccountModel,
 )
+from silverpilot.app.providers.kuveyt_turk import KUVEYT_TURK_SOURCE_NAME
+from silverpilot.app.runtime.warmup import calculate_warmup_progress
 
 
 @dataclass(frozen=True)
@@ -76,11 +78,17 @@ class SystemHealthService:
             counts["accounts"] > 0 and counts["bank_instruments"] > 0 and counts["strategies"] > 0
         )
         runtime_status = latest_tick.status if latest_tick is not None else "not_started"
-        warmup_progress = {
-            "bars": counts["bars"],
-            "required_bars": self._settings.runtime_warmup_bars,
-            "complete": counts["bars"] >= self._settings.runtime_warmup_bars,
-        }
+        warmup_progress = calculate_warmup_progress(
+            self._session,
+            indicator_source_policy=self._settings.indicator_source_policy,
+            required_bars=self._settings.runtime_warmup_bars,
+            execution_bar_instrument_id=self._settings.runtime_bank_instrument_id,
+            execution_source=KUVEYT_TURK_SOURCE_NAME,
+            execution_timeframe=self._settings.runtime_bar_timeframe,
+            reference_instrument_id=self._settings.runtime_reference_instrument_id,
+            reference_source=self._settings.runtime_reference_source,
+            reference_timeframe=self._settings.runtime_reference_timeframe,
+        ).as_dict()
         status = "ok"
         if not seed_ready:
             status = "degraded"
