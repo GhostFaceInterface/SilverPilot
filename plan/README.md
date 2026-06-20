@@ -10,6 +10,14 @@ roadmap-code closure audit, Phase 16 adds cost/conversion/premium hardening, and
 Phase 17 productizes offline ML artifacts while preserving the no-runtime-ML
 boundary.
 
+Post-Phase 17 architecture review clarified the V1 source policy in
+`docs/source-policy-v1.md`: V1 indicators should be reference-market-first and
+execution must remain account-bound to the bank quote. The current live paper
+runtime does not yet fully enforce that policy; bank-derived execution bars are
+diagnostic or legacy runtime data until an exact reference source, FX source,
+timestamp policy, session calendar, historical depth, timeframe, and
+terms/licensing status are approved.
+
 ## Phase Status
 
 | Phase | Status | Plan file |
@@ -134,6 +142,11 @@ to an explicit `.[dev,ml]` environment.
 - Implement only SilverPilot's backend-first paper-trading simulation core.
 - Treat Kuveyt Turk public quotes as indicative bank quotes, not guaranteed
   executable prices.
+- Do not treat `fetched_at` freshness as provider freshness, market/session
+  availability, or execution eligibility. If a source has no reliable provider
+  timestamp, `provider_reported_at` must remain null.
+- Do not model bank premium or spread as a static offset in V1; use timestamped
+  source-provenance snapshots.
 - Do not add runtime ML, dashboard UI, multi-bank routing, real money execution,
   Telegram-owned decisions, live news fetching, report persistence, or mutating
   remote API behavior inside the offline experiment boundary.

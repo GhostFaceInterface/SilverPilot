@@ -45,7 +45,7 @@ Only silver and Kuveyt Turk are implemented in the first vertical slice. However
 - BankInstrument: bank-specific tradable quote definition; links Bank, Metal, Currency, and unit; key fields are symbol, buy_quote_field, sell_quote_field, min_trade_amount, fee_rule_id.
 - Metal: precious metal such as silver or gold; key fields are code, name, default_unit.
 - Currency: ISO-style currency entity; key fields are code, name, decimal_places.
-- PriceQuote: raw executable bank quote; links BankInstrument; key fields are bank_buy_price, bank_sell_price, observed_at, fetched_at, source, freshness_status.
+- PriceQuote: raw bank quote candidate; links BankInstrument; key fields are bank_buy_price, bank_sell_price, observed_at, fetched_at, source, freshness_status, and source usability metadata. Public bank quotes must remain indicative unless executable parity with internet/mobile branch prices has been manually verified.
 - MarketBar: OHLC-like aggregate from quotes or historical data; key fields are instrument_type (`reference` or `execution`), instrument_id, source, timeframe, open, high, low, close, quote_count, bar_start_at, bar_end_at.
 - IndicatorSnapshot: calculated indicator values for one instrument/timeframe/bar; key fields are indicator_name, parameters, value, calculated_at, source_bar_end_at.
 - MarketRegime: detected market state; key fields are regime, confidence, evidence, starts_at, confirmed_at.
@@ -77,7 +77,7 @@ Use PostgreSQL. Do not use a single-table design. All money and quantity fields 
 - reference_market_instruments: stores signal/reference instruments such as XAGUSD or SI=F; unique index on symbol/source.
 - execution_instruments: stores executable paper instruments tied to an execution venue, unit, metal, and currency; unique index on execution_venue_id/metal_id/currency_id/unit_id.
 - instrument_mappings: maps reference instruments to execution instruments and required FX/unit conversion assumptions; indexes on reference_market_instrument_id and execution_instrument_id.
-- price_quotes: append-only executable bank quotes; indexes on bank_instrument_id/observed_at and fetched_at; retain raw quotes long-term or archive by age.
+- price_quotes: append-only bank quote candidates; indexes on bank_instrument_id/observed_at and fetched_at; retain raw quote metadata long-term or archive by age. Public bank quote rows may be indicative and must not imply execution eligibility by themselves.
 - market_bars: aggregated bars for reference or execution instruments; unique index on instrument_type/instrument_id/timeframe/bar_start_at; retain long-term for backtests.
 - indicator_snapshots: calculated indicators; unique index on instrument/timeframe/indicator/parameters/bar_end_at; retain as reproducible cache.
 - market_regime_snapshots: detected regimes; indexes on instrument/timeframe/confirmed_at/regime; retain long-term for audit.
@@ -115,7 +115,7 @@ Use PostgreSQL. Do not use a single-table design. All money and quantity fields 
 - StrategyEngine: runs enabled strategies and creates TradeIntent; must not execute trades.
 - AccountBoundExecutionResolver: resolves a TradeIntent into the account's own execution venue and allowed instrument; must not choose a different bank because its spread is better.
 - RiskManager: approves, reduces, or rejects every TradeIntent; must not be bypassed.
-- PaperBroker: executes approved paper orders at realistic executable prices; must not call real banks.
+- PaperBroker: executes approved paper orders at realistic account-bound bank prices after explicit risk and execution-eligibility checks; must not call real banks.
 - PortfolioService: computes positions and valuations; must not mutate ledger directly except through approved services.
 - LedgerService: writes immutable ledger entries; must not edit old entries.
 - Clock / RealClock / SimulatedClock: provides time to live and backtest workflows; backtests must not call wall-clock time directly.
@@ -1457,6 +1457,10 @@ V1 uses a reference-market-first indicator policy.
 - Use bank quotes for execution, spread, cost, risk filters, premium/discount tracking, and portfolio valuation.
 - Do not calculate separate strategy indicators for every bank in V1.
 - Bank-specific indicator series may be added later only after enough clean bank quote history exists.
+- Current runtime status: this policy is not fully implemented yet. The current live paper runtime can still build warm-up bars, indicators, regimes, and strategy inputs from Kuveyt Turk bank-derived execution bars.
+- Until a reference source and FX source are explicitly approved, bank-native bars are diagnostic or legacy runtime data only, not the V1 default strategy signal source.
+- `fetched_at` freshness is not quote usability. Endpoint freshness, provider-reported market time, market/session availability, warm-up eligibility, strategy eligibility, risk eligibility, execution eligibility, valuation eligibility, and reporting eligibility must be modeled separately.
+- If a provider does not expose a reliable source timestamp, `provider_reported_at` must remain null. Do not replace a missing provider timestamp with `fetched_at`.
 
 Reason:
 
@@ -1489,6 +1493,11 @@ bank_buy_discount = reference_gram_try - bank_buy_gram_try
 ```
 
 This premium/discount must be available to RiskManager and reports.
+
+Do not model bank premium or spread as a static offset in V1. Bank spread and
+premium can vary by source state, venue, time, weekend/holiday behavior, and
+international market availability. They must be recorded as timestamped
+snapshots with source provenance.
 
 ### 30.6 Account-Bound Execution Resolution
 
@@ -1569,6 +1578,15 @@ The first vertical slice is:
 - Reports: PnL before costs, PnL after costs, premium/discount, rejected/no-trade reasons.
 
 Do not add other banks or metals until this vertical slice is stable, tested, and reproducible.
+
+Reference-source switch gate:
+
+- No runtime switch may happen until feasibility selects the exact reference source, access method, timestamp policy, session calendar, historical depth, terms/licensing status, FX conversion source, and approved timeframe.
+- Stage 1 documentation corrections are safe.
+- Source policy primitives are safe only if behavior-neutral.
+- Session/usability classification is medium/high risk because it changes schema and runtime semantics.
+- Warm-up eligibility correction is high risk because it changes runtime readiness.
+- Reference ingestion, strategy source switch, and reporting/backtest attribution remain blocked until the source feasibility gate is approved.
 
 ## 31. Account-Bound Execution Correction
 
