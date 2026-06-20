@@ -18,6 +18,10 @@ diagnostic or legacy runtime data until an exact reference source, FX source,
 timestamp policy, session calendar, historical depth, timeframe, and
 terms/licensing status are approved.
 
+Stage 5 source feasibility is recorded in `docs/source-feasibility-v1.md`. It
+does not approve a runtime reference or FX source yet; reference ingestion,
+strategy source switching, and reporting/backtest attribution remain blocked.
+
 ## Phase Status
 
 | Phase | Status | Plan file |

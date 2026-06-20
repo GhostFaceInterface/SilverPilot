@@ -1587,6 +1587,7 @@ Reference-source switch gate:
 - Session/usability classification is medium/high risk because it changes schema and runtime semantics.
 - Warm-up eligibility correction is high risk because it changes runtime readiness.
 - Reference ingestion, strategy source switch, and reporting/backtest attribution remain blocked until the source feasibility gate is approved.
+- Stage 5 feasibility matrix: `docs/source-feasibility-v1.md`. As of 2026-06-20 no runtime reference source or FX source is approved; Stage 6 remains blocked.
 
 ## 31. Account-Bound Execution Correction
 

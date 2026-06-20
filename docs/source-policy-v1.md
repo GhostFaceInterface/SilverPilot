@@ -78,3 +78,7 @@ feasibility approves:
 - terms/licensing status
 
 If any item is missing, Stage 6 reference ingestion must not start.
+
+Stage 5 status: the feasibility matrix lives in
+`docs/source-feasibility-v1.md`. As of 2026-06-20 it approves no runtime
+reference source and no FX source, so Stage 6 remains blocked.
