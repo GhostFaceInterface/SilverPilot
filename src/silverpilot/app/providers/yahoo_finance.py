@@ -346,7 +346,7 @@ def _required_sequence(document: Mapping[str, _JsonValue], key: str) -> Sequence
     value = document.get(key)
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ProviderParseError(f"Yahoo chart payload missing array field: {key}")
-    return cast(Sequence[_JsonValue], value)
+    return value
 
 
 def _optional_sequence(
@@ -358,7 +358,7 @@ def _optional_sequence(
         return None
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ProviderParseError(f"Yahoo chart payload field is not an array: {key}")
-    return cast(Sequence[_JsonValue], value)
+    return value
 
 
 def _has_missing_price(*values: _JsonValue) -> bool:
