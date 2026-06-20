@@ -1573,7 +1573,10 @@ The first vertical slice is:
 - ExecutionVenue: Kuveyt Turk.
 - ExecutionInstrument: Kuveyt Turk silver gram/TRY.
 - Currency: TRY.
-- Bars/timeframe: 15m or 1h, decided by config.
+- Bars/timeframe: `4h` by default for delayed-reference V1; fallback to `1d`
+  if only daily legally usable reference or FX data is approved. `15m` is
+  rejected for V1 until source freshness, licensing, timestamp semantics, and
+  intraday depth are explicitly approved.
 - Strategy: one simple reference-market signal strategy.
 - Execution: paper trade at Kuveyt Turk buy/sell prices for the bound account.
 - Costs: spread-first, then commission/tax if known and source-backed.
@@ -1589,7 +1592,31 @@ Reference-source switch gate:
 - Session/usability classification is medium/high risk because it changes schema and runtime semantics.
 - Warm-up eligibility correction is high risk because it changes runtime readiness.
 - Reference ingestion, strategy source switch, and reporting/backtest attribution remain blocked until the source feasibility gate is approved.
-- Stage 5 feasibility matrix: `docs/source-feasibility-v1.md`. As of 2026-06-20 no runtime reference source or FX source is approved; Stage 6 remains blocked.
+- Stage 5 feasibility matrix: `docs/source-feasibility-v1.md`. As of
+  2026-06-21 no runtime reference source or FX source is approved; Stage 6
+  remains blocked.
+
+Delayed Reference V1 next steps:
+
+- Keep CI green first; format-only fixes should be committed separately from
+  behavior or roadmap changes.
+- Do not start Stage 6 until `docs/source-feasibility-v1.md` approves a
+  reference source, FX source, terms/licensing status, timestamp policy,
+  session calendar, timeframe, and historical depth.
+- After source approval, implement the `ReferenceMarketDataProvider` for only
+  the approved source. Backfill must support dry-run, resume/idempotency,
+  conservative rate limits, duplicate prevention, data hashes, and
+  `reference_data_backfill_runs` audit rows.
+- Switch indicators, regimes, and strategy inputs to delayed reference bars
+  only after backfilled reference data has populated `signal_available_at`.
+  Bank-derived execution bars remain diagnostic.
+- Keep RiskManager account-bound: execute only against the account's mapped
+  bank instrument, require `latest_before_or_at_decision`, enforce
+  `max_quote_lag_seconds`, and reject with `missing_execution_quote` or
+  `stale_execution_quote` when needed.
+- Update backtests and reports to replay by `signal_available_at` and show
+  signal source, reference delay, bank execution source, spread, premium, and
+  cost effects.
 
 ## 31. Account-Bound Execution Correction
 
