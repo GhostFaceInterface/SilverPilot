@@ -94,7 +94,13 @@ def test_read_api_exposes_accounts_wallets_static_resources_and_latest_market_st
 
     prices = client.get(f"/api/v1/prices/latest?bank_instrument_id={fixture.bank_instrument_id}")
     assert prices.status_code == 200
-    assert prices.json()["items"][0]["bank_sell_price"] == "51.00000000"
+    price_json = prices.json()["items"][0]
+    assert price_json["bank_sell_price"] == "51.00000000"
+    assert price_json["provider_reported_at"] is None
+    assert price_json["indicative"] is True
+    assert price_json["endpoint_status"] == "unknown"
+    assert price_json["market_session_status"] == "unknown"
+    assert price_json["quote_usability"] == "unknown"
 
     indicators = client.get(
         "/api/v1/indicators/latest",
@@ -166,6 +172,10 @@ def test_read_api_exposes_trades_positions_backtests_reports_and_health(
     assert health_json["app"] == "SilverPilot"
     assert health_json["seed_ready"] is True
     assert "counts" in health_json
+    assert health_json["quote_quality"]["freshness"]["fresh"] == 1
+    assert health_json["quote_quality"]["usability"]["unknown"] == 1
+    assert health_json["quote_quality"]["latest"]["freshness_status"] == "fresh"
+    assert health_json["quote_quality"]["latest"]["quote_usability"] == "unknown"
 
 
 def test_read_api_returns_structured_not_found_for_missing_resources(client: TestClient) -> None:

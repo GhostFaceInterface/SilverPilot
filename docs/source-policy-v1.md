@@ -34,6 +34,11 @@ FX source are approved, bank-native bars are diagnostic or legacy runtime data.
 - Freshness is not quote usability.
 - Quote usability must be decided by source, instrument, venue, and purpose.
 
+Stage 3 status: `price_quotes` now stores nullable `provider_reported_at`,
+`indicative`, `endpoint_status`, `market_session_status`, and `quote_usability`
+metadata. This makes the distinction observable but does not yet change
+RiskManager, PaperBroker, warm-up, or strategy behavior.
+
 Purposes that must be distinguishable:
 
 - collection

@@ -10,7 +10,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from silverpilot.app.db.models import BankInstrumentModel, MarketBarModel, PriceQuoteModel
-from silverpilot.app.domain.enums import InstrumentType
+from silverpilot.app.domain.enums import EndpointStatus, InstrumentType, QuoteUsability
 from silverpilot.app.domain.interfaces import PriceProvider
 from silverpilot.app.domain.models import BankInstrument, PriceQuote
 from silverpilot.app.domain.value_objects import Money
@@ -152,9 +152,14 @@ def persist_provider_quote(
         bank_sell_price=quote.bank_sell_price.amount,
         observed_at=quote.observed_at,
         fetched_at=quote.fetched_at,
+        provider_reported_at=getattr(provider_result, "provider_reported_at", None),
         source=quote.source,
         source_hash=provider_result.source_hash,
         freshness_status=freshness_status,
+        indicative=getattr(provider_result, "indicative", True),
+        endpoint_status=EndpointStatus.OK.value,
+        market_session_status="unknown",
+        quote_usability=_quote_usability(getattr(provider_result, "indicative", True)),
         created_at=quote.fetched_at,
     )
     session.add(model)
@@ -174,6 +179,12 @@ def classify_quote_freshness(
     if quote.fetched_at - quote.observed_at > freshness_ttl:
         return "stale"
     return "fresh"
+
+
+def _quote_usability(indicative: bool) -> str:
+    if indicative:
+        return QuoteUsability.INDICATIVE_ONLY.value
+    return QuoteUsability.ELIGIBLE.value
 
 
 def prune_price_quotes(

@@ -38,6 +38,8 @@ from silverpilot.app.domain.value_objects import Money
 class FakeProviderResult:
     quote: PriceQuote
     source_hash: str | None
+    provider_reported_at: datetime | None = None
+    indicative: bool = True
 
 
 class FakeProvider:
@@ -184,7 +186,40 @@ def test_price_collector_persists_provider_quote_and_deduplicates(engine: Engine
         assert len(quotes) == 1
         assert quotes[0].source_hash == "fixture-hash"
         assert quotes[0].freshness_status == "fresh"
+        assert quotes[0].provider_reported_at is None
+        assert quotes[0].indicative is True
+        assert quotes[0].endpoint_status == "ok"
+        assert quotes[0].market_session_status == "unknown"
+        assert quotes[0].quote_usability == "indicative_only"
         assert provider.calls == 2
+
+
+def test_persist_provider_quote_keeps_provider_timestamp_nullable(engine: Engine) -> None:
+    with Session(engine) as session:
+        instrument = seed_bank_instrument(session)
+        provider_reported_at = now() - timedelta(seconds=30)
+        provider_result = FakeProviderResult(
+            quote=quote_for(
+                instrument,
+                observed_at=provider_reported_at,
+                fetched_at=now(),
+                buy="41.10",
+                sell="42.20",
+            ),
+            source_hash="timestamp-fixture-hash",
+            provider_reported_at=provider_reported_at,
+            indicative=False,
+        )
+
+        result = persist_provider_quote(session, provider_result)
+        session.commit()
+
+        assert result.quote.provider_reported_at is not None
+        assert result.quote.provider_reported_at.replace(tzinfo=UTC) == provider_reported_at
+        assert result.quote.indicative is False
+        assert result.quote.endpoint_status == "ok"
+        assert result.quote.market_session_status == "unknown"
+        assert result.quote.quote_usability == "eligible"
 
 
 def test_persist_provider_quote_classifies_stale_quotes(engine: Engine) -> None:

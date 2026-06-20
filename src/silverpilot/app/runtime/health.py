@@ -63,6 +63,12 @@ class SystemHealthService:
         latest_event = self._session.scalar(
             select(SystemHealthEventModel).order_by(SystemHealthEventModel.occurred_at.desc())
         )
+        latest_quote = self._session.scalar(
+            select(PriceQuoteModel).order_by(
+                PriceQuoteModel.observed_at.desc(),
+                PriceQuoteModel.fetched_at.desc(),
+            )
+        )
         telegram = self._session.scalar(
             select(TelegramBotStateModel).order_by(TelegramBotStateModel.created_at.desc())
         )
@@ -94,6 +100,24 @@ class SystemHealthService:
             "seed_ready": seed_ready,
             "counts": counts,
             "latest": latest,
+            "quote_quality": {
+                "freshness": self._group_counts(PriceQuoteModel.freshness_status),
+                "usability": self._group_counts(PriceQuoteModel.quote_usability),
+                "endpoint_status": self._group_counts(PriceQuoteModel.endpoint_status),
+                "market_session_status": self._group_counts(PriceQuoteModel.market_session_status),
+                "latest": {
+                    "freshness_status": latest_quote.freshness_status if latest_quote else None,
+                    "quote_usability": latest_quote.quote_usability if latest_quote else None,
+                    "endpoint_status": latest_quote.endpoint_status if latest_quote else None,
+                    "market_session_status": latest_quote.market_session_status
+                    if latest_quote
+                    else None,
+                    "indicative": latest_quote.indicative if latest_quote else None,
+                    "provider_reported_at": _iso(latest_quote.provider_reported_at)
+                    if latest_quote
+                    else None,
+                },
+            },
             "warmup": warmup_progress,
             "runtime": {
                 "status": runtime_status,
@@ -121,6 +145,10 @@ class SystemHealthService:
 
     def _latest(self, column: Any) -> datetime | None:
         return self._session.scalar(select(column).order_by(column.desc()).limit(1))
+
+    def _group_counts(self, column: Any) -> dict[str, int]:
+        rows = self._session.execute(select(column, func.count()).group_by(column)).all()
+        return {str(key): count for key, count in rows}
 
 
 def _iso(value: datetime | None) -> str | None:

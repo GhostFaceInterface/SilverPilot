@@ -17,6 +17,7 @@ class HealthResponse(BaseModel):
     seed_ready: bool | None = None
     counts: dict[str, Any] | None = None
     latest: dict[str, Any] | None = None
+    quote_quality: dict[str, Any] | None = None
     warmup: dict[str, Any] | None = None
     runtime: dict[str, Any] | None = None
     last_event: dict[str, Any] | None = None
@@ -88,8 +89,13 @@ class PriceQuoteResponse(BaseModel):
     bank_sell_price: Decimal
     observed_at: datetime
     fetched_at: datetime
+    provider_reported_at: datetime | None = None
     source: str
     freshness_status: str
+    indicative: bool = True
+    endpoint_status: str = "unknown"
+    market_session_status: str = "unknown"
+    quote_usability: str = "unknown"
 
 
 class IndicatorSnapshotResponse(BaseModel):

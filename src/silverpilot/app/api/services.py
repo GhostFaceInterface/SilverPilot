@@ -493,8 +493,13 @@ def _price_response(price: PriceQuoteModel) -> PriceQuoteResponse:
         bank_sell_price=price.bank_sell_price,
         observed_at=price.observed_at,
         fetched_at=price.fetched_at,
+        provider_reported_at=price.provider_reported_at,
         source=price.source,
         freshness_status=price.freshness_status,
+        indicative=price.indicative,
+        endpoint_status=price.endpoint_status,
+        market_session_status=price.market_session_status,
+        quote_usability=price.quote_usability,
     )
 
 

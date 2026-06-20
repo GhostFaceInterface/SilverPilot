@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -339,9 +340,18 @@ class PriceQuoteModel(Base, TimestampMixin):
     bank_sell_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     observed_at: Mapped[datetime] = utc_datetime()
     fetched_at: Mapped[datetime] = utc_datetime()
+    provider_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     source: Mapped[str] = mapped_column(String(200), nullable=False)
     source_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     freshness_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    indicative: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    endpoint_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    market_session_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unknown"
+    )
+    quote_usability: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
 
     bank_instrument: Mapped[BankInstrumentModel] = relationship()
 
@@ -349,8 +359,26 @@ class PriceQuoteModel(Base, TimestampMixin):
         CheckConstraint("bank_buy_price >= 0", name="bank_buy_price_non_negative"),
         CheckConstraint("bank_sell_price >= bank_buy_price", name="sell_price_gte_buy_price"),
         CheckConstraint("fetched_at >= observed_at", name="fetched_at_gte_observed_at"),
+        CheckConstraint(
+            "provider_reported_at IS NULL OR fetched_at >= provider_reported_at",
+            name="price_quote_fetched_gte_provider_reported",
+        ),
+        CheckConstraint(
+            "endpoint_status IN ('unknown', 'ok', 'degraded', 'failed')",
+            name="price_quote_endpoint_status_valid",
+        ),
+        CheckConstraint(
+            "market_session_status IN ('unknown', 'open', 'closed', 'indicative_only')",
+            name="price_quote_market_session_status_valid",
+        ),
+        CheckConstraint(
+            "quote_usability IN "
+            "('unknown', 'eligible', 'blocked', 'observation_only', 'indicative_only')",
+            name="price_quote_quote_usability_valid",
+        ),
         Index("ix_price_quotes_instrument_observed", "bank_instrument_id", "observed_at"),
         Index("ix_price_quotes_fetched_at", "fetched_at"),
+        Index("ix_price_quotes_usability", "quote_usability"),
     )
 
 
