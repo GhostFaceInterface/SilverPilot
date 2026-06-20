@@ -25,7 +25,14 @@ from silverpilot.app.domain.models import (
     User,
     VirtualAccount,
 )
-from silverpilot.app.domain.value_objects import Money, Quantity
+from silverpilot.app.domain.value_objects import (
+    InstrumentSessionPolicy,
+    MarketSessionCalendar,
+    Money,
+    Quantity,
+    SessionDecision,
+    SourcePolicy,
+)
 
 __all__ = [
     "Bank",
@@ -35,8 +42,10 @@ __all__ = [
     "Clock",
     "Currency",
     "IndicatorSnapshot",
+    "InstrumentSessionPolicy",
     "MarketRegimeSnapshot",
     "MarketBar",
+    "MarketSessionCalendar",
     "Metal",
     "LedgerEntry",
     "Money",
@@ -48,7 +57,9 @@ __all__ = [
     "Quantity",
     "RealClock",
     "RiskDecision",
+    "SessionDecision",
     "SimulatedClock",
+    "SourcePolicy",
     "StrategyDefinition",
     "StrategyRun",
     "TradeIntent",

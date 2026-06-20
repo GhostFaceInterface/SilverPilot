@@ -5,6 +5,8 @@ from uuid import UUID
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from silverpilot.app.domain.enums import ExecutionSourcePolicy, IndicatorSourcePolicy
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SILVERPILOT_", env_file=".env", extra="ignore")
@@ -23,7 +25,13 @@ class Settings(BaseSettings):
     runtime_account_id: UUID | None = None
     runtime_bank_instrument_id: UUID | None = None
     runtime_execution_instrument_id: UUID | None = None
+    runtime_reference_instrument_id: UUID | None = None
     runtime_strategy_id: UUID | None = None
+    runtime_reference_source: str | None = None
+    runtime_fx_source: str | None = None
+    runtime_reference_timeframe: str = "1h"
+    indicator_source_policy: IndicatorSourcePolicy = IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
+    execution_source_policy: ExecutionSourcePolicy = ExecutionSourcePolicy.ACCOUNT_BOUND_BANK_QUOTE
     runtime_collect_interval_seconds: int = Field(default=300, ge=1)
     runtime_bar_timeframe: str = "5m"
     runtime_warmup_bars: int = Field(default=201, ge=1)
@@ -35,11 +43,19 @@ class Settings(BaseSettings):
         "runtime_account_id",
         "runtime_bank_instrument_id",
         "runtime_execution_instrument_id",
+        "runtime_reference_instrument_id",
         "runtime_strategy_id",
         mode="before",
     )
     @classmethod
     def empty_uuid_is_none(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
+
+    @field_validator("runtime_reference_source", "runtime_fx_source", mode="before")
+    @classmethod
+    def empty_string_is_none(cls, value: object) -> object:
         if value == "":
             return None
         return value

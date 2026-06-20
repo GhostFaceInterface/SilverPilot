@@ -16,6 +16,56 @@ class InstrumentType(StrEnum):
     EXECUTION = "execution"
 
 
+class SourceRole(StrEnum):
+    REFERENCE_MARKET = "reference_market"
+    EXECUTION_QUOTE = "execution_quote"
+    FX_CONVERSION = "fx_conversion"
+    BENCHMARK = "benchmark"
+    NEWS = "news"
+
+
+class SourcePurpose(StrEnum):
+    COLLECTION = "collection"
+    WARMUP = "warmup"
+    INDICATOR = "indicator"
+    STRATEGY = "strategy"
+    RISK = "risk"
+    EXECUTION = "execution"
+    VALUATION = "valuation"
+    REPORTING = "reporting"
+
+
+class IndicatorSourcePolicy(StrEnum):
+    REFERENCE_MARKET_FIRST = "reference_market_first"
+    EXECUTION_BANK_DIAGNOSTIC = "execution_bank_diagnostic"
+
+
+class ExecutionSourcePolicy(StrEnum):
+    ACCOUNT_BOUND_BANK_QUOTE = "account_bound_bank_quote"
+
+
+class EndpointStatus(StrEnum):
+    UNKNOWN = "unknown"
+    OK = "ok"
+    DEGRADED = "degraded"
+    FAILED = "failed"
+
+
+class MarketSessionStatus(StrEnum):
+    UNKNOWN = "unknown"
+    OPEN = "open"
+    CLOSED = "closed"
+    INDICATIVE_ONLY = "indicative_only"
+
+
+class QuoteUsability(StrEnum):
+    UNKNOWN = "unknown"
+    ELIGIBLE = "eligible"
+    BLOCKED = "blocked"
+    OBSERVATION_ONLY = "observation_only"
+    INDICATIVE_ONLY = "indicative_only"
+
+
 class MarketRegime(StrEnum):
     TREND_UP = "trend_up"
     TREND_DOWN = "trend_down"
