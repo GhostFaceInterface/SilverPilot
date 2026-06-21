@@ -22,6 +22,8 @@ class WarmupProgress:
     eligible_source: str | None
     eligible_timeframe: str | None
     reason: str | None
+    blocked_by: str | None
+    next_action: str | None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -38,6 +40,8 @@ class WarmupProgress:
             "eligible_source": self.eligible_source,
             "eligible_timeframe": self.eligible_timeframe,
             "reason": self.reason,
+            "blocked_by": self.blocked_by,
+            "next_action": self.next_action,
         }
 
 
@@ -73,6 +77,11 @@ def calculate_warmup_progress(
         reference_timeframe=reference_timeframe,
     )
     if target is None:
+        reason = (
+            "reference_source_not_configured"
+            if indicator_source_policy == IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
+            else "execution_source_not_configured"
+        )
         return WarmupProgress(
             bars=0,
             eligible_bars=0,
@@ -84,9 +93,9 @@ def calculate_warmup_progress(
             eligible_instrument_id=None,
             eligible_source=None,
             eligible_timeframe=None,
-            reason="reference_source_not_configured"
-            if indicator_source_policy == IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
-            else "execution_source_not_configured",
+            reason=reason,
+            blocked_by=_blocked_by(reason),
+            next_action=_next_action(reason),
         )
 
     instrument_type, instrument_id, source, timeframe = target
@@ -98,18 +107,28 @@ def calculate_warmup_progress(
         timeframe=timeframe,
         decision_at=decision_at,
     )
+    complete = eligible_bars >= required_bars
+    warmup_reason: str | None = None if complete else "insufficient_eligible_bars"
     return WarmupProgress(
         bars=eligible_bars,
         eligible_bars=eligible_bars,
         total_bars=total_bars,
         required_bars=required_bars,
-        complete=eligible_bars >= required_bars,
+        complete=complete,
         indicator_source_policy=indicator_source_policy.value,
         eligible_instrument_type=instrument_type.value,
         eligible_instrument_id=instrument_id,
         eligible_source=source,
         eligible_timeframe=timeframe,
-        reason=None,
+        reason=warmup_reason,
+        blocked_by=None if complete else _blocked_by(warmup_reason),
+        next_action=None
+        if complete
+        else _next_action(
+            warmup_reason,
+            indicator_source_policy=indicator_source_policy,
+            missing_bars=max(required_bars - eligible_bars, 0),
+        ),
     )
 
 
@@ -199,3 +218,38 @@ def _count_bars(
             )
         )
     return session.scalar(select(func.count(MarketBarModel.id)).where(*clauses)) or 0
+
+
+def _blocked_by(reason: str | None) -> str | None:
+    if reason == "reference_source_not_configured":
+        return "source_feasibility_gate"
+    if reason == "execution_source_not_configured":
+        return "runtime_execution_config"
+    if reason == "insufficient_eligible_bars":
+        return "warmup_data"
+    return None
+
+
+def _next_action(
+    reason: str | None,
+    *,
+    indicator_source_policy: IndicatorSourcePolicy | None = None,
+    missing_bars: int | None = None,
+) -> str | None:
+    if reason == "reference_source_not_configured":
+        return (
+            "Approve a reference source, FX source, terms status, timestamp policy, "
+            "session calendar, timeframe, and historical depth before enabling runtime signals."
+        )
+    if reason == "execution_source_not_configured":
+        return "Configure the runtime bank instrument, quote source, and execution bar timeframe."
+    if reason == "insufficient_eligible_bars":
+        source_label = (
+            "reference bars"
+            if indicator_source_policy == IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
+            else "execution bars"
+        )
+        if missing_bars is None:
+            return f"Collect or backfill enough eligible {source_label} to finish warm-up."
+        return f"Collect or backfill {missing_bars} more eligible {source_label} to finish warm-up."
+    return None

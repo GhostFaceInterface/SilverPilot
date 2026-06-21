@@ -1635,6 +1635,10 @@ Delayed Reference V1 next steps:
 - Switch indicators, regimes, and strategy inputs to delayed reference bars
   only after backfilled reference data has populated `signal_available_at`.
   Bank-derived execution bars remain diagnostic.
+- Runtime/system health warm-up output should make blocked state readable:
+  `blocked_by=source_feasibility_gate` means a human/source decision is still
+  required; `blocked_by=warmup_data` means the source is configured but more
+  eligible bars must be collected or backfilled.
 - Runtime signal selection now follows the warm-up source policy: when
   reference-market-first is configured with a reference instrument/source, it
   selects the latest reference bar whose `signal_available_at` is not in the

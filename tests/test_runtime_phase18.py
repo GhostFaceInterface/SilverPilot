@@ -145,6 +145,8 @@ def test_paper_runtime_records_warmup_tick_after_first_closed_bar() -> None:
             warmup["indicator_source_policy"] == IndicatorSourcePolicy.REFERENCE_MARKET_FIRST.value
         )
         assert warmup["reason"] == "reference_source_not_configured"
+        assert warmup["blocked_by"] == "source_feasibility_gate"
+        assert "Approve a reference source" in str(warmup["next_action"])
         assert tick is not None
         assert tick.status == "warming_up"
         assert session.scalar(select(TradeIntentModel)) is None
@@ -190,7 +192,11 @@ def test_paper_runtime_can_count_execution_bars_only_in_diagnostic_policy() -> N
             warmup["indicator_source_policy"]
             == IndicatorSourcePolicy.EXECUTION_BANK_DIAGNOSTIC.value
         )
-        assert warmup["reason"] is None
+        assert warmup["reason"] == "insufficient_eligible_bars"
+        assert warmup["blocked_by"] == "warmup_data"
+        assert warmup["next_action"] == (
+            "Collect or backfill 1 more eligible execution bars to finish warm-up."
+        )
 
 
 def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
@@ -271,6 +277,8 @@ def test_system_health_reports_seed_and_warmup_details() -> None:
     assert snapshot.payload["warmup"]["eligible_bars"] == 0
     assert snapshot.payload["warmup"]["total_bars"] == 0
     assert snapshot.payload["warmup"]["reason"] == "reference_source_not_configured"
+    assert snapshot.payload["warmup"]["blocked_by"] == "source_feasibility_gate"
+    assert "Approve a reference source" in snapshot.payload["warmup"]["next_action"]
     app = create_app(Settings(database_url="sqlite+pysqlite:///:memory:"))
     assert TestClient(app).get("/health").json() == {"status": "ok", "app": "SilverPilot"}
 
