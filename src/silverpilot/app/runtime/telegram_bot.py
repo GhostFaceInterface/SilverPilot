@@ -12,12 +12,20 @@ from sqlalchemy.orm import Session
 
 from silverpilot.app.api.services import ApiQueryService, Pagination
 from silverpilot.app.core.settings import Settings, get_settings
-from silverpilot.app.db.models import TelegramBotStateModel, VirtualAccountModel
+from silverpilot.app.db.models import StrategyRunModel, TelegramBotStateModel, VirtualAccountModel
 from silverpilot.app.db.session import create_db_engine
 from silverpilot.app.notifications.telegram import HttpTelegramTransport, TelegramMessage
 from silverpilot.app.runtime.health import SystemHealthService
 
-READ_ONLY_COMMANDS = ("/health", "/prices", "/portfolio", "/trades", "/risk", "/help")
+READ_ONLY_COMMANDS = (
+    "/durum",
+    "/health",
+    "/prices",
+    "/portfolio",
+    "/trades",
+    "/risk",
+    "/help",
+)
 
 
 class TelegramBotTransport:
@@ -168,21 +176,32 @@ def _chat_is_allowed(*, chat_id: object, settings: Settings) -> bool:
 def _render_command(*, session: Session, settings: Settings, text: str) -> str:
     command = text.strip().split(maxsplit=1)[0].split("@", maxsplit=1)[0].lower()
     service = ApiQueryService(session)
-    if command == "/health":
+    if command in {"/health", "/durum", "/status"}:
         health = SystemHealthService(session=session, settings=settings).snapshot().payload
         warmup = health.get("warmup", {})
         runtime = health.get("runtime", {})
         telegram = health.get("telegram", {})
+        raw_runtime_summary = runtime.get("summary", {}) if isinstance(runtime, dict) else {}
+        runtime_summary = raw_runtime_summary if isinstance(raw_runtime_summary, dict) else {}
+        counts = health.get("counts", {})
+        trade_count = counts.get("trades", "n/a") if isinstance(counts, dict) else "n/a"
+        latest_strategy = _latest_strategy_line(session)
+        indicators = _indicator_line(runtime_summary)
         return "\n".join(
             [
-                "SilverPilot health",
-                f"Status: {health.get('status')}",
+                "SilverPilot durumu",
+                f"Sistem: {health.get('status')}",
                 f"Runtime: {runtime.get('status') if isinstance(runtime, dict) else 'n/a'}",
                 f"Warm-up: {_warmup_line(warmup)}",
+                f"Sinyal: {_signal_line(runtime_summary)}",
+                f"Rejim: {runtime_summary.get('regime', 'n/a')}",
+                f"Indikatorler: {indicators}",
+                f"Strateji: {latest_strategy}",
+                f"Paper trades: {trade_count}",
                 f"Telegram: {telegram.get('status') if isinstance(telegram, dict) else 'n/a'}",
             ]
         )
-    if command == "/prices":
+    if command in {"/prices", "/fiyat", "/fiyatlar"}:
         prices = service.list_latest_prices(Pagination(page=1, page_size=1)).items
         if not prices:
             return "Latest price\nNo bank price found."
@@ -196,7 +215,7 @@ def _render_command(*, session: Session, settings: Settings, text: str) -> str:
                 f"Observed: {price.observed_at.isoformat()}",
             ]
         )
-    if command == "/portfolio":
+    if command in {"/portfolio", "/portfoy"}:
         account_id = _default_account_id(session, settings)
         if account_id is None:
             return "Portfolio\nNo paper account found."
@@ -214,10 +233,20 @@ def _render_command(*, session: Session, settings: Settings, text: str) -> str:
                 f"Health: {report.health.status}",
             ]
         )
-    if command == "/trades":
+    if command in {"/trades", "/islemler", "/işlemler"}:
         trades = service.list_trades(Pagination(page=1, page_size=5)).items
         if not trades:
-            return "Latest paper trades\nNo trades found."
+            return "\n".join(
+                [
+                    "Latest paper trades",
+                    "No trades found.",
+                    _latest_strategy_line(session),
+                    (
+                        "Otomatik paper trade sadece taze referans sinyali, TREND_UP rejimi, "
+                        "pullback kosullari ve risk onayi birlikte gelirse acilir."
+                    ),
+                ]
+            )
         lines = ["Latest paper trades"]
         for trade in trades:
             lines.append(
@@ -242,6 +271,39 @@ def _render_command(*, session: Session, settings: Settings, text: str) -> str:
             ]
         )
     return _help_text()
+
+
+def _latest_strategy_line(session: Session) -> str:
+    run = session.scalar(select(StrategyRunModel).order_by(StrategyRunModel.run_at.desc()))
+    if run is None:
+        return "no strategy run yet"
+    raw_reasons = run.evidence.get("reasons", [])
+    reasons = raw_reasons if isinstance(raw_reasons, list) else []
+    reason_text = ",".join(str(reason) for reason in reasons) if reasons else "none"
+    return f"{run.status}; reason={reason_text}; at={run.run_at.isoformat()}"
+
+
+def _signal_line(runtime_summary: object) -> str:
+    if not isinstance(runtime_summary, dict):
+        return "n/a"
+    source = runtime_summary.get("signal_source")
+    timeframe = runtime_summary.get("signal_timeframe")
+    bar_end = runtime_summary.get("signal_bar_end_at")
+    available = runtime_summary.get("signal_available_at")
+    if source is None:
+        return "n/a"
+    return f"{source} {timeframe}; bar_end={bar_end}; available={available}"
+
+
+def _indicator_line(runtime_summary: object) -> str:
+    if not isinstance(runtime_summary, dict):
+        return "n/a"
+    indicators = runtime_summary.get("indicators")
+    if not isinstance(indicators, dict) or not indicators:
+        return "n/a"
+    names = ["ema_50", "ema_200", "rsi_14", "atr_14", "adx_14", "bb_width_20"]
+    present = [name for name in names if name in indicators]
+    return ", ".join(present) if present else "n/a"
 
 
 def _default_account_id(session: Session, settings: Settings) -> UUID | None:
@@ -269,6 +331,7 @@ def _help_text() -> str:
     return "\n".join(
         [
             "SilverPilot read-only commands",
+            "/durum - sistem, sinyal, rejim ve strateji ozeti",
             "/health - system runtime status",
             "/prices - latest Kuveyt indicative bank quote",
             "/portfolio - paper account portfolio",

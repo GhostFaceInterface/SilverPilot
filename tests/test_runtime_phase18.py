@@ -401,7 +401,38 @@ def test_telegram_bot_polls_and_answers_read_only_commands() -> None:
     assert output["processed_updates"] == 1
     assert state is not None
     assert state.last_update_id == 41
-    assert transport.sent == [("9001", "SilverPilot health")]
+    assert transport.sent == [("9001", "SilverPilot durumu")]
+
+
+def test_telegram_bot_accepts_turkish_status_alias() -> None:
+    db_engine = engine()
+    transport = _FakeTelegramTransport(
+        [
+            {
+                "update_id": 43,
+                "message": {
+                    "chat": {"id": 9001},
+                    "text": "/durum",
+                },
+            }
+        ]
+    )
+    with Session(db_engine) as session:
+        bootstrap_paper_runtime(session, now=_time())
+        session.commit()
+
+    output = _tick(
+        engine=db_engine,
+        settings=Settings(
+            telegram_enabled=True,
+            telegram_bot_token="secret-token",
+            runtime_enabled=True,
+        ),
+        transport=transport,
+    )
+
+    assert output["processed_updates"] == 1
+    assert transport.sent == [("9001", "SilverPilot durumu")]
 
 
 def test_telegram_bot_ignores_unconfigured_chat_when_default_chat_is_set() -> None:
