@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -143,10 +143,18 @@ def test_read_api_exposes_trades_positions_backtests_reports_and_health(
     backtest = client.get(f"/api/v1/backtests/{fixture.backtest_run_id}")
     assert backtest.status_code == 200
     assert backtest.json()["report"]["data_hash"] == "a" * 64
+    executed_trade = backtest.json()["report"]["executed_trades"][0]
+    assert executed_trade["signal_source"] == "fixture"
+    assert executed_trade["execution_source"] == "kuveyt_turk_finance_portal"
+    assert executed_trade["bank_spread_pct"] == "0.02"
+    assert executed_trade["total_costs"] == "10.50000000"
 
     report = client.get(f"/api/v1/reports/backtests/{fixture.backtest_run_id}")
     assert report.status_code == 200
     assert report.json()["report_type"] == "backtest"
+    assert report.json()["payload"]["executed_trades"][0]["execution_quote_id"] == str(
+        fixture.quote_id
+    )
 
     dashboard = client.get(f"/api/v1/reports/accounts/{fixture.account_id}/dashboard")
     assert dashboard.status_code == 200
@@ -202,11 +210,13 @@ class _ApiFixture:
         bank_instrument_id: UUID,
         reference_instrument_id: UUID,
         backtest_run_id: UUID,
+        quote_id: UUID,
     ) -> None:
         self.account_id = account_id
         self.bank_instrument_id = bank_instrument_id
         self.reference_instrument_id = reference_instrument_id
         self.backtest_run_id = backtest_run_id
+        self.quote_id = quote_id
 
 
 def _seed_api_fixture(engine: Engine) -> _ApiFixture:
@@ -466,6 +476,40 @@ def _seed_api_fixture(engine: Engine) -> _ApiFixture:
                 "pnl_after_costs": "42.00000000",
                 "trade_count": 1,
                 "max_drawdown": "0.01000000",
+                "signal_source": "fixture",
+                "execution_source": "kuveyt_turk_finance_portal",
+                "signal_time_policy": "signal_available_at_or_bar_end_at",
+                "executed_trades": [
+                    {
+                        "trade_id": str(trade.id),
+                        "order_id": str(order.id),
+                        "risk_decision_id": str(decision.id),
+                        "trade_intent_id": str(intent.id),
+                        "side": "buy",
+                        "signal_source": "fixture",
+                        "source_bar_end_at": NOW.isoformat(),
+                        "signal_available_at": (NOW + timedelta(minutes=15)).isoformat(),
+                        "evaluated_at": (NOW + timedelta(minutes=16)).isoformat(),
+                        "execution_source": "kuveyt_turk_finance_portal",
+                        "execution_quote_id": str(quote.id),
+                        "execution_quote_observed_at": NOW.isoformat(),
+                        "execution_quote_fetched_at": NOW.isoformat(),
+                        "quote_lag_seconds": 960,
+                        "bank_buy_price": "49.00000000",
+                        "bank_sell_price": "50.00000000",
+                        "bank_spread": "1.00000000",
+                        "bank_spread_pct": "0.02",
+                        "quantity": "10.00000000",
+                        "execution_price": "50.00000000",
+                        "gross_cash_amount": "500.00000000",
+                        "fees": "0.50000000",
+                        "taxes": "0.00000000",
+                        "spread_cost": "10.00000000",
+                        "net_cash_amount": "500.50000000",
+                        "total_costs": "10.50000000",
+                        "premium_discount_status": "not_calculated_without_approved_fx_source",
+                    }
+                ],
             },
             created_at=NOW,
         )
@@ -485,4 +529,5 @@ def _seed_api_fixture(engine: Engine) -> _ApiFixture:
             bank_instrument_id=bank_instrument.id,
             reference_instrument_id=reference.id,
             backtest_run_id=backtest.id,
+            quote_id=quote.id,
         )
