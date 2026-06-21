@@ -1610,6 +1610,12 @@ Delayed Reference V1 next steps:
   bars for `SI=F` over `2y` and 2478 normalized 4h bars for `GC=F` over `2y`.
   This proves the research parser/backfill path can read public Yahoo chart
   data under manual testing, but it does not approve Yahoo for runtime use.
+- Temporary write smoke on 2026-06-21 against a throwaway SQLite DB inserted
+  2470 `SI=F` 4h bars and 2472 `GC=F` 4h bars, then a second run updated the
+  same rows with zero duplicate inserts. Sample rows carried
+  `data_delay_seconds=900`, `is_backfilled=true`, and populated
+  `signal_available_at`; the observed local ingestion delay setting made the
+  smoke `signal_available_at` offset 4500 seconds after `bar_end_at`.
 - Implement Yahoo only as a bounded `yahoo_research` backfill spike first, not
   as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
   optional `TRY=X`; `4h` is the default research timeframe.

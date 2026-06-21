@@ -153,6 +153,21 @@ Research smoke result on 2026-06-21:
   not an approved source delay. Runtime use remains blocked until the Stage 6
   entry checklist is filled.
 
+Research write smoke result on 2026-06-21:
+
+- Against a throwaway SQLite DB, non-dry-run `SI=F` backfill inserted 2470 4h
+  bars. Re-running the same command inserted 0 rows and updated 2470 existing
+  rows with the same hash:
+  `f1654595b5d028bd2dfe58267ddc0562e2b6eac9a12b66b2af65e44ebf342ba9`.
+- Against the same throwaway DB, non-dry-run `GC=F` backfill inserted 2472 4h
+  bars. Re-running the same command inserted 0 rows and updated 2472 existing
+  rows with the same hash:
+  `689599c77c10bdc2521addac703653318ee9a95f6786eaa176e18cdc9fef7c60`.
+- Sample persisted rows had `data_delay_seconds=900`, `is_backfilled=true`,
+  `data_quality_status=ok`, and populated `signal_available_at`. The observed
+  local ingestion delay setting made the smoke offset 4500 seconds after
+  `bar_end_at`; this remains a research measurement, not a runtime policy.
+
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,
 timeframe, history depth, timestamp policy, session calendar, and terms status.
