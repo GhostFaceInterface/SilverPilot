@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -82,6 +83,22 @@ def test_backtest_engine_replays_deterministically_with_cost_inclusive_report(
         assert first.pnl_before_costs != first.pnl_after_costs
         assert first.max_drawdown == Decimal("0.01050000")
         assert first.no_trade_reasons[-1].reasons == ["regime_blocked:range"]
+        assert len(first.executed_trades) == 1
+        executed = first.executed_trades[0]
+        assert executed.signal_source == SOURCE
+        assert executed.execution_source == QUOTE_SOURCE
+        assert executed.source_bar_end_at == FIRST_BAR
+        assert executed.signal_available_at is None
+        assert executed.execution_quote_observed_at == FIRST_BAR
+        assert executed.quote_lag_seconds == 60
+        assert executed.bank_buy_price == Decimal("49.00000000")
+        assert executed.bank_sell_price == Decimal("50.00000000")
+        assert executed.bank_spread == Decimal("1.00000000")
+        assert executed.bank_spread_pct == Decimal("0.02")
+        assert executed.execution_price == Decimal("50.00000000")
+        assert executed.spread_cost == Decimal("10.00000000")
+        assert executed.total_costs == Decimal("10.50000000")
+        assert executed.premium_discount_status == "not_calculated_without_approved_fx_source"
         live_wallet = session.get(WalletModel, fixture.live_wallet_id)
         assert live_wallet is not None
         assert live_wallet.available_amount == Decimal("1000.00000000")
@@ -135,6 +152,11 @@ def test_backtest_replays_delayed_reference_bar_at_signal_available_time(
         assert report.trade_count == 1
         assert report.signal_time_policy == "signal_available_at_or_bar_end_at"
         assert report.execution_source == QUOTE_SOURCE
+        assert report.executed_trades[0].source_bar_end_at == FIRST_BAR
+        assert report.executed_trades[0].signal_available_at == signal_available_at
+        assert report.executed_trades[0].evaluated_at == decision_at
+        assert report.executed_trades[0].execution_quote_observed_at == decision_at
+        assert report.executed_trades[0].quote_lag_seconds == 0
         snapshot = session.get(BacktestDatasetSnapshotModel, report.dataset_snapshot_id)
         assert snapshot is not None
         bars_payload = snapshot.input_ranges["bars"]
@@ -176,6 +198,13 @@ def test_backtest_persists_run_report_and_uses_shared_execution_tables(engine: E
         assert run.report_json["signal_source"] == SOURCE
         assert run.report_json["execution_source"] == QUOTE_SOURCE
         assert run.report_json["signal_time_policy"] == "signal_available_at_or_bar_end_at"
+        executed_trades = cast(list[dict[str, object]], run.report_json["executed_trades"])
+        executed_trade = executed_trades[0]
+        assert executed_trade["signal_source"] == SOURCE
+        assert executed_trade["execution_source"] == QUOTE_SOURCE
+        assert executed_trade["execution_quote_observed_at"] == FIRST_BAR.isoformat()
+        assert executed_trade["bank_spread_pct"] == "0.02"
+        assert executed_trade["total_costs"] == "10.50000000"
         assert session.scalar(select(StrategyRunModel)) is not None
         assert session.scalar(select(TradeIntentModel)) is not None
         assert session.scalar(select(RiskDecisionModel)) is not None

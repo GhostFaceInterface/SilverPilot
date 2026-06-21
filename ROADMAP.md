@@ -1653,7 +1653,11 @@ Delayed Reference V1 next steps:
   and falls back to `bar_end_at` only for legacy/execution bars without delayed
   metadata. Backtest dataset hashes include delayed reference timing metadata,
   and run reports expose signal source, execution quote source, and the signal
-  time policy.
+  time policy. Executed backtest trades now also include attribution for the
+  source bar, `signal_available_at`, decision time, bank quote id/time, quote
+  lag, bank buy/sell prices, spread, execution price, and realized paper costs;
+  premium/discount remains marked as not calculated until an approved FX source
+  exists.
 
 ## 31. Account-Bound Execution Correction
 

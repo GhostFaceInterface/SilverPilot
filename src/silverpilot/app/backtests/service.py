@@ -109,6 +109,72 @@ class NoTradeDTO:
 
 
 @dataclass(frozen=True)
+class ExecutedTradeAttributionDTO:
+    trade_id: UUID
+    order_id: UUID
+    risk_decision_id: UUID
+    trade_intent_id: UUID
+    side: str
+    signal_source: str
+    source_bar_end_at: datetime
+    signal_available_at: datetime | None
+    evaluated_at: datetime
+    execution_source: str
+    execution_quote_id: UUID
+    execution_quote_observed_at: datetime
+    execution_quote_fetched_at: datetime
+    quote_lag_seconds: int
+    bank_buy_price: Decimal
+    bank_sell_price: Decimal
+    bank_spread: Decimal
+    bank_spread_pct: Decimal
+    quantity: Decimal
+    execution_price: Decimal
+    gross_cash_amount: Decimal
+    fees: Decimal
+    taxes: Decimal
+    spread_cost: Decimal
+    net_cash_amount: Decimal
+    total_costs: Decimal
+    premium_discount_status: str
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "trade_id": str(self.trade_id),
+            "order_id": str(self.order_id),
+            "risk_decision_id": str(self.risk_decision_id),
+            "trade_intent_id": str(self.trade_intent_id),
+            "side": self.side,
+            "signal_source": self.signal_source,
+            "source_bar_end_at": self.source_bar_end_at.isoformat(),
+            "signal_available_at": (
+                self.signal_available_at.isoformat()
+                if self.signal_available_at is not None
+                else None
+            ),
+            "evaluated_at": self.evaluated_at.isoformat(),
+            "execution_source": self.execution_source,
+            "execution_quote_id": str(self.execution_quote_id),
+            "execution_quote_observed_at": self.execution_quote_observed_at.isoformat(),
+            "execution_quote_fetched_at": self.execution_quote_fetched_at.isoformat(),
+            "quote_lag_seconds": self.quote_lag_seconds,
+            "bank_buy_price": str(self.bank_buy_price),
+            "bank_sell_price": str(self.bank_sell_price),
+            "bank_spread": str(self.bank_spread),
+            "bank_spread_pct": str(self.bank_spread_pct),
+            "quantity": str(self.quantity),
+            "execution_price": str(self.execution_price),
+            "gross_cash_amount": str(self.gross_cash_amount),
+            "fees": str(self.fees),
+            "taxes": str(self.taxes),
+            "spread_cost": str(self.spread_cost),
+            "net_cash_amount": str(self.net_cash_amount),
+            "total_costs": str(self.total_costs),
+            "premium_discount_status": self.premium_discount_status,
+        }
+
+
+@dataclass(frozen=True)
 class PortfolioCurvePoint:
     timestamp: datetime
     cash: Decimal
@@ -150,6 +216,7 @@ class BacktestReportDTO:
     trade_count: int
     rejected_trades: list[RejectedTradeDTO]
     no_trade_reasons: list[NoTradeDTO]
+    executed_trades: list[ExecutedTradeAttributionDTO]
     portfolio_curve: list[PortfolioCurvePoint]
     signal_source: str
     signal_time_policy: str
@@ -173,6 +240,7 @@ class BacktestReportDTO:
             "trade_count": self.trade_count,
             "rejected_trades": [item.to_json() for item in self.rejected_trades],
             "no_trade_reasons": [item.to_json() for item in self.no_trade_reasons],
+            "executed_trades": [item.to_json() for item in self.executed_trades],
             "portfolio_curve": [point.to_json() for point in self.portfolio_curve],
             "signal_source": self.signal_source,
             "signal_time_policy": self.signal_time_policy,
@@ -394,6 +462,7 @@ class BacktestEngine:
         portfolio = _PortfolioState(initial_cash=config.initial_cash)
         rejected_trades: list[RejectedTradeDTO] = []
         no_trade_reasons: list[NoTradeDTO] = []
+        executed_trades: list[ExecutedTradeAttributionDTO] = []
         curve = [
             self._portfolio_point(
                 account_id=account.id,
@@ -454,11 +523,20 @@ class BacktestEngine:
                     ),
                 )
                 if risk.decision.decision in {"approve", "reduce"}:
-                    broker.execute(
+                    broker_result = broker.execute(
                         PaperOrderRequest(
                             risk_decision_id=risk.decision.id,
                             side=PaperOrderSide.BUY,
                             executed_at=clock.now(),
+                        )
+                    )
+                    executed_trades.append(
+                        _executed_trade_attribution(
+                            trade=broker_result.trade,
+                            source_bar=bar,
+                            evaluated_at=clock.now(),
+                            signal_source=config.source,
+                            execution_source=config.quote_source,
                         )
                     )
                 else:
@@ -508,6 +586,7 @@ class BacktestEngine:
             trade_count=len(self._session.scalars(_trades_query(account.id)).all()),
             rejected_trades=rejected_trades,
             no_trade_reasons=no_trade_reasons,
+            executed_trades=executed_trades,
             portfolio_curve=curve,
             signal_source=config.source,
             signal_time_policy="signal_available_at_or_bar_end_at",
@@ -702,6 +781,55 @@ def _latest_quote(
     )
 
 
+def _executed_trade_attribution(
+    *,
+    trade: PaperTradeModel,
+    source_bar: MarketBarModel,
+    evaluated_at: datetime,
+    signal_source: str,
+    execution_source: str,
+) -> ExecutedTradeAttributionDTO:
+    quote = trade.quote
+    bank_buy = _money(Decimal(quote.bank_buy_price))
+    bank_sell = _money(Decimal(quote.bank_sell_price))
+    spread = _money(bank_sell - bank_buy)
+    total_costs = _money(Decimal(trade.fees) + Decimal(trade.taxes) + Decimal(trade.spread_cost))
+    quote_lag = _aware_utc(evaluated_at) - _aware_utc(quote.observed_at)
+    return ExecutedTradeAttributionDTO(
+        trade_id=trade.id,
+        order_id=trade.order_id,
+        risk_decision_id=trade.order.risk_decision_id,
+        trade_intent_id=trade.order.trade_intent_id,
+        side=trade.side,
+        signal_source=signal_source,
+        source_bar_end_at=_aware_utc(source_bar.bar_end_at),
+        signal_available_at=(
+            _aware_utc(source_bar.signal_available_at)
+            if source_bar.signal_available_at is not None
+            else None
+        ),
+        evaluated_at=_aware_utc(evaluated_at),
+        execution_source=execution_source,
+        execution_quote_id=quote.id,
+        execution_quote_observed_at=_aware_utc(quote.observed_at),
+        execution_quote_fetched_at=_aware_utc(quote.fetched_at),
+        quote_lag_seconds=int(quote_lag.total_seconds()),
+        bank_buy_price=bank_buy,
+        bank_sell_price=bank_sell,
+        bank_spread=spread,
+        bank_spread_pct=_spread_pct(quote),
+        quantity=_money(Decimal(trade.quantity)),
+        execution_price=_money(Decimal(trade.execution_price)),
+        gross_cash_amount=_money(Decimal(trade.gross_cash_amount)),
+        fees=_money(Decimal(trade.fees)),
+        taxes=_money(Decimal(trade.taxes)),
+        spread_cost=_money(Decimal(trade.spread_cost)),
+        net_cash_amount=_money(Decimal(trade.net_cash_amount)),
+        total_costs=total_costs,
+        premium_discount_status="not_calculated_without_approved_fx_source",
+    )
+
+
 def _bank_instrument_id(session: Session, execution_instrument_id: UUID) -> UUID:
     execution_instrument = session.get(ExecutionInstrumentModel, execution_instrument_id)
     if execution_instrument is None or execution_instrument.bank_instrument_id is None:
@@ -767,6 +895,13 @@ def _bar_replay_at(bar: MarketBarModel) -> datetime:
 
 def _money(value: Decimal) -> Decimal:
     return value.quantize(_MONEY_QUANTUM)
+
+
+def _spread_pct(quote: PriceQuoteModel) -> Decimal:
+    sell_price = Decimal(quote.bank_sell_price)
+    if sell_price <= Decimal("0"):
+        return Decimal("1")
+    return (Decimal(quote.bank_sell_price) - Decimal(quote.bank_buy_price)) / sell_price
 
 
 def _aware_utc(value: datetime) -> datetime:
