@@ -167,6 +167,12 @@ Research write smoke result on 2026-06-21:
   `data_quality_status=ok`, and populated `signal_available_at`. The observed
   local ingestion delay setting made the smoke offset 4500 seconds after
   `bar_end_at`; this remains a research measurement, not a runtime policy.
+- Indicator smoke on the same throwaway DB calculated EMA 50, EMA 200, RSI 14,
+  ATR 14, ADX 14, and Bollinger Band Width 20 from `SI=F` reference bars at
+  `bar_end_at=2026-06-19T04:00:00` with
+  `signal_available_at=2026-06-19T05:15:00`. This confirms the indicator
+  service can consume persisted research reference bars, but runtime strategy
+  switching remains blocked.
 
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,
