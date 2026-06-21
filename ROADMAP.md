@@ -1649,7 +1649,11 @@ Delayed Reference V1 next steps:
   broader freshness window.
 - Update backtests and reports to replay by `signal_available_at` and show
   signal source, reference delay, bank execution source, spread, premium, and
-  cost effects.
+  cost effects. Backtest replay now uses `signal_available_at` when present
+  and falls back to `bar_end_at` only for legacy/execution bars without delayed
+  metadata. Backtest dataset hashes include delayed reference timing metadata,
+  and run reports expose signal source, execution quote source, and the signal
+  time policy.
 
 ## 31. Account-Bound Execution Correction
 

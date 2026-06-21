@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -151,6 +151,9 @@ class BacktestReportDTO:
     rejected_trades: list[RejectedTradeDTO]
     no_trade_reasons: list[NoTradeDTO]
     portfolio_curve: list[PortfolioCurvePoint]
+    signal_source: str
+    signal_time_policy: str
+    execution_source: str
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -171,6 +174,9 @@ class BacktestReportDTO:
             "rejected_trades": [item.to_json() for item in self.rejected_trades],
             "no_trade_reasons": [item.to_json() for item in self.no_trade_reasons],
             "portfolio_curve": [point.to_json() for point in self.portfolio_curve],
+            "signal_source": self.signal_source,
+            "signal_time_policy": self.signal_time_policy,
+            "execution_source": self.execution_source,
         }
 
 
@@ -249,6 +255,14 @@ class BacktestDatasetSnapshotService:
                 "quote_count": bar.quote_count,
                 "bar_start_at": _iso(bar.bar_start_at),
                 "bar_end_at": _iso(bar.bar_end_at),
+                "provider_reported_at": _optional_iso(bar.provider_reported_at),
+                "fetched_at": _optional_iso(bar.fetched_at),
+                "stored_at": _optional_iso(bar.stored_at),
+                "data_delay_seconds": bar.data_delay_seconds,
+                "signal_available_at": _optional_iso(bar.signal_available_at),
+                "data_quality_status": bar.data_quality_status,
+                "session_status": bar.session_status,
+                "is_backfilled": bar.is_backfilled,
             }
             for bar in bars
         ]
@@ -394,7 +408,7 @@ class BacktestEngine:
 
         for bar in self._session.scalars(_bars_query(config)).all():
             source_bar_end_at = _aware_utc(bar.bar_end_at)
-            evaluated_at = source_bar_end_at + config.decision_latency
+            evaluated_at = _bar_replay_at(bar) + config.decision_latency
             clock.set(evaluated_at)
             strategy_result = StrategyEngine(session=self._session).run(
                 strategy_id=config.strategy_id,
@@ -495,6 +509,9 @@ class BacktestEngine:
             rejected_trades=rejected_trades,
             no_trade_reasons=no_trade_reasons,
             portfolio_curve=curve,
+            signal_source=config.source,
+            signal_time_policy="signal_available_at_or_bar_end_at",
+            execution_source=config.quote_source,
         )
         run.completed_at = curve[-1].timestamp
         run.report_json = report.to_json()
@@ -648,6 +665,7 @@ class _PortfolioState:
 
 
 def _bars_query(config: BacktestConfig) -> Select[tuple[MarketBarModel]]:
+    replay_at = func.coalesce(MarketBarModel.signal_available_at, MarketBarModel.bar_end_at)
     return (
         select(MarketBarModel)
         .where(
@@ -655,10 +673,10 @@ def _bars_query(config: BacktestConfig) -> Select[tuple[MarketBarModel]]:
             MarketBarModel.instrument_id == config.instrument_id,
             MarketBarModel.source == config.source,
             MarketBarModel.timeframe == config.timeframe,
-            MarketBarModel.bar_end_at >= config.start_at,
-            MarketBarModel.bar_end_at <= config.end_at,
+            replay_at >= config.start_at,
+            replay_at <= config.end_at,
         )
-        .order_by(MarketBarModel.bar_end_at, MarketBarModel.id)
+        .order_by(replay_at, MarketBarModel.bar_end_at, MarketBarModel.id)
     )
 
 
@@ -735,6 +753,16 @@ def _json_value(value: object) -> object:
 
 def _iso(value: datetime) -> str:
     return _aware_utc(value).isoformat()
+
+
+def _optional_iso(value: datetime | None) -> str | None:
+    return _iso(value) if value is not None else None
+
+
+def _bar_replay_at(bar: MarketBarModel) -> datetime:
+    if bar.signal_available_at is not None:
+        return _aware_utc(bar.signal_available_at)
+    return _aware_utc(bar.bar_end_at)
 
 
 def _money(value: Decimal) -> Decimal:

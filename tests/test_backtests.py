@@ -105,6 +105,45 @@ def test_backtest_dataset_hash_changes_when_quote_input_changes(engine: Engine) 
         assert len(list(session.scalars(select(BacktestDatasetSnapshotModel)))) == 2
 
 
+def test_backtest_replays_delayed_reference_bar_at_signal_available_time(
+    engine: Engine,
+) -> None:
+    signal_available_at = FIRST_BAR + timedelta(minutes=15)
+    decision_at = signal_available_at + timedelta(minutes=1)
+    with Session(engine) as session:
+        fixture = _seed_backtest_fixture(
+            session,
+            first_signal_available_at=signal_available_at,
+        )
+        _add_quote(
+            session,
+            bank_instrument_id=fixture.bank_instrument_id,
+            observed_at=decision_at,
+            bank_buy=Decimal("54"),
+            bank_sell=Decimal("55"),
+        )
+
+        report = BacktestEngine(session=session).run(config=_config(fixture))
+
+        strategy_run = session.scalar(
+            select(StrategyRunModel).where(StrategyRunModel.account_id == report.account_id)
+        )
+        assert strategy_run is not None
+        assert strategy_run.source_bar_end_at.replace(tzinfo=UTC) == FIRST_BAR
+        assert strategy_run.run_at.replace(tzinfo=UTC) == decision_at
+        assert report.portfolio_curve[1].timestamp == decision_at
+        assert report.trade_count == 1
+        assert report.signal_time_policy == "signal_available_at_or_bar_end_at"
+        assert report.execution_source == QUOTE_SOURCE
+        snapshot = session.get(BacktestDatasetSnapshotModel, report.dataset_snapshot_id)
+        assert snapshot is not None
+        bars_payload = snapshot.input_ranges["bars"]
+        assert isinstance(bars_payload, list)
+        first_bar_payload = bars_payload[0]
+        assert isinstance(first_bar_payload, dict)
+        assert first_bar_payload["signal_available_at"] == signal_available_at.isoformat()
+
+
 def test_backtest_report_includes_rejected_trades_without_live_account_mutation(
     engine: Engine,
 ) -> None:
@@ -134,6 +173,9 @@ def test_backtest_persists_run_report_and_uses_shared_execution_tables(engine: E
         run = session.scalar(select(BacktestRunModel))
         assert run is not None
         assert run.report_json["data_hash"] == report.data_hash
+        assert run.report_json["signal_source"] == SOURCE
+        assert run.report_json["execution_source"] == QUOTE_SOURCE
+        assert run.report_json["signal_time_policy"] == "signal_available_at_or_bar_end_at"
         assert session.scalar(select(StrategyRunModel)) is not None
         assert session.scalar(select(TradeIntentModel)) is not None
         assert session.scalar(select(RiskDecisionModel)) is not None
@@ -149,6 +191,7 @@ class _BacktestFixture:
     strategy_id: UUID
     reference_instrument_id: UUID
     execution_instrument_id: UUID
+    bank_instrument_id: UUID
 
 
 def _config(fixture: _BacktestFixture) -> BacktestConfig:
@@ -184,6 +227,7 @@ def _seed_backtest_fixture(
     *,
     first_bank_buy: Decimal = Decimal("49"),
     first_bank_sell: Decimal = Decimal("50"),
+    first_signal_available_at: datetime | None = None,
 ) -> _BacktestFixture:
     currency = CurrencyModel(
         id=uuid4(),
@@ -293,18 +337,24 @@ def _seed_backtest_fixture(
         created_at=START,
     )
     session.add_all([mapping, wallet, allowed, strategy])
-    _add_market_context(session, reference.id, FIRST_BAR, MarketRegime.TREND_UP)
+    _add_market_context(
+        session,
+        reference.id,
+        FIRST_BAR,
+        MarketRegime.TREND_UP,
+        signal_available_at=first_signal_available_at,
+    )
     _add_market_context(session, reference.id, SECOND_BAR, MarketRegime.RANGE)
     _add_quote(
         session,
-        bank_instrument=bank_instrument,
+        bank_instrument_id=bank_instrument.id,
         observed_at=FIRST_BAR,
         bank_buy=first_bank_buy,
         bank_sell=first_bank_sell,
     )
     _add_quote(
         session,
-        bank_instrument=bank_instrument,
+        bank_instrument_id=bank_instrument.id,
         observed_at=SECOND_BAR,
         bank_buy=Decimal("59"),
         bank_sell=Decimal("60"),
@@ -316,6 +366,7 @@ def _seed_backtest_fixture(
         strategy_id=strategy.id,
         reference_instrument_id=reference.id,
         execution_instrument_id=execution_instrument.id,
+        bank_instrument_id=bank_instrument.id,
     )
 
 
@@ -324,6 +375,8 @@ def _add_market_context(
     instrument_id: UUID,
     bar_end_at: datetime,
     regime: MarketRegime,
+    *,
+    signal_available_at: datetime | None = None,
 ) -> None:
     session.add(
         MarketBarModel(
@@ -338,6 +391,12 @@ def _add_market_context(
             quote_count=1,
             bar_start_at=bar_end_at - timedelta(hours=1),
             bar_end_at=bar_end_at,
+            data_delay_seconds=(
+                int((signal_available_at - bar_end_at).total_seconds())
+                if signal_available_at is not None
+                else None
+            ),
+            signal_available_at=signal_available_at,
             created_at=bar_end_at,
         )
     )
@@ -384,7 +443,7 @@ def _add_market_context(
 def _add_quote(
     session: Session,
     *,
-    bank_instrument: BankInstrumentModel,
+    bank_instrument_id: UUID,
     observed_at: datetime,
     bank_buy: Decimal,
     bank_sell: Decimal,
@@ -392,7 +451,7 @@ def _add_quote(
     session.add(
         PriceQuoteModel(
             id=uuid4(),
-            bank_instrument=bank_instrument,
+            bank_instrument_id=bank_instrument_id,
             bank_buy_price=bank_buy,
             bank_sell_price=bank_sell,
             observed_at=observed_at,
