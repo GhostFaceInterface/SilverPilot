@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, Protocol
@@ -51,6 +52,27 @@ class HttpTelegramTransport:
         http_request = request.Request(url, data=payload, method="POST")
         with request.urlopen(http_request, timeout=10):
             return
+
+    def get_updates(
+        self,
+        *,
+        bot_token: str,
+        offset: int | None,
+        timeout_seconds: int,
+    ) -> list[dict[str, object]]:
+        payload: dict[str, object] = {"timeout": timeout_seconds}
+        if offset is not None:
+            payload["offset"] = offset
+        query = parse.urlencode(payload)
+        url = f"{self._api_base_url}/bot{bot_token}/getUpdates?{query}"
+        with request.urlopen(url, timeout=timeout_seconds + 5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        if not data.get("ok"):
+            raise RuntimeError("telegram_get_updates_failed")
+        result = data.get("result", [])
+        if not isinstance(result, list):
+            raise RuntimeError("telegram_get_updates_malformed")
+        return [update for update in result if isinstance(update, dict)]
 
 
 class TelegramAdapter:

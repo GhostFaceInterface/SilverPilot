@@ -25,11 +25,12 @@ from silverpilot.app.domain.enums import IndicatorSourcePolicy, InstrumentType
 from silverpilot.app.domain.models import BankInstrument, PriceQuote
 from silverpilot.app.domain.value_objects import Money
 from silverpilot.app.main import create_app
+from silverpilot.app.notifications.telegram import TelegramMessage
 from silverpilot.app.providers.yahoo_finance import YAHOO_RESEARCH_SOURCE_NAME
 from silverpilot.app.runtime.bootstrap import bootstrap_paper_runtime
 from silverpilot.app.runtime.health import SystemHealthService
 from silverpilot.app.runtime.paper_loop import PaperRuntime, PaperRuntimeConfig
-from silverpilot.app.runtime.telegram_bot import _state
+from silverpilot.app.runtime.telegram_bot import _state, _tick
 
 
 @dataclass(frozen=True)
@@ -364,6 +365,101 @@ def test_telegram_state_is_read_only_command_surface() -> None:
         assert stored is not None
         assert stored.bot_name == "silverpilot"
         assert stored.status == "disabled"
+
+
+def test_telegram_bot_polls_and_answers_read_only_commands() -> None:
+    db_engine = engine()
+    transport = _FakeTelegramTransport(
+        [
+            {
+                "update_id": 41,
+                "message": {
+                    "chat": {"id": 9001},
+                    "text": "/health",
+                },
+            }
+        ]
+    )
+    with Session(db_engine) as session:
+        seeded = bootstrap_paper_runtime(session, now=_time())
+        session.commit()
+
+    output = _tick(
+        engine=db_engine,
+        settings=Settings(
+            telegram_enabled=True,
+            telegram_bot_token="secret-token",
+            runtime_enabled=True,
+            runtime_account_id=seeded.account_id,
+        ),
+        transport=transport,
+    )
+    with Session(db_engine) as session:
+        state = session.scalar(select(TelegramBotStateModel))
+
+    assert output["status"] == "warming_up" or output["status"] == "polling"
+    assert output["processed_updates"] == 1
+    assert state is not None
+    assert state.last_update_id == 41
+    assert transport.sent == [("9001", "SilverPilot health")]
+
+
+def test_telegram_bot_ignores_unconfigured_chat_when_default_chat_is_set() -> None:
+    db_engine = engine()
+    transport = _FakeTelegramTransport(
+        [
+            {
+                "update_id": 42,
+                "message": {
+                    "chat": {"id": 9001},
+                    "text": "/health",
+                },
+            }
+        ]
+    )
+    with Session(db_engine) as session:
+        bootstrap_paper_runtime(session, now=_time())
+        session.commit()
+
+    output = _tick(
+        engine=db_engine,
+        settings=Settings(
+            telegram_enabled=True,
+            telegram_bot_token="secret-token",
+            telegram_default_chat_id="1234",
+            runtime_enabled=True,
+        ),
+        transport=transport,
+    )
+    with Session(db_engine) as session:
+        state = session.scalar(select(TelegramBotStateModel))
+
+    assert output["processed_updates"] == 0
+    assert state is not None
+    assert state.last_update_id == 42
+    assert transport.sent == []
+
+
+class _FakeTelegramTransport:
+    def __init__(self, updates: list[dict[str, object]]) -> None:
+        self.updates = updates
+        self.sent: list[tuple[str, str]] = []
+
+    def get_updates(
+        self,
+        *,
+        bot_token: str,
+        offset: int | None,
+        timeout_seconds: int,
+    ) -> list[dict[str, object]]:
+        assert bot_token == "secret-token"
+        assert offset is None
+        assert timeout_seconds == 0
+        return self.updates
+
+    def send_message(self, *, bot_token: str, message: TelegramMessage, chat_id: str) -> None:
+        assert bot_token == "secret-token"
+        self.sent.append((chat_id, message.text.splitlines()[0]))
 
 
 def _time() -> datetime:

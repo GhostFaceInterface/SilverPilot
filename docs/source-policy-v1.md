@@ -1,18 +1,19 @@
 # SilverPilot V1 Source Policy
 
-This document records the current source-policy decision before runtime source
-switching. Stage 2 has added Yahoo live-paper risk metadata and CLI gates, but
-it does not imply that the runtime already uses Yahoo reference bars for live
-paper strategy decisions.
+This document records the current source-policy decision after the delayed
+reference V1 runtime switch.
 
 ## Current Runtime Status
 
-The current live paper runtime still collects Kuveyt Turk public bank quotes,
-builds bank-derived `execution` bars, and may use those bars for warm-up,
-indicators, regimes, and strategy decisions.
+The current live paper runtime collects Kuveyt Turk public bank quotes for
+account-bound indicative paper execution, while indicators, regimes, and
+strategy decisions use delayed Yahoo `SI=F` reference bars when the runtime is
+configured with the approved `yahoo_research` source, `4h` timeframe, and the
+approved reference instrument id.
 
-That behavior is not the final V1 policy. Until a reference market source and
-FX source are approved, bank-native bars are diagnostic or legacy runtime data.
+Yahoo `TRY=X` is the approved delayed public FX proxy for live-paper reference
+mapping only. Bank-native bars remain visible as diagnostic/runtime execution
+bars, but they are not the default V1 strategy signal source.
 
 ## V1 Policy
 
@@ -26,9 +27,9 @@ FX source are approved, bank-native bars are diagnostic or legacy runtime data.
 - Public Kuveyt Turk quotes are indicative execution approximation inputs unless
   executable parity with internet/mobile branch prices is manually verified.
 
-Yahoo live-paper caveat: Yahoo data may be documented only as a delayed public
-reference proxy with `source_risk_status=owner_accepted_paper_use_risk`. It is
-not approved for real money, automated runtime collection, or execution.
+Yahoo live-paper caveat: Yahoo data is a delayed public reference proxy with
+`source_risk_status=owner_accepted_paper_use_risk`. It is not approved for real
+money, source terms remain `not_approved`, and it is never an execution source.
 `SI=F` is a futures-style continuous/reference silver proxy, not spot silver or
 an exact global silver price, and it may include contract rollover behavior.
 `TRY=X` is a delayed/public FX proxy only.
@@ -73,8 +74,8 @@ market closures.
 
 ## Stage Gate
 
-Reference bar ingestion and runtime source switching are blocked until source
-feasibility approves:
+Reference bar ingestion and runtime source switching are allowed only while the
+approved live-paper gate remains satisfied for:
 
 - reference source
 - FX source
@@ -86,17 +87,21 @@ feasibility approves:
 - terms/licensing status
 - owner-accepted paper-use risk status, if using the Yahoo path
 
-If any item is missing, Stage 6 reference ingestion must not start.
+If any item is missing, reference-market strategy signals must fail closed.
 
 Stage 5 status: the feasibility matrix lives in
-`docs/source-feasibility-v1.md`. As of 2026-06-21 it approves no runtime
-reference source and no FX source, so Stage 6 remains blocked.
+`docs/source-feasibility-v1.md`. As of 2026-06-21, Stage 6 is complete for the
+owner-accepted Yahoo live-paper path: `SI=F` reference bars and `TRY=X` FX bars
+were dry-run reviewed twice, written with matching reviewed dry-run ids, and
+the VPS runtime was switched to `reference_market_first`.
 
-Stage 2 status: `reference_market_instruments` stores Yahoo owner/manual
+Stage 6 status: `reference_market_instruments` stores Yahoo owner/manual
 paper-use metadata, source delay status, approved scope, approved symbols,
 approved timeframe, and `real_money_allowed=false`. The `yahoo_research`
 backfill CLI now requires that metadata and blocks non-dry-run writes unless a
-reviewed dry-run summary id is supplied.
+reviewed dry-run summary id is supplied. Runtime source gating also requires
+the matching reference source, FX source, timeframe, delay policy, owner-risk
+metadata, and `real_money_allowed=false`.
 
 ## Delayed Reference Signal Rules
 
@@ -129,5 +134,6 @@ quote at or before the decision time and rejects with
 available within the configured lag window. The default maximum lag is 300
 seconds.
 
-Dry-run summaries must be reviewed before any reference backfill write. Runtime
-source switching remains blocked outside an explicit later stage.
+Dry-run summaries must be reviewed before any reference or FX backfill write.
+Runtime source switching remains limited to the approved live-paper Yahoo path
+and must not be used for real money.

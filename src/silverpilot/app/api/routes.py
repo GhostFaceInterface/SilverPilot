@@ -56,6 +56,15 @@ def system_health(
     return HealthResponse.model_validate(snapshot.payload)
 
 
+@api_router.get("/collectors/health", response_model=HealthResponse, tags=["collectors"])
+def collectors_health(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> HealthResponse:
+    snapshot = SystemHealthService(session=session, settings=settings).snapshot()
+    return HealthResponse.model_validate(snapshot.payload)
+
+
 @api_router.get("/accounts", response_model=PaginatedResponse[AccountResponse], tags=["accounts"])
 def list_accounts(
     service: Annotated[ApiQueryService, Depends(query_service)],

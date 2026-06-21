@@ -1459,8 +1459,13 @@ V1 uses a reference-market-first indicator policy.
 - Use bank quotes for execution, spread, cost, risk filters, premium/discount tracking, and portfolio valuation.
 - Do not calculate separate strategy indicators for every bank in V1.
 - Bank-specific indicator series may be added later only after enough clean bank quote history exists.
-- Current runtime status: this policy is not fully implemented yet. The current live paper runtime can still build warm-up bars, indicators, regimes, and strategy inputs from Kuveyt Turk bank-derived execution bars.
-- Until a reference source and FX source are explicitly approved, bank-native bars are diagnostic or legacy runtime data only, not the V1 default strategy signal source.
+- Current runtime status as of 2026-06-21: this policy is active on the VPS for
+  the owner-accepted Yahoo live-paper path. Runtime strategy signals use delayed
+  Yahoo `SI=F` reference bars on the `4h` timeframe, with Yahoo `TRY=X` as the
+  delayed FX proxy. Kuveyt Turk public bank quotes remain account-bound
+  indicative paper execution inputs.
+- Bank-native bars are diagnostic/runtime execution bars only, not the V1
+  default strategy signal source.
 - `fetched_at` freshness is not quote usability. Endpoint freshness, provider-reported market time, market/session availability, warm-up eligibility, strategy eligibility, risk eligibility, execution eligibility, valuation eligibility, and reporting eligibility must be modeled separately.
 - If a provider does not expose a reliable source timestamp, `provider_reported_at` must remain null. Do not replace a missing provider timestamp with `fetched_at`.
 
@@ -1592,10 +1597,14 @@ Reference-source switch gate:
 - Source policy primitives are safe only if behavior-neutral.
 - Session/usability classification is medium/high risk because it changes schema and runtime semantics.
 - Warm-up eligibility correction is high risk because it changes runtime readiness.
-- Reference ingestion, strategy source switch, and reporting/backtest attribution remain blocked until the source feasibility gate is approved.
-- Stage 5 feasibility matrix: `docs/source-feasibility-v1.md`. As of
-  2026-06-21 no runtime reference source or FX source is approved; Stage 6
-  remains blocked.
+- Reference ingestion, strategy source switch, and reporting/backtest
+  attribution require the source feasibility gate to stay satisfied.
+- Stage 5/6 feasibility matrix: `docs/source-feasibility-v1.md`. As of
+  2026-06-21 the gate is complete for the Yahoo owner-accepted live-paper path:
+  `SI=F` reference, `TRY=X` FX, `4h`, `2y` reviewed backfills, conservative
+  delay policy, `source_terms_status=not_approved`,
+  `source_risk_status=owner_accepted_paper_use_risk`, and
+  `real_money_allowed=false`.
 - Stage 1 Yahoo documentation scope is live-paper only. It must not alter code,
   schema, runtime configuration, providers, RiskManager, PaperBroker, worker,
   deployment files, or `.env.production`.
@@ -1604,18 +1613,16 @@ Reference-source switch gate:
   change RiskManager, PaperBroker, worker runtime source selection, deployment
   files, or `.env.production`.
 
-Delayed Reference V1 next steps:
+Delayed Reference V1 status and next steps:
 
 - Keep CI green first; format-only fixes should be committed separately from
   behavior or roadmap changes.
-- Current implementation status as of 2026-06-21: `yahoo_research` backfill
-  code exists, CI is green, and the paper bootstrap seeds Yahoo reference
-  instruments for `SI=F` and `GC=F`. `SI=F` carries
-  `source_risk_status=owner_accepted_paper_use_risk`,
-  `approved_by=owner/manual`, `approved_scope=live-paper only`,
-  `approved_symbols=SI=F,TRY=X`, `approved_timeframe=4h`,
-  `real_money_allowed=false`, and
-  `source_delay_status=assumed_conservative`. `GC=F` remains not approved.
+- Current implementation status as of 2026-06-21: `yahoo_research` reference
+  and FX backfill code exists, CI is green, the paper bootstrap seeds Yahoo
+  reference instruments for `SI=F` and `GC=F`, and the separate FX path seeds
+  `TRY=X`. `SI=F` and `TRY=X` carry owner/manual live-paper risk approval,
+  `approved_scope=live-paper only`, `approved_timeframe=4h`, and
+  `real_money_allowed=false`. `GC=F` remains not approved.
 - Temporary dry-run smoke on 2026-06-21 with explicit
   `--data-delay-seconds 900` and no persisted bars fetched 2476 normalized 4h
   bars for `SI=F` over `2y` and 2478 normalized 4h bars for `GC=F` over `2y`.
@@ -1632,9 +1639,9 @@ Delayed Reference V1 next steps:
   `data_delay_seconds=900`, `is_backfilled=true`, and populated
   `signal_available_at`; the observed local ingestion delay setting made the
   smoke `signal_available_at` offset 4500 seconds after `bar_end_at`.
-- Implement Yahoo only as a bounded `yahoo_research` backfill spike first, not
-  as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
-  optional `TRY=X`; `4h` is the default research timeframe.
+- Yahoo is implemented as a bounded `yahoo_research` backfill and live-paper
+  reference path. Initial approved runtime symbols are `SI=F` and `TRY=X`;
+  `GC=F` remains research-only/not approved. `4h` is the runtime timeframe.
 - Yahoo is a delayed public reference proxy for owner-accepted paper-use risk.
   It must not be marked `source_terms_status=approved`. Stage 2 metadata is
   `source_risk_status=owner_accepted_paper_use_risk`,
@@ -1647,11 +1654,11 @@ Delayed Reference V1 next steps:
   a delayed/public FX proxy only. Kuveyt Turk remains an indicative bank
   execution approximation for paper simulation.
 - `TRY=X` is not seeded into `reference_market_instruments` because that table
-  represents metal reference instruments. FX source modeling remains a separate
-  Stage 6 gate item.
-- Do not start Stage 6 until `docs/source-feasibility-v1.md` approves a
-  reference source, FX source, terms/licensing status, timestamp policy,
-  session calendar, timeframe, and historical depth.
+  represents metal reference instruments. It is modeled through the separate FX
+  reference path.
+- Stage 6 started and completed only after `docs/source-feasibility-v1.md`
+  recorded the reference source, FX source, terms/licensing status, timestamp
+  policy, session calendar/observability, timeframe, and historical depth.
 - Yahoo 4h/2y feasibility must report whether the returned interval is actually
   4h, timestamp timezone semantics, missing/gap behavior, weekend bars, final
   bar lag in minutes, repeat-fetch `data_hash` stability, and fail-closed
@@ -1665,10 +1672,11 @@ Delayed Reference V1 next steps:
   `source_delay_status=assumed_conservative`. Dry-run summary review is
   mandatory before any write backfill, and CLI writes require a matching
   `--reviewed-dry-run-id`.
-- After source approval, promote only the approved source path into the normal
-  `ReferenceMarketDataProvider` runtime workflow.
-- Switch indicators, regimes, and strategy inputs to delayed reference bars
-  only after backfilled reference data has populated `signal_available_at`.
+- Only the approved Yahoo owner-accepted live-paper source path is promoted into
+  runtime signal selection.
+- Indicators, regimes, and strategy inputs are switched to delayed reference
+  bars only after backfilled reference data has populated
+  `signal_available_at`.
   Bank-derived execution bars remain diagnostic.
 - Runtime/system health warm-up output should make blocked state readable:
   `blocked_by=source_feasibility_gate` means a human/source decision is still
