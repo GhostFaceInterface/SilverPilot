@@ -10,7 +10,14 @@ from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.orm import Session
 
 from silverpilot.app.collectors.reference_backfill import backfill_reference_bars
-from silverpilot.app.collectors.reference_backfill_cli import main as reference_backfill_main
+from silverpilot.app.collectors.reference_backfill_cli import (
+    CONSERVATIVE_YAHOO_DELAY_SECONDS,
+    _blocked_reason,
+    _effective_delay_seconds,
+)
+from silverpilot.app.collectors.reference_backfill_cli import (
+    main as reference_backfill_main,
+)
 from silverpilot.app.db.base import Base
 from silverpilot.app.db.models import (
     CurrencyModel,
@@ -202,6 +209,61 @@ def test_reference_backfill_cli_blocks_yahoo_without_instrument(tmp_path: Path) 
     assert exit_code == 2
 
 
+def test_reference_backfill_cli_blocks_write_without_reviewed_dry_run(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'reference.db'}"
+    db_engine = create_engine(database_url, future=True)
+    Base.metadata.create_all(db_engine)
+    with Session(db_engine) as session:
+        session.add(_reference_instrument(uuid4()))
+        session.commit()
+
+    exit_code = reference_backfill_main(
+        [
+            "--source",
+            YAHOO_RESEARCH_SOURCE_NAME,
+            "--symbol",
+            "SI=F",
+            "--timeframe",
+            "4h",
+            "--period",
+            "2y",
+            "--database-url",
+            database_url,
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert output["reason"] == "yahoo_research write backfill requires reviewed dry-run summary id"
+
+
+def test_yahoo_backfill_gate_requires_owner_accepted_paper_risk() -> None:
+    instrument = _reference_instrument(uuid4())
+    instrument.source_risk_status = "not_approved"
+
+    reason = _blocked_reason(
+        source=YAHOO_RESEARCH_SOURCE_NAME,
+        timeframe="4h",
+        instrument=instrument,
+        data_delay_seconds=None,
+    )
+
+    assert reason == "yahoo_research requires source_risk_status=owner_accepted_paper_use_risk"
+
+
+def test_yahoo_backfill_uses_conservative_delay_when_source_delay_is_assumed() -> None:
+    instrument = _reference_instrument(uuid4())
+    instrument.data_delay_seconds = None
+    instrument.source_delay_status = "assumed_conservative"
+
+    assert _effective_delay_seconds(instrument=instrument, override=None) == (
+        CONSERVATIVE_YAHOO_DELAY_SECONDS
+    )
+
+
 class _FixtureReferenceProvider:
     def __init__(self, bars: list[MarketBar]) -> None:
         self._bars = bars
@@ -264,10 +326,18 @@ def _reference_instrument(instrument_id: UUID) -> ReferenceMarketInstrumentModel
         provider="yahoo_finance_chart",
         exchange="CMX",
         timezone="America/New_York",
-        data_delay_seconds=900,
+        data_delay_seconds=None,
         delay_policy="manual_review",
+        source_delay_status="assumed_conservative",
         session_calendar_code="yahoo-research",
-        source_terms_status="research_only",
+        source_terms_status="not_approved",
+        source_risk_status="owner_accepted_paper_use_risk",
+        approved_by="owner/manual",
+        approved_at=created_at,
+        approved_scope="live-paper only",
+        approved_symbols="SI=F,TRY=X",
+        approved_timeframe="4h",
+        real_money_allowed=False,
         created_at=created_at,
     )
 

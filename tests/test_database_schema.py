@@ -274,8 +274,16 @@ def test_reference_metadata_schema_accepts_delayed_reference_bars(engine: Engine
         timezone="UTC",
         data_delay_seconds=900,
         delay_policy="provider_delayed",
+        source_delay_status="verified",
         session_calendar_code="fixture-24x5",
         source_terms_status="approved",
+        source_risk_status="unknown",
+        approved_by="fixture-owner",
+        approved_at=created_at,
+        approved_scope="live-paper only",
+        approved_symbols="XAGUSD",
+        approved_timeframe="4h",
+        real_money_allowed=False,
         created_at=created_at,
     )
     run = ReferenceDataBackfillRunModel(

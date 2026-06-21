@@ -95,9 +95,23 @@ def test_bootstrap_paper_runtime_seeds_yahoo_research_reference_instruments() ->
 
         assert first.yahoo_reference_instrument_ids == second.yahoo_reference_instrument_ids
         assert [reference.symbol for reference in references] == ["GC=F", "SI=F"]
-        assert {reference.source_terms_status for reference in references} == {"research_only"}
+        assert {reference.source_terms_status for reference in references} == {"not_approved"}
         assert {reference.delay_policy for reference in references} == {"manual_review"}
         assert {reference.data_delay_seconds for reference in references} == {None}
+        risk_by_symbol = {
+            reference.symbol: reference.source_risk_status for reference in references
+        }
+        assert risk_by_symbol == {
+            "GC=F": "not_approved",
+            "SI=F": "owner_accepted_paper_use_risk",
+        }
+        si_reference = next(reference for reference in references if reference.symbol == "SI=F")
+        assert si_reference.source_delay_status == "assumed_conservative"
+        assert si_reference.approved_by == "owner/manual"
+        assert si_reference.approved_scope == "live-paper only"
+        assert si_reference.approved_symbols == "SI=F,TRY=X"
+        assert si_reference.approved_timeframe == "4h"
+        assert si_reference.real_money_allowed is False
         assert mapping is not None
         assert (
             mapping.reference_market_instrument_id == first.yahoo_reference_instrument_ids["SI=F"]

@@ -141,8 +141,10 @@ documentation status for the Yahoo path is:
 - `approved_timeframe=4h`
 - `real_money_allowed=false`
 
-Those fields are planned record metadata for a later code/schema stage only.
-Stage 1 records the policy target but does not create or mutate database rows.
+Stage 2 status: these fields now exist as `reference_market_instruments`
+metadata. The paper runtime bootstrap records owner/manual live-paper approval
+for `SI=F` only; `GC=F` remains seeded but not owner-approved. This still does
+not approve runtime source switching.
 
 `SI=F` must be presented with hard caveats:
 
@@ -173,8 +175,9 @@ Yahoo 4h/2y feasibility output must record:
 - whether repeat fetches produce the same `data_hash`;
 - fail-closed behavior with degraded source health for rate limits or blocks.
 
-Dry-run summary review is mandatory before any backfill write. Runtime switching
-is explicitly out of scope for Stage 1.
+Dry-run summary review is mandatory before any backfill write. The backfill CLI
+requires `--reviewed-dry-run-id` for non-dry-run Yahoo writes. Runtime switching
+is explicitly out of scope for Stage 2.
 
 ## Preferred Path
 

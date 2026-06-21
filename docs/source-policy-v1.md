@@ -1,8 +1,9 @@
 # SilverPilot V1 Source Policy
 
-This document records the current source-policy decision before implementation
-changes. It is a Stage 1 documentation artifact only; it does not imply that the
-runtime already enforces the policy below.
+This document records the current source-policy decision before runtime source
+switching. Stage 2 has added Yahoo live-paper risk metadata and CLI gates, but
+it does not imply that the runtime already uses Yahoo reference bars for live
+paper strategy decisions.
 
 ## Current Runtime Status
 
@@ -90,6 +91,12 @@ If any item is missing, Stage 6 reference ingestion must not start.
 Stage 5 status: the feasibility matrix lives in
 `docs/source-feasibility-v1.md`. As of 2026-06-21 it approves no runtime
 reference source and no FX source, so Stage 6 remains blocked.
+
+Stage 2 status: `reference_market_instruments` stores Yahoo owner/manual
+paper-use metadata, source delay status, approved scope, approved symbols,
+approved timeframe, and `real_money_allowed=false`. The `yahoo_research`
+backfill CLI now requires that metadata and blocks non-dry-run writes unless a
+reviewed dry-run summary id is supplied.
 
 ## Delayed Reference Signal Rules
 

@@ -230,8 +230,16 @@ def bootstrap_paper_runtime(
         timezone="America/New_York",
         data_delay_seconds=None,
         delay_policy="manual_review",
+        source_delay_status="assumed_conservative",
         session_calendar_code="yahoo-research-manual-review",
-        source_terms_status="research_only",
+        source_terms_status="not_approved",
+        source_risk_status="owner_accepted_paper_use_risk",
+        approved_by="owner/manual",
+        approved_at=created_at,
+        approved_scope="live-paper only",
+        approved_symbols="SI=F,TRY=X",
+        approved_timeframe="4h",
+        real_money_allowed=False,
         created_at=created_at,
     )
     gold_reference = _get_or_create(
@@ -252,8 +260,11 @@ def bootstrap_paper_runtime(
         timezone="America/New_York",
         data_delay_seconds=None,
         delay_policy="manual_review",
+        source_delay_status="unknown",
         session_calendar_code="yahoo-research-manual-review",
-        source_terms_status="research_only",
+        source_terms_status="not_approved",
+        source_risk_status="not_approved",
+        real_money_allowed=False,
         created_at=created_at,
     )
     _get_or_create(

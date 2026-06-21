@@ -1599,16 +1599,23 @@ Reference-source switch gate:
 - Stage 1 Yahoo documentation scope is live-paper only. It must not alter code,
   schema, runtime configuration, providers, RiskManager, PaperBroker, worker,
   deployment files, or `.env.production`.
+- Stage 2 Yahoo metadata scope adds owner/manual live-paper risk metadata,
+  conservative source-delay status, and CLI write guards. It still must not
+  change RiskManager, PaperBroker, worker runtime source selection, deployment
+  files, or `.env.production`.
 
 Delayed Reference V1 next steps:
 
 - Keep CI green first; format-only fixes should be committed separately from
   behavior or roadmap changes.
 - Current implementation status as of 2026-06-21: `yahoo_research` backfill
-  code exists, CI is green, and the paper bootstrap seeds research-only
-  reference instruments for `SI=F` and `GC=F`. These rows deliberately keep
-  `data_delay_seconds` empty; manual dry-runs must pass the delay explicitly
-  until the provider/exchange delay has been verified and documented.
+  code exists, CI is green, and the paper bootstrap seeds Yahoo reference
+  instruments for `SI=F` and `GC=F`. `SI=F` carries
+  `source_risk_status=owner_accepted_paper_use_risk`,
+  `approved_by=owner/manual`, `approved_scope=live-paper only`,
+  `approved_symbols=SI=F,TRY=X`, `approved_timeframe=4h`,
+  `real_money_allowed=false`, and
+  `source_delay_status=assumed_conservative`. `GC=F` remains not approved.
 - Temporary dry-run smoke on 2026-06-21 with explicit
   `--data-delay-seconds 900` and no persisted bars fetched 2476 normalized 4h
   bars for `SI=F` over `2y` and 2478 normalized 4h bars for `GC=F` over `2y`.
@@ -1629,8 +1636,8 @@ Delayed Reference V1 next steps:
   as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
   optional `TRY=X`; `4h` is the default research timeframe.
 - Yahoo is a delayed public reference proxy for owner-accepted paper-use risk.
-  It must not be marked `source_terms_status=approved`. Planned metadata for a
-  later code/schema stage is `source_risk_status=owner_accepted_paper_use_risk`,
+  It must not be marked `source_terms_status=approved`. Stage 2 metadata is
+  `source_risk_status=owner_accepted_paper_use_risk`,
   `approved_by=owner/manual`, `approved_at=<timestamp>`,
   `approved_scope=live-paper only`, `approved_symbols=SI=F, TRY=X`,
   `approved_timeframe=4h`, and `real_money_allowed=false`.
@@ -1653,7 +1660,11 @@ Delayed Reference V1 next steps:
   `source_risk_status=owner_accepted_paper_use_risk`, explicit
   `data_delay_seconds`, dry-run, resume/idempotency, conservative rate limits,
   duplicate prevention, data hashes, and `reference_data_backfill_runs` audit
-  rows. Dry-run summary review is mandatory before any write backfill.
+  rows. If no verified source delay exists, the CLI may derive
+  `data_delay_seconds=1800` from
+  `source_delay_status=assumed_conservative`. Dry-run summary review is
+  mandatory before any write backfill, and CLI writes require a matching
+  `--reviewed-dry-run-id`.
 - After source approval, promote only the approved source path into the normal
   `ReferenceMarketDataProvider` runtime workflow.
 - Switch indicators, regimes, and strategy inputs to delayed reference bars

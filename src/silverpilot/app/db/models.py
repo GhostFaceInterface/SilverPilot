@@ -225,8 +225,16 @@ class ReferenceMarketInstrumentModel(Base, TimestampMixin):
     timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
     data_delay_seconds: Mapped[int | None] = mapped_column(nullable=True)
     delay_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_delay_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     session_calendar_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     source_terms_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_risk_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_scope: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    approved_symbols: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_timeframe: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    real_money_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     metal: Mapped[MetalModel] = relationship()
     currency: Mapped[CurrencyModel] = relationship()
@@ -244,9 +252,23 @@ class ReferenceMarketInstrumentModel(Base, TimestampMixin):
             name="reference_market_delay_policy_valid",
         ),
         CheckConstraint(
+            "source_delay_status IS NULL OR source_delay_status IN "
+            "('unknown', 'verified', 'assumed_conservative', 'not_applicable')",
+            name="reference_market_source_delay_status_valid",
+        ),
+        CheckConstraint(
             "source_terms_status IS NULL OR source_terms_status IN "
             "('unknown', 'research_only', 'not_approved', 'approved')",
             name="reference_market_terms_status_valid",
+        ),
+        CheckConstraint(
+            "source_risk_status IS NULL OR source_risk_status IN "
+            "('unknown', 'owner_accepted_paper_use_risk', 'not_approved')",
+            name="reference_market_source_risk_status_valid",
+        ),
+        CheckConstraint(
+            "approved_scope IS NULL OR approved_scope IN ('live-paper only')",
+            name="reference_market_approved_scope_valid",
         ),
         Index("ix_reference_market_instruments_status", "status"),
     )
