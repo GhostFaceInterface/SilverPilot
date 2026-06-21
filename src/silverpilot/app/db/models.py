@@ -14,7 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
 from silverpilot.app.db.base import Base
@@ -271,6 +271,70 @@ class ReferenceMarketInstrumentModel(Base, TimestampMixin):
             name="reference_market_approved_scope_valid",
         ),
         Index("ix_reference_market_instruments_status", "status"),
+    )
+
+
+class FxReferenceInstrumentModel(Base, TimestampMixin):
+    __tablename__ = "fx_reference_instruments"
+
+    id: Mapped[UUID] = uuid_pk()
+    pair: Mapped[str] = mapped_column(String(20), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(120), nullable=False)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    base_currency_id: Mapped[UUID] = mapped_column(ForeignKey("currencies.id"), nullable=False)
+    quote_currency_id: Mapped[UUID] = mapped_column(ForeignKey("currencies.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    provider: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    data_delay_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    delay_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_delay_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    session_calendar_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_terms_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_risk_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_scope: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    approved_symbols: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_timeframe: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    real_money_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    base_currency: Mapped[CurrencyModel] = relationship(foreign_keys=[base_currency_id])
+    quote_currency: Mapped[CurrencyModel] = relationship(foreign_keys=[quote_currency_id])
+
+    __table_args__ = (
+        UniqueConstraint("pair", "source"),
+        UniqueConstraint("symbol", "source"),
+        CheckConstraint(
+            "data_delay_seconds IS NULL OR data_delay_seconds >= 0",
+            name="fx_reference_data_delay_non_negative",
+        ),
+        CheckConstraint(
+            "delay_policy IS NULL OR delay_policy IN "
+            "('none', 'provider_delayed', 'end_of_day', 'manual_review')",
+            name="fx_reference_delay_policy_valid",
+        ),
+        CheckConstraint(
+            "source_delay_status IS NULL OR source_delay_status IN "
+            "('unknown', 'verified', 'assumed_conservative', 'not_applicable')",
+            name="fx_reference_source_delay_status_valid",
+        ),
+        CheckConstraint(
+            "source_terms_status IS NULL OR source_terms_status IN "
+            "('unknown', 'research_only', 'not_approved', 'approved')",
+            name="fx_reference_terms_status_valid",
+        ),
+        CheckConstraint(
+            "source_risk_status IS NULL OR source_risk_status IN "
+            "('unknown', 'owner_accepted_paper_use_risk', 'not_approved')",
+            name="fx_reference_source_risk_status_valid",
+        ),
+        CheckConstraint(
+            "approved_scope IS NULL OR approved_scope IN ('live-paper only')",
+            name="fx_reference_approved_scope_valid",
+        ),
+        Index("ix_fx_reference_instruments_status", "status"),
     )
 
 
@@ -672,9 +736,7 @@ class ReferenceDataBackfillRunModel(Base, TimestampMixin):
 
     id: Mapped[UUID] = uuid_pk()
     source: Mapped[str] = mapped_column(String(120), nullable=False)
-    instrument_id: Mapped[UUID] = mapped_column(
-        ForeignKey("reference_market_instruments.id"), nullable=False
-    )
+    instrument_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     symbol: Mapped[str] = mapped_column(String(120), nullable=False)
     timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
     period: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -689,13 +751,17 @@ class ReferenceDataBackfillRunModel(Base, TimestampMixin):
     rows_inserted: Mapped[int] = mapped_column(nullable=False, default=0)
     rows_updated: Mapped[int] = mapped_column(nullable=False, default=0)
     data_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    feasibility_summary: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     error_summary: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     started_at: Mapped[datetime] = utc_datetime()
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    instrument: Mapped[ReferenceMarketInstrumentModel] = relationship()
+    instrument: Mapped[ReferenceMarketInstrumentModel | None] = relationship(
+        primaryjoin=lambda: foreign(ReferenceDataBackfillRunModel.instrument_id)
+        == ReferenceMarketInstrumentModel.id,
+    )
 
     __table_args__ = (
         CheckConstraint(

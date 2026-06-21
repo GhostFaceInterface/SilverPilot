@@ -17,6 +17,7 @@ from silverpilot.app.db.models import (
     CurrencyModel,
     ExecutionInstrumentModel,
     ExecutionVenueModel,
+    FxReferenceInstrumentModel,
     InstrumentMappingModel,
     MetalModel,
     ReferenceMarketInstrumentModel,
@@ -134,7 +135,7 @@ def bootstrap_paper_runtime(
         default_unit=gram,
         created_at=created_at,
     )
-    _get_or_create(
+    oz_to_gram = _get_or_create(
         session,
         UnitConversionRuleModel,
         (UnitConversionRuleModel.from_unit_id == ounce.id)
@@ -242,6 +243,25 @@ def bootstrap_paper_runtime(
         real_money_allowed=False,
         created_at=created_at,
     )
+    _sync_fields(
+        silver_reference,
+        updated_at=created_at,
+        provider="yahoo_finance_chart",
+        exchange="COMEX",
+        timezone="America/New_York",
+        data_delay_seconds=None,
+        delay_policy="manual_review",
+        source_delay_status="assumed_conservative",
+        session_calendar_code="yahoo-research-manual-review",
+        source_terms_status="not_approved",
+        source_risk_status="owner_accepted_paper_use_risk",
+        approved_by="owner/manual",
+        approved_at=silver_reference.approved_at or created_at,
+        approved_scope="live-paper only",
+        approved_symbols="SI=F,TRY=X",
+        approved_timeframe="4h",
+        real_money_allowed=False,
+    )
     gold_reference = _get_or_create(
         session,
         ReferenceMarketInstrumentModel,
@@ -267,7 +287,79 @@ def bootstrap_paper_runtime(
         real_money_allowed=False,
         created_at=created_at,
     )
-    _get_or_create(
+    _sync_fields(
+        gold_reference,
+        updated_at=created_at,
+        provider="yahoo_finance_chart",
+        exchange="COMEX",
+        timezone="America/New_York",
+        data_delay_seconds=None,
+        delay_policy="manual_review",
+        source_delay_status="unknown",
+        session_calendar_code="yahoo-research-manual-review",
+        source_terms_status="not_approved",
+        source_risk_status="not_approved",
+        approved_by=None,
+        approved_at=None,
+        approved_scope=None,
+        approved_symbols=None,
+        approved_timeframe=None,
+        real_money_allowed=False,
+    )
+    fx_reference = _get_or_create(
+        session,
+        FxReferenceInstrumentModel,
+        (FxReferenceInstrumentModel.pair == "USDTRY")
+        & (FxReferenceInstrumentModel.source == YAHOO_RESEARCH_SOURCE_NAME),
+        created,
+        "fx_reference_yahoo_usdtry",
+        pair="USDTRY",
+        symbol="TRY=X",
+        source=YAHOO_RESEARCH_SOURCE_NAME,
+        base_currency=usd_currency,
+        quote_currency=try_currency,
+        status="active",
+        provider="yahoo_finance_chart",
+        exchange="CCY",
+        timezone="UTC",
+        data_delay_seconds=None,
+        delay_policy="manual_review",
+        source_delay_status="assumed_conservative",
+        session_calendar_code="yahoo-research-manual-review",
+        source_terms_status="not_approved",
+        source_risk_status="owner_accepted_paper_use_risk",
+        approved_by="owner/manual",
+        approved_at=created_at,
+        approved_scope="live-paper only",
+        approved_symbols="SI=F,TRY=X",
+        approved_timeframe="4h",
+        real_money_allowed=False,
+        created_at=created_at,
+    )
+    _sync_fields(
+        fx_reference,
+        updated_at=created_at,
+        symbol="TRY=X",
+        base_currency=usd_currency,
+        quote_currency=try_currency,
+        status="active",
+        provider="yahoo_finance_chart",
+        exchange="CCY",
+        timezone="UTC",
+        data_delay_seconds=None,
+        delay_policy="manual_review",
+        source_delay_status="assumed_conservative",
+        session_calendar_code="yahoo-research-manual-review",
+        source_terms_status="not_approved",
+        source_risk_status="owner_accepted_paper_use_risk",
+        approved_by="owner/manual",
+        approved_at=fx_reference.approved_at or created_at,
+        approved_scope="live-paper only",
+        approved_symbols="SI=F,TRY=X",
+        approved_timeframe="4h",
+        real_money_allowed=False,
+    )
+    mapping = _get_or_create(
         session,
         InstrumentMappingModel,
         (InstrumentMappingModel.reference_market_instrument_id == silver_reference.id)
@@ -277,9 +369,16 @@ def bootstrap_paper_runtime(
         reference_market_instrument=silver_reference,
         execution_instrument=execution_instrument,
         fx_pair="USDTRY",
-        unit_conversion_rule=None,
+        unit_conversion_rule=oz_to_gram,
         status="active",
         created_at=created_at,
+    )
+    _sync_fields(
+        mapping,
+        updated_at=created_at,
+        fx_pair="USDTRY",
+        unit_conversion_rule=oz_to_gram,
+        status="active",
     )
     user = _get_or_create(
         session,
@@ -352,6 +451,7 @@ def bootstrap_paper_runtime(
         yahoo_reference_instrument_ids={
             silver_reference.symbol: silver_reference.id,
             gold_reference.symbol: gold_reference.id,
+            fx_reference.symbol: fx_reference.id,
         },
         created=created,
     )
@@ -391,6 +491,11 @@ def _get_or_create(
     session.flush()
     created[key] = True
     return model
+
+
+def _sync_fields(model: Any, **values: object) -> None:
+    for field_name, value in values.items():
+        setattr(model, field_name, value)
 
 
 if __name__ == "__main__":

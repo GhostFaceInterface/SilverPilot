@@ -11,7 +11,11 @@ from silverpilot.app.collectors.reference_backfill import (
     create_blocked_reference_backfill_run,
 )
 from silverpilot.app.core.settings import Settings
-from silverpilot.app.db.models import ReferenceDataBackfillRunModel, ReferenceMarketInstrumentModel
+from silverpilot.app.db.models import (
+    FxReferenceInstrumentModel,
+    ReferenceDataBackfillRunModel,
+    ReferenceMarketInstrumentModel,
+)
 from silverpilot.app.db.session import create_db_engine
 from silverpilot.app.providers.yahoo_finance import (
     YAHOO_RESEARCH_SOURCE_NAME,
@@ -22,6 +26,8 @@ CONSERVATIVE_YAHOO_DELAY_SECONDS = 1800
 YAHOO_ACCEPTED_PAPER_RISK_STATUS = "owner_accepted_paper_use_risk"
 YAHOO_LIVE_PAPER_SCOPE = "live-paper only"
 YAHOO_APPROVED_TIMEFRAME = "4h"
+YAHOO_APPROVED_SYMBOLS = {"SI=F", "TRY=X"}
+YahooBackfillInstrument = ReferenceMarketInstrumentModel | FxReferenceInstrumentModel
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -137,6 +143,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "rows_inserted": result.rows_inserted,
             "rows_updated": result.rows_updated,
             "data_hash": result.run.data_hash,
+            "feasibility_summary": result.run.feasibility_summary,
             "backfill_run_id": str(result.run.id),
         }
     print(json.dumps(output, sort_keys=True))
@@ -149,14 +156,27 @@ def _load_instrument(
     instrument_id: UUID | None,
     source: str,
     symbol: str,
-) -> ReferenceMarketInstrumentModel | None:
+) -> YahooBackfillInstrument | None:
     if instrument_id is not None:
-        return session.get(ReferenceMarketInstrumentModel, instrument_id)
-    return (
+        reference = session.get(ReferenceMarketInstrumentModel, instrument_id)
+        if reference is not None:
+            return reference
+        return session.get(FxReferenceInstrumentModel, instrument_id)
+    reference = (
         session.query(ReferenceMarketInstrumentModel)
         .filter(
             ReferenceMarketInstrumentModel.source == source,
             ReferenceMarketInstrumentModel.symbol == symbol,
+        )
+        .one_or_none()
+    )
+    if reference is not None:
+        return reference
+    return (
+        session.query(FxReferenceInstrumentModel)
+        .filter(
+            FxReferenceInstrumentModel.source == source,
+            FxReferenceInstrumentModel.symbol == symbol,
         )
         .one_or_none()
     )
@@ -166,7 +186,7 @@ def _blocked_reason(
     *,
     source: str,
     timeframe: str,
-    instrument: ReferenceMarketInstrumentModel | None,
+    instrument: YahooBackfillInstrument | None,
     data_delay_seconds: int | None,
 ) -> str | None:
     if source != YAHOO_RESEARCH_SOURCE_NAME:
@@ -187,6 +207,8 @@ def _blocked_reason(
         return "yahoo_research requires approved_timeframe=4h"
     if instrument.real_money_allowed:
         return "yahoo_research live-paper approval requires real_money_allowed=false"
+    if instrument.symbol not in YAHOO_APPROVED_SYMBOLS:
+        return "yahoo_research live-paper scope is limited to SI=F and TRY=X"
     if instrument.symbol not in _approved_symbols(instrument):
         return "yahoo_research symbol is outside the owner-approved symbol scope"
     if _effective_delay_seconds(instrument=instrument, override=data_delay_seconds) is None:
@@ -200,7 +222,7 @@ def _blocked_reason(
 def _reviewed_dry_run_blocked_reason(
     session: Session,
     *,
-    instrument: ReferenceMarketInstrumentModel | None,
+    instrument: YahooBackfillInstrument | None,
     source: str,
     symbol: str,
     timeframe: str,
@@ -233,7 +255,7 @@ def _reviewed_dry_run_blocked_reason(
 
 def _effective_delay_seconds(
     *,
-    instrument: ReferenceMarketInstrumentModel,
+    instrument: YahooBackfillInstrument,
     override: int | None,
 ) -> int | None:
     if override is not None:
@@ -247,7 +269,7 @@ def _effective_delay_seconds(
     return None
 
 
-def _approved_symbols(instrument: ReferenceMarketInstrumentModel) -> set[str]:
+def _approved_symbols(instrument: YahooBackfillInstrument) -> set[str]:
     if instrument.approved_symbols is None:
         return set()
     return {symbol.strip() for symbol in instrument.approved_symbols.split(",") if symbol.strip()}

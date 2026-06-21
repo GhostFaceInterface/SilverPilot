@@ -25,6 +25,7 @@ from silverpilot.app.db.models import (
     MetalModel,
     ReferenceDataBackfillRunModel,
     ReferenceMarketInstrumentModel,
+    SystemHealthEventModel,
     UnitModel,
 )
 from silverpilot.app.domain.enums import DataQualityStatus, InstrumentType, MarketSessionStatus
@@ -74,6 +75,10 @@ def test_yahoo_chart_parser_aggregates_one_hour_payload_to_four_hour_bars() -> N
     assert bar.bar_end_at == datetime(2026, 6, 17, 4, 0, tzinfo=UTC)
     assert bar.signal_available_at == datetime(2026, 6, 17, 4, 16, tzinfo=UTC)
     assert len(result.source_hash) == 64
+    assert result.provider_interval == "1h"
+    assert result.normalized_timeframe == "4h"
+    assert result.raw_bar_count == 4
+    assert result.dropped_partial_groups == 0
 
 
 def test_yahoo_chart_parser_rejects_mismatched_ohlc_arrays() -> None:
@@ -120,6 +125,10 @@ def test_reference_backfill_dry_run_records_audit_without_writing_bars(engine: E
         assert result.bars_fetched == 2
         assert result.rows_inserted == 0
         assert result.rows_updated == 0
+        assert result.run.feasibility_summary is not None
+        assert result.run.feasibility_summary["bar_count"] == 2
+        assert result.run.feasibility_summary["weekend_bar_count"] == 0
+        assert result.run.feasibility_summary["repeat_hash_matches_previous"] is None
         assert session.scalar(select(func.count()).select_from(MarketBarModel)) == 0
         assert session.scalar(select(func.count()).select_from(ReferenceDataBackfillRunModel)) == 1
 
@@ -157,6 +166,8 @@ def test_reference_backfill_is_idempotent_for_duplicate_yahoo_bars(engine: Engin
         assert second.rows_inserted == 0
         assert second.rows_updated == 2
         assert first.run.data_hash == second.run.data_hash
+        assert second.run.feasibility_summary is not None
+        assert second.run.feasibility_summary["repeat_hash_matches_previous"] is True
         assert session.scalar(select(func.count()).select_from(MarketBarModel)) == 2
         assert session.scalar(select(func.count()).select_from(ReferenceDataBackfillRunModel)) == 2
 
@@ -183,6 +194,11 @@ def test_reference_backfill_records_failed_provider_run(engine: Engine) -> None:
         assert result.run.error_summary == "reference provider returned no bars"
         assert session.scalar(select(func.count()).select_from(MarketBarModel)) == 0
         assert session.scalar(select(func.count()).select_from(ReferenceDataBackfillRunModel)) == 1
+        event = session.scalar(select(SystemHealthEventModel))
+        assert event is not None
+        assert event.component == "yahoo_research_backfill"
+        assert event.status == "degraded"
+        assert event.severity == "warning"
 
 
 def test_reference_backfill_cli_blocks_yahoo_without_instrument(tmp_path: Path) -> None:

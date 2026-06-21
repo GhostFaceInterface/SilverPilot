@@ -16,10 +16,12 @@ from silverpilot.app.collectors.price_collector import (
 )
 from silverpilot.app.core.settings import Settings, get_settings
 from silverpilot.app.db.models import (
+    FxReferenceInstrumentModel,
     MarketBarModel,
     MarketRegimeSnapshotModel,
     PositionModel,
     PriceQuoteModel,
+    ReferenceMarketInstrumentModel,
     RuntimeTickModel,
     StrategyRunModel,
     SystemHealthEventModel,
@@ -52,6 +54,8 @@ class PaperRuntimeConfig:
     reference_instrument_id: UUID | None = None
     reference_source: str | None = None
     reference_timeframe: str | None = None
+    fx_source: str | None = None
+    fx_pair: str | None = None
     source: str = KUVEYT_TURK_SOURCE_NAME
     timeframe: str = "5m"
     warmup_bars: int = 201
@@ -106,6 +110,18 @@ class PaperRuntime:
                 return self._record_tick(status, summary, started_at, now)
             summary["bar_id"] = str(execution_bar.id)
             summary["bar_inserted"] = True
+
+            source_gate_reason = self._reference_source_gate_reason()
+            if source_gate_reason is not None:
+                status = "warming_up"
+                summary["warmup"] = {
+                    "reason": source_gate_reason,
+                    "blocked_by": "source_feasibility_gate",
+                    "next_action": (
+                        "Review and write approved SI=F and TRY=X Yahoo dry-run backfills."
+                    ),
+                }
+                return self._record_tick(status, summary, started_at, now)
 
             warmup = self._warmup_progress(now)
             summary["warmup"] = warmup.as_dict()
@@ -338,6 +354,58 @@ class PaperRuntime:
             expected_edge_after_costs=Decimal("0"),
         )
 
+    def _reference_source_gate_reason(self) -> str | None:
+        if self._config.indicator_source_policy != IndicatorSourcePolicy.REFERENCE_MARKET_FIRST:
+            return None
+        if (
+            self._config.reference_instrument_id is None
+            or not self._config.reference_source
+            or not self._config.reference_timeframe
+        ):
+            return None
+        if not self._config.fx_source or not self._config.fx_pair:
+            return "fx_source_not_configured"
+        reference = self._session.get(
+            ReferenceMarketInstrumentModel,
+            self._config.reference_instrument_id,
+        )
+        if reference is None:
+            return "reference_instrument_not_found"
+        reference_reason = _approved_yahoo_paper_source_reason(
+            source=reference.source,
+            symbol=reference.symbol,
+            timeframe=self._config.reference_timeframe,
+            source_delay_status=reference.source_delay_status,
+            data_delay_seconds=reference.data_delay_seconds,
+            source_risk_status=reference.source_risk_status,
+            approved_scope=reference.approved_scope,
+            approved_timeframe=reference.approved_timeframe,
+            approved_symbols=reference.approved_symbols,
+            real_money_allowed=reference.real_money_allowed,
+        )
+        if reference_reason is not None:
+            return reference_reason
+        fx = self._session.scalar(
+            select(FxReferenceInstrumentModel).where(
+                FxReferenceInstrumentModel.source == self._config.fx_source,
+                FxReferenceInstrumentModel.pair == self._config.fx_pair,
+            )
+        )
+        if fx is None:
+            return "fx_instrument_not_found"
+        return _approved_yahoo_paper_source_reason(
+            source=fx.source,
+            symbol=fx.symbol,
+            timeframe=self._config.reference_timeframe,
+            source_delay_status=fx.source_delay_status,
+            data_delay_seconds=fx.data_delay_seconds,
+            source_risk_status=fx.source_risk_status,
+            approved_scope=fx.approved_scope,
+            approved_timeframe=fx.approved_timeframe,
+            approved_symbols=fx.approved_symbols,
+            real_money_allowed=fx.real_money_allowed,
+        )
+
     def _warmup_progress(self, decision_at: datetime) -> WarmupProgress:
         return calculate_warmup_progress(
             self._session,
@@ -415,6 +483,8 @@ def config_from_settings(settings: Settings) -> PaperRuntimeConfig:
         reference_instrument_id=settings.runtime_reference_instrument_id,
         reference_source=settings.runtime_reference_source,
         reference_timeframe=settings.runtime_reference_timeframe,
+        fx_source=settings.runtime_fx_source,
+        fx_pair=settings.runtime_fx_pair,
         timeframe=settings.runtime_bar_timeframe,
         warmup_bars=settings.runtime_warmup_bars,
         stop_loss_pct=Decimal(str(settings.runtime_exit_stop_loss_pct)),
@@ -453,6 +523,37 @@ def _floor_time(value: datetime, delta: timedelta) -> datetime:
     seconds = int((aware - epoch).total_seconds())
     width = int(delta.total_seconds())
     return epoch + timedelta(seconds=seconds - (seconds % width))
+
+
+def _approved_yahoo_paper_source_reason(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str | None,
+    source_delay_status: str | None,
+    data_delay_seconds: int | None,
+    source_risk_status: str | None,
+    approved_scope: str | None,
+    approved_timeframe: str | None,
+    approved_symbols: str | None,
+    real_money_allowed: bool,
+) -> str | None:
+    if source != "yahoo_research":
+        return "reference_source_not_yahoo_research"
+    if timeframe != "4h" or approved_timeframe != "4h":
+        return "reference_timeframe_not_approved"
+    if source_risk_status != "owner_accepted_paper_use_risk":
+        return "source_risk_not_owner_accepted"
+    if approved_scope != "live-paper only":
+        return "source_scope_not_live_paper"
+    if real_money_allowed:
+        return "real_money_not_allowed_for_yahoo"
+    approved = {item.strip() for item in (approved_symbols or "").split(",") if item.strip()}
+    if symbol not in approved:
+        return "symbol_not_owner_approved"
+    if data_delay_seconds is None and source_delay_status != "assumed_conservative":
+        return "source_delay_not_approved"
+    return None
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     runtime_strategy_id: UUID | None = None
     runtime_reference_source: str | None = None
     runtime_fx_source: str | None = None
+    runtime_fx_pair: str | None = None
     runtime_reference_timeframe: str = "4h"
     indicator_source_policy: IndicatorSourcePolicy = IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
     execution_source_policy: ExecutionSourcePolicy = ExecutionSourcePolicy.ACCOUNT_BOUND_BANK_QUOTE
@@ -64,7 +65,12 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("runtime_reference_source", "runtime_fx_source", mode="before")
+    @field_validator(
+        "runtime_reference_source",
+        "runtime_fx_source",
+        "runtime_fx_pair",
+        mode="before",
+    )
     @classmethod
     def empty_string_is_none(cls, value: object) -> object:
         if value == "":

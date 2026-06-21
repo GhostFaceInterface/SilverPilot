@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from silverpilot.app.core.settings import Settings
 from silverpilot.app.db.base import Base
 from silverpilot.app.db.models import (
+    FxReferenceInstrumentModel,
     InstrumentMappingModel,
     MarketBarModel,
     ReferenceMarketInstrumentModel,
@@ -118,6 +119,14 @@ def test_bootstrap_paper_runtime_seeds_yahoo_research_reference_instruments() ->
         )
         assert mapping.execution_instrument_id == first.execution_instrument_id
         assert mapping.fx_pair == "USDTRY"
+        assert mapping.unit_conversion_rule_id is not None
+        fx_reference = session.scalar(select(FxReferenceInstrumentModel))
+        assert fx_reference is not None
+        assert fx_reference.symbol == "TRY=X"
+        assert fx_reference.pair == "USDTRY"
+        assert fx_reference.source_risk_status == "owner_accepted_paper_use_risk"
+        assert fx_reference.source_delay_status == "assumed_conservative"
+        assert fx_reference.real_money_allowed is False
 
 
 def test_paper_runtime_records_warmup_tick_after_first_closed_bar() -> None:
@@ -254,6 +263,8 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
                 reference_instrument_id=reference_instrument_id,
                 reference_source=YAHOO_RESEARCH_SOURCE_NAME,
                 reference_timeframe="4h",
+                fx_source=YAHOO_RESEARCH_SOURCE_NAME,
+                fx_pair="USDTRY",
                 warmup_bars=1,
             ),
         )
@@ -273,6 +284,51 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
         assert strategy_run.instrument_id == reference_instrument_id
         assert strategy_run.source_bar_end_at == available_end_at.replace(tzinfo=None)
         assert session.scalar(select(TradeIntentModel)) is None
+
+
+def test_paper_runtime_reference_first_blocks_missing_fx_source() -> None:
+    db_engine = engine()
+    with Session(db_engine) as session:
+        seeded = bootstrap_paper_runtime(session, now=_time())
+        reference_instrument_id = seeded.yahoo_reference_instrument_ids["SI=F"]
+        _add_reference_bar(
+            session,
+            instrument_id=reference_instrument_id,
+            bar_end_at=_time(),
+            signal_available_at=_time(),
+        )
+        session.commit()
+
+        tick_at = _time() + timedelta(minutes=10)
+        quote = PriceQuote(
+            id=uuid4(),
+            bank_instrument_id=seeded.bank_instrument_id,
+            bank_buy_price=Money(amount="49", currency_code="TRY"),
+            bank_sell_price=Money(amount="50", currency_code="TRY"),
+            observed_at=tick_at - timedelta(minutes=1),
+            fetched_at=tick_at - timedelta(minutes=1),
+            source="kuveyt_turk_finance_portal",
+        )
+        runtime = PaperRuntime(
+            session=session,
+            config=PaperRuntimeConfig(
+                account_id=seeded.account_id,
+                bank_instrument_id=seeded.bank_instrument_id,
+                execution_instrument_id=seeded.execution_instrument_id,
+                strategy_id=seeded.strategy_id,
+                reference_instrument_id=reference_instrument_id,
+                reference_source=YAHOO_RESEARCH_SOURCE_NAME,
+                reference_timeframe="4h",
+                warmup_bars=1,
+            ),
+        )
+
+        result = runtime.tick(now=tick_at, provider=FakeProvider(quote))
+        warmup = cast(dict[str, object], result.summary["warmup"])
+
+        assert result.status == "warming_up"
+        assert warmup["reason"] == "fx_source_not_configured"
+        assert session.scalar(select(StrategyRunModel)) is None
 
 
 def test_system_health_reports_seed_and_warmup_details() -> None:

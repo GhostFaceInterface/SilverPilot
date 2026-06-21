@@ -39,6 +39,11 @@ class YahooChartParseResult:
     bars: Sequence[MarketBar]
     metadata: YahooChartMetadata
     source_hash: str
+    requested_timeframe: str
+    provider_interval: str
+    normalized_timeframe: str
+    raw_bar_count: int
+    dropped_partial_groups: int
 
 
 class YahooFinanceReferenceProvider:
@@ -68,6 +73,7 @@ class YahooFinanceReferenceProvider:
         self._ingestion_delay_seconds = ingestion_delay_seconds
         self._clock = clock or RealClock()
         self._http_get = http_get or _default_http_get
+        self.last_parse_result: YahooChartParseResult | None = None
 
     def fetch_bars(
         self,
@@ -98,6 +104,7 @@ class YahooFinanceReferenceProvider:
             data_delay_seconds=self._data_delay_seconds,
             ingestion_delay_seconds=self._ingestion_delay_seconds,
         )
+        self.last_parse_result = parsed
         return parsed.bars
 
 
@@ -146,16 +153,25 @@ def parse_yahoo_chart_payload(
         data_delay_seconds=data_delay_seconds,
         ingestion_delay_seconds=ingestion_delay_seconds,
     )
-    bars = (
-        _aggregate_to_4h(raw_bars)
-        if requested_timeframe == "4h" and provider_interval == "1h"
-        else raw_bars
-    )
+    dropped_partial_groups = 0
+    if requested_timeframe == "4h" and provider_interval == "1h":
+        bars, dropped_partial_groups = _aggregate_to_4h(raw_bars)
+    else:
+        bars = raw_bars
     if not bars:
         raise ProviderParseError("Yahoo chart payload did not contain usable OHLC bars")
 
     meta = _metadata(result)
-    return YahooChartParseResult(bars=bars, metadata=meta, source_hash=source_hash)
+    return YahooChartParseResult(
+        bars=bars,
+        metadata=meta,
+        source_hash=source_hash,
+        requested_timeframe=requested_timeframe,
+        provider_interval=provider_interval,
+        normalized_timeframe=bars[0].timeframe,
+        raw_bar_count=len(raw_bars),
+        dropped_partial_groups=dropped_partial_groups,
+    )
 
 
 def _parse_raw_bars(
@@ -220,7 +236,7 @@ def _parse_raw_bars(
     return bars
 
 
-def _aggregate_to_4h(raw_bars: Sequence[MarketBar]) -> list[MarketBar]:
+def _aggregate_to_4h(raw_bars: Sequence[MarketBar]) -> tuple[list[MarketBar], int]:
     groups: dict[datetime, list[MarketBar]] = {}
     for bar in raw_bars:
         group_hour = (bar.bar_start_at.hour // 4) * 4
@@ -228,9 +244,11 @@ def _aggregate_to_4h(raw_bars: Sequence[MarketBar]) -> list[MarketBar]:
         groups.setdefault(group_start, []).append(bar)
 
     aggregated: list[MarketBar] = []
+    dropped_partial_groups = 0
     for group_start in sorted(groups):
         group = sorted(groups[group_start], key=lambda item: item.bar_start_at)
         if len(group) < 4:
+            dropped_partial_groups += 1
             continue
         group_end = group_start + timedelta(hours=4)
         highs = [bar.high for bar in group]
@@ -265,7 +283,7 @@ def _aggregate_to_4h(raw_bars: Sequence[MarketBar]) -> list[MarketBar]:
                 is_backfilled=True,
             )
         )
-    return aggregated
+    return aggregated, dropped_partial_groups
 
 
 def _chart_url(*, base_url: str, symbol: str, period: str, interval: str) -> str:
