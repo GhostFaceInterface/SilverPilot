@@ -21,6 +21,40 @@ def _uuid_type() -> sa.Uuid[Any]:
     return sa.Uuid(as_uuid=True)
 
 
+def _drop_reference_backfill_instrument_fk() -> None:
+    op.execute(
+        sa.text(
+            """
+            DO $$
+            DECLARE
+                constraint_name text;
+            BEGIN
+                SELECT c.conname
+                INTO constraint_name
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_attribute a
+                  ON a.attrelid = t.oid
+                 AND a.attnum = ANY(c.conkey)
+                JOIN pg_class rt ON rt.oid = c.confrelid
+                WHERE c.contype = 'f'
+                  AND t.relname = 'reference_data_backfill_runs'
+                  AND a.attname = 'instrument_id'
+                  AND rt.relname = 'reference_market_instruments'
+                LIMIT 1;
+
+                IF constraint_name IS NOT NULL THEN
+                    EXECUTE format(
+                        'ALTER TABLE reference_data_backfill_runs DROP CONSTRAINT %I',
+                        constraint_name
+                    );
+                END IF;
+            END $$;
+            """
+        )
+    )
+
+
 def upgrade() -> None:
     op.create_table(
         "fx_reference_instruments",
@@ -100,10 +134,7 @@ def upgrade() -> None:
 
     with op.batch_alter_table("reference_data_backfill_runs") as batch_op:
         if op.get_bind().dialect.name != "sqlite":
-            batch_op.drop_constraint(
-                "fk_reference_data_backfill_runs_instrument_id_reference_market_instruments",
-                type_="foreignkey",
-            )
+            _drop_reference_backfill_instrument_fk()
         batch_op.add_column(sa.Column("feasibility_summary", sa.JSON(), nullable=True))
 
     op.execute(
@@ -207,7 +238,7 @@ def downgrade() -> None:
         batch_op.drop_column("feasibility_summary")
         if op.get_bind().dialect.name != "sqlite":
             batch_op.create_foreign_key(
-                "fk_reference_data_backfill_runs_instrument_id_reference_market_instruments",
+                "fk_ref_backfill_runs_instrument_id",
                 "reference_market_instruments",
                 ["instrument_id"],
                 ["id"],
