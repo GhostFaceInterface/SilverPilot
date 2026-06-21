@@ -134,6 +134,58 @@ def test_risk_manager_rejects_stale_quote(
         assert result.decision.reasons == [expected_reason]
 
 
+def test_risk_manager_rejects_reference_intent_when_quote_is_after_decision(
+    engine: Engine,
+) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(
+            session,
+            evaluated_at=evaluated_at,
+            quote_observed_at=evaluated_at + timedelta(minutes=1),
+            quote_fetched_at=evaluated_at + timedelta(minutes=1),
+        )
+
+        result = RiskManager(session=session, policy=_policy()).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(fixture.execution_instrument_id, evaluated_at=evaluated_at),
+        )
+
+        assert result.decision.decision == "reject"
+        assert result.decision.quote_id is None
+        assert result.decision.reasons == ["missing_execution_quote"]
+        assert (
+            result.decision.constraints_applied["execution_quote_selection_policy"]
+            == "latest_before_or_at_decision"
+        )
+
+
+def test_risk_manager_enforces_max_quote_lag_for_reference_intent(
+    engine: Engine,
+) -> None:
+    evaluated_at = _time()
+    with Session(engine) as session:
+        fixture = _seed_risk_fixture(
+            session,
+            evaluated_at=evaluated_at,
+            quote_observed_at=evaluated_at - timedelta(minutes=6),
+        )
+        policy = RiskPolicy(
+            version="risk-test-max-lag",
+            min_quote_freshness=timedelta(minutes=30),
+            max_quote_lag=timedelta(minutes=5),
+        )
+
+        result = RiskManager(session=session, policy=policy).evaluate(
+            trade_intent_id=fixture.intent_id,
+            context=_context(fixture.execution_instrument_id, evaluated_at=evaluated_at),
+        )
+
+        assert result.decision.decision == "reject"
+        assert result.decision.reasons == ["stale_execution_quote"]
+        assert result.decision.constraints_applied["max_quote_lag_seconds"] == 300
+
+
 def test_risk_manager_rejects_spread_above_threshold(engine: Engine) -> None:
     evaluated_at = _time()
     with Session(engine) as session:
@@ -575,6 +627,7 @@ def _seed_risk_fixture(
     min_trade_amount: Decimal = Decimal("100"),
     quantity_precision: int = 4,
     quote_observed_at: datetime | None = None,
+    quote_fetched_at: datetime | None = None,
     quote_freshness_status: str = "fresh",
     allowed_status: str = "active",
     execution_instrument_status: str = "active",
@@ -734,7 +787,7 @@ def _seed_risk_fixture(
         bank_buy_price=bank_buy_price,
         bank_sell_price=bank_sell_price,
         observed_at=quote_observed_at or evaluated_at,
-        fetched_at=evaluated_at,
+        fetched_at=quote_fetched_at or evaluated_at,
         source=SOURCE,
         source_hash="quote-hash",
         freshness_status=quote_freshness_status,

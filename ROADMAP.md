@@ -1643,7 +1643,10 @@ Delayed Reference V1 next steps:
 - Keep RiskManager account-bound: execute only against the account's mapped
   bank instrument, require `latest_before_or_at_decision`, enforce
   `max_quote_lag_seconds`, and reject with `missing_execution_quote` or
-  `stale_execution_quote` when needed.
+  `stale_execution_quote` when needed. Regression coverage now verifies that a
+  reference-sourced intent cannot use a bank quote observed after the decision
+  time and that `max_quote_lag_seconds` is enforced independently from the
+  broader freshness window.
 - Update backtests and reports to replay by `signal_available_at` and show
   signal source, reference delay, bank execution source, spread, premium, and
   cost effects.
