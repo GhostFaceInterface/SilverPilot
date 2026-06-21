@@ -2,7 +2,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
 from uuid import UUID
@@ -48,7 +48,7 @@ class IndicatorService:
         source_bar_end_at: datetime,
         calculated_at: datetime,
     ) -> IndicatorSnapshotResult:
-        if source_bar_end_at > calculated_at:
+        if _aware_datetime(source_bar_end_at) > _aware_datetime(calculated_at):
             raise ValueError("source_bar_end_at cannot be after calculated_at")
 
         bars = list(
@@ -179,3 +179,9 @@ def _timestamps_equal(left: datetime, right: datetime) -> bool:
     if left.tzinfo is None or right.tzinfo is None:
         return left.replace(tzinfo=None) == right.replace(tzinfo=None)
     return left == right
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value

@@ -7,7 +7,7 @@ from decimal import Decimal
 from time import sleep
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from silverpilot.app.collectors.price_collector import (
@@ -99,12 +99,12 @@ class PaperRuntime:
             )
             summary["quote_id"] = str(quote_result.quote.id)
             summary["quote_inserted"] = quote_result.inserted
-            bar = self._build_latest_closed_bar(now=now)
-            if bar is None:
+            execution_bar = self._build_latest_closed_bar(now=now)
+            if execution_bar is None:
                 status = "warming_up"
                 summary["warmup"] = {"reason": "no_closed_bar"}
                 return self._record_tick(status, summary, started_at, now)
-            summary["bar_id"] = str(bar.id)
+            summary["bar_id"] = str(execution_bar.id)
             summary["bar_inserted"] = True
 
             warmup = self._warmup_progress(now)
@@ -113,13 +113,30 @@ class PaperRuntime:
                 status = "warming_up"
                 return self._record_tick(status, summary, started_at, now)
 
-            summary["indicators"] = self._calculate_indicators(bar, now)
+            signal_bar = self._latest_signal_bar(decision_at=now, execution_bar=execution_bar)
+            if signal_bar is None:
+                status = "warming_up"
+                summary["warmup"] = {**warmup.as_dict(), "reason": "no_signal_bar"}
+                return self._record_tick(status, summary, started_at, now)
+            summary["signal_bar_id"] = str(signal_bar.id)
+            summary["signal_instrument_type"] = signal_bar.instrument_type
+            summary["signal_instrument_id"] = str(signal_bar.instrument_id)
+            summary["signal_source"] = signal_bar.source
+            summary["signal_timeframe"] = signal_bar.timeframe
+            summary["signal_bar_end_at"] = signal_bar.bar_end_at.isoformat()
+            summary["signal_available_at"] = (
+                signal_bar.signal_available_at.isoformat()
+                if signal_bar.signal_available_at is not None
+                else None
+            )
+
+            summary["indicators"] = self._calculate_indicators(signal_bar, now)
             regime = RegimeDetector(session=self._session).detect_and_cache(
-                instrument_type=InstrumentType.EXECUTION,
-                instrument_id=self._config.bank_instrument_id,
-                source=self._config.source,
-                timeframe=self._config.timeframe,
-                source_bar_end_at=bar.bar_end_at,
+                instrument_type=InstrumentType(signal_bar.instrument_type),
+                instrument_id=signal_bar.instrument_id,
+                source=signal_bar.source,
+                timeframe=signal_bar.timeframe,
+                source_bar_end_at=signal_bar.bar_end_at,
                 detected_at=now,
             )
             summary["regime"] = regime.snapshot.regime
@@ -128,11 +145,11 @@ class PaperRuntime:
             strategy_result = StrategyEngine(session=self._session).run(
                 strategy_id=self._config.strategy_id,
                 account_id=self._config.account_id,
-                instrument_type=InstrumentType.EXECUTION,
-                instrument_id=self._config.bank_instrument_id,
-                source=self._config.source,
-                timeframe=self._config.timeframe,
-                source_bar_end_at=bar.bar_end_at,
+                instrument_type=InstrumentType(signal_bar.instrument_type),
+                instrument_id=signal_bar.instrument_id,
+                source=signal_bar.source,
+                timeframe=signal_bar.timeframe,
+                source_bar_end_at=signal_bar.bar_end_at,
                 run_at=now,
             )
             summary["strategy_run_id"] = str(strategy_result.run.id)
@@ -191,6 +208,35 @@ class PaperRuntime:
         except ValueError:
             return None
 
+    def _latest_signal_bar(
+        self,
+        *,
+        decision_at: datetime,
+        execution_bar: MarketBarModel,
+    ) -> MarketBarModel | None:
+        if self._config.indicator_source_policy == IndicatorSourcePolicy.EXECUTION_BANK_DIAGNOSTIC:
+            return execution_bar
+        if (
+            self._config.reference_instrument_id is None
+            or not self._config.reference_source
+            or not self._config.reference_timeframe
+        ):
+            return None
+        return self._session.scalar(
+            select(MarketBarModel)
+            .where(
+                MarketBarModel.instrument_type == InstrumentType.REFERENCE.value,
+                MarketBarModel.instrument_id == self._config.reference_instrument_id,
+                MarketBarModel.source == self._config.reference_source,
+                MarketBarModel.timeframe == self._config.reference_timeframe,
+                or_(
+                    MarketBarModel.signal_available_at.is_(None),
+                    MarketBarModel.signal_available_at <= decision_at,
+                ),
+            )
+            .order_by(MarketBarModel.bar_end_at.desc(), MarketBarModel.id.desc())
+        )
+
     def _calculate_indicators(self, bar: MarketBarModel, now: datetime) -> dict[str, str]:
         service = IndicatorService(session=self._session)
         requested: list[tuple[IndicatorName, dict[str, object]]] = [
@@ -205,10 +251,10 @@ class PaperRuntime:
         for name, parameters in requested:
             try:
                 result = service.calculate_and_cache(
-                    instrument_type=InstrumentType.EXECUTION,
-                    instrument_id=self._config.bank_instrument_id,
-                    source=self._config.source,
-                    timeframe=self._config.timeframe,
+                    instrument_type=InstrumentType(bar.instrument_type),
+                    instrument_id=bar.instrument_id,
+                    source=bar.source,
+                    timeframe=bar.timeframe,
                     indicator_name=name,
                     parameters=parameters,
                     source_bar_end_at=bar.bar_end_at,

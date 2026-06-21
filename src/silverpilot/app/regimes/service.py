@@ -63,7 +63,7 @@ class RegimeDetector:
         source_bar_end_at: datetime,
         detected_at: datetime,
     ) -> RegimeDetectionResult:
-        if source_bar_end_at > detected_at:
+        if _aware_datetime(source_bar_end_at) > _aware_datetime(detected_at):
             raise ValueError("source_bar_end_at cannot be after detected_at")
 
         previous_snapshot = self._latest_previous_snapshot(
@@ -149,7 +149,10 @@ class RegimeDetector:
         )
         if bar is None:
             return self._no_trade("missing_closed_bar")
-        if detected_at - source_bar_end_at > self._config.max_data_age:
+        if (
+            _aware_datetime(detected_at) - _aware_datetime(source_bar_end_at)
+            > self._config.max_data_age
+        ):
             return self._no_trade("stale_bar")
 
         current = self._indicator_values(

@@ -173,6 +173,10 @@ Research write smoke result on 2026-06-21:
   `signal_available_at=2026-06-19T05:15:00`. This confirms the indicator
   service can consume persisted research reference bars, but runtime strategy
   switching remains blocked.
+- Runtime source-selection regression now verifies that a paper tick configured
+  with a reference instrument uses the latest reference bar whose
+  `signal_available_at` has elapsed and ignores a newer unavailable reference
+  bar. Bank quote collection still builds the execution bar separately.
 
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,

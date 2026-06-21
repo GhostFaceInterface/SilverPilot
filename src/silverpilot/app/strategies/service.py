@@ -1,7 +1,7 @@
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -114,7 +114,7 @@ class StrategyEngine:
         source_bar_end_at: datetime,
         run_at: datetime,
     ) -> StrategyEngineResult:
-        if source_bar_end_at > run_at:
+        if _aware_datetime(source_bar_end_at) > _aware_datetime(run_at):
             raise ValueError("source_bar_end_at cannot be after run_at")
 
         strategy = self._load_strategy(strategy_id)
@@ -380,7 +380,7 @@ def evaluate_trend_up_pullback(
         return TrendUpPullbackDecision.no_intent(reasons=["unsupported_strategy"])
     if bar is None:
         return TrendUpPullbackDecision.no_intent(reasons=["missing_closed_bar"])
-    if run_at - source_bar_end_at > rule_config.max_data_age:
+    if _aware_datetime(run_at) - _aware_datetime(source_bar_end_at) > rule_config.max_data_age:
         return TrendUpPullbackDecision.no_intent(reasons=["stale_bar"])
     if regime is None:
         return TrendUpPullbackDecision.no_intent(reasons=["missing_regime"])
@@ -445,3 +445,9 @@ def _strategy_cash_amount(parameters: dict[str, object], default: Decimal) -> De
 def _hash_inputs(payload: dict[str, object]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value

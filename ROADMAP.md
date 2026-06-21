@@ -1635,6 +1635,11 @@ Delayed Reference V1 next steps:
 - Switch indicators, regimes, and strategy inputs to delayed reference bars
   only after backfilled reference data has populated `signal_available_at`.
   Bank-derived execution bars remain diagnostic.
+- Runtime signal selection now follows the warm-up source policy: when
+  reference-market-first is configured with a reference instrument/source, it
+  selects the latest reference bar whose `signal_available_at` is not in the
+  future, calculates indicators/regimes/strategy from that bar, and keeps the
+  bank execution bar only for quote collection/execution diagnostics.
 - Keep RiskManager account-bound: execute only against the account's mapped
   bank instrument, require `latest_before_or_at_decision`, enforce
   `max_quote_lag_seconds`, and reject with `missing_execution_quote` or
