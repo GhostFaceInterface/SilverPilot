@@ -759,8 +759,10 @@ class ReferenceDataBackfillRunModel(Base, TimestampMixin):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     instrument: Mapped[ReferenceMarketInstrumentModel | None] = relationship(
-        primaryjoin=lambda: foreign(ReferenceDataBackfillRunModel.instrument_id)
-        == ReferenceMarketInstrumentModel.id,
+        primaryjoin=lambda: (
+            foreign(ReferenceDataBackfillRunModel.instrument_id)
+            == ReferenceMarketInstrumentModel.id
+        ),
     )
 
     __table_args__ = (
