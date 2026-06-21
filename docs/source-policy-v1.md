@@ -25,6 +25,13 @@ FX source are approved, bank-native bars are diagnostic or legacy runtime data.
 - Public Kuveyt Turk quotes are indicative execution approximation inputs unless
   executable parity with internet/mobile branch prices is manually verified.
 
+Yahoo live-paper caveat: Yahoo data may be documented only as a delayed public
+reference proxy with `source_risk_status=owner_accepted_paper_use_risk`. It is
+not approved for real money, automated runtime collection, or execution.
+`SI=F` is a futures-style continuous/reference silver proxy, not spot silver or
+an exact global silver price, and it may include contract rollover behavior.
+`TRY=X` is a delayed/public FX proxy only.
+
 ## Freshness And Usability Rules
 
 - `fetched_at` means SilverPilot fetched the endpoint at that time.
@@ -76,11 +83,12 @@ feasibility approves:
 - historical depth
 - timeframe
 - terms/licensing status
+- owner-accepted paper-use risk status, if using the Yahoo path
 
 If any item is missing, Stage 6 reference ingestion must not start.
 
 Stage 5 status: the feasibility matrix lives in
-`docs/source-feasibility-v1.md`. As of 2026-06-20 it approves no runtime
+`docs/source-feasibility-v1.md`. As of 2026-06-21 it approves no runtime
 reference source and no FX source, so Stage 6 remains blocked.
 
 ## Delayed Reference Signal Rules
@@ -102,9 +110,17 @@ decisions must also require the row to have been stored by the decision time.
 The V1 default timeframe is `4h`. `15m` remains rejected for V1 because source
 delay, FX compatibility, and execution quote alignment are not yet proven. If
 only daily official reference/FX data is approved, V1 must fall back to `1d`.
+No universal 15-minute Yahoo/CME delay may be assumed. If Yahoo delay cannot be
+verified for the exact symbol, interval, and access path, the conservative
+policy is `data_delay_seconds=1800`, `timeframe=4h`,
+`source_delay_status=assumed_conservative`, and source health
+`degraded_not_failed`.
 
 Execution quote selection remains account-bound. Risk uses the latest bank
 quote at or before the decision time and rejects with
 `missing_execution_quote` or `stale_execution_quote` when no eligible quote is
 available within the configured lag window. The default maximum lag is 300
 seconds.
+
+Dry-run summaries must be reviewed before any reference backfill write. Runtime
+source switching remains blocked outside an explicit later stage.

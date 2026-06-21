@@ -1575,8 +1575,9 @@ The first vertical slice is:
 - Currency: TRY.
 - Bars/timeframe: `4h` by default for delayed-reference V1; fallback to `1d`
   if only daily legally usable reference or FX data is approved. `15m` is
-  rejected for V1 until source freshness, licensing, timestamp semantics, and
-  intraday depth are explicitly approved.
+  rejected for V1 until source freshness, licensing, timestamp semantics,
+  source-specific delay, FX compatibility, and intraday depth are explicitly
+  approved.
 - Strategy: one simple reference-market signal strategy.
 - Execution: paper trade at Kuveyt Turk buy/sell prices for the bound account.
 - Costs: spread-first, then commission/tax if known and source-backed.
@@ -1586,7 +1587,7 @@ Do not add other banks or metals until this vertical slice is stable, tested, an
 
 Reference-source switch gate:
 
-- No runtime switch may happen until feasibility selects the exact reference source, access method, timestamp policy, session calendar, historical depth, terms/licensing status, FX conversion source, and approved timeframe.
+- No runtime switch may happen until feasibility selects the exact reference source, access method, timestamp policy, session calendar, historical depth, terms/licensing status or owner-accepted paper-use risk status, FX conversion source, and approved timeframe.
 - Stage 1 documentation corrections are safe.
 - Source policy primitives are safe only if behavior-neutral.
 - Session/usability classification is medium/high risk because it changes schema and runtime semantics.
@@ -1595,6 +1596,9 @@ Reference-source switch gate:
 - Stage 5 feasibility matrix: `docs/source-feasibility-v1.md`. As of
   2026-06-21 no runtime reference source or FX source is approved; Stage 6
   remains blocked.
+- Stage 1 Yahoo documentation scope is live-paper only. It must not alter code,
+  schema, runtime configuration, providers, RiskManager, PaperBroker, worker,
+  deployment files, or `.env.production`.
 
 Delayed Reference V1 next steps:
 
@@ -1610,6 +1614,11 @@ Delayed Reference V1 next steps:
   bars for `SI=F` over `2y` and 2478 normalized 4h bars for `GC=F` over `2y`.
   This proves the research parser/backfill path can read public Yahoo chart
   data under manual testing, but it does not approve Yahoo for runtime use.
+- The `900` second smoke parameter is not an accepted Yahoo/CME delay. If the
+  exact source delay cannot be verified, use conservative mode:
+  `data_delay_seconds=1800`, `timeframe=4h`,
+  `source_delay_status=assumed_conservative`, and health
+  `degraded_not_failed`.
 - Temporary write smoke on 2026-06-21 against a throwaway SQLite DB inserted
   2470 `SI=F` 4h bars and 2472 `GC=F` 4h bars, then a second run updated the
   same rows with zero duplicate inserts. Sample rows carried
@@ -1619,17 +1628,32 @@ Delayed Reference V1 next steps:
 - Implement Yahoo only as a bounded `yahoo_research` backfill spike first, not
   as a runtime-approved provider. Initial symbols are `SI=F`, `GC=F`, and
   optional `TRY=X`; `4h` is the default research timeframe.
+- Yahoo is a delayed public reference proxy for owner-accepted paper-use risk.
+  It must not be marked `source_terms_status=approved`. Planned metadata for a
+  later code/schema stage is `source_risk_status=owner_accepted_paper_use_risk`,
+  `approved_by=owner/manual`, `approved_at=<timestamp>`,
+  `approved_scope=live-paper only`, `approved_symbols=SI=F, TRY=X`,
+  `approved_timeframe=4h`, and `real_money_allowed=false`.
+- `SI=F` is not spot silver and not an exact global silver price. Treat it as a
+  futures-style continuous/reference proxy that may include contract rollover
+  behavior and may diverge from Kuveyt Turk gram silver bank prices. `TRY=X` is
+  a delayed/public FX proxy only. Kuveyt Turk remains an indicative bank
+  execution approximation for paper simulation.
 - `TRY=X` is not seeded into `reference_market_instruments` because that table
   represents metal reference instruments. FX source modeling remains a separate
   Stage 6 gate item.
 - Do not start Stage 6 until `docs/source-feasibility-v1.md` approves a
   reference source, FX source, terms/licensing status, timestamp policy,
   session calendar, timeframe, and historical depth.
-- Yahoo research backfill may run only for instruments marked
-  `source_terms_status=research_only` and with an explicit
-  `data_delay_seconds`. It must support dry-run, resume/idempotency,
-  conservative rate limits, duplicate prevention, data hashes, and
-  `reference_data_backfill_runs` audit rows.
+- Yahoo 4h/2y feasibility must report whether the returned interval is actually
+  4h, timestamp timezone semantics, missing/gap behavior, weekend bars, final
+  bar lag in minutes, repeat-fetch `data_hash` stability, and fail-closed
+  degraded-source behavior for rate limits or blocks.
+- Yahoo research backfill may run only as a bounded manual path with
+  `source_risk_status=owner_accepted_paper_use_risk`, explicit
+  `data_delay_seconds`, dry-run, resume/idempotency, conservative rate limits,
+  duplicate prevention, data hashes, and `reference_data_backfill_runs` audit
+  rows. Dry-run summary review is mandatory before any write backfill.
 - After source approval, promote only the approved source path into the normal
   `ReferenceMarketDataProvider` runtime workflow.
 - Switch indicators, regimes, and strategy inputs to delayed reference bars

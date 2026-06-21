@@ -1,12 +1,17 @@
 # SilverPilot V1 Source Feasibility Matrix
 
 Stage: 5
-Status: Yahoo research backfill spike planned; no runtime source approved yet
+Status: Yahoo live-paper documentation gate only; no runtime source approved yet
 Last reviewed: 2026-06-21
 
 This document is a hard gate before reference ingestion. It does not implement
 fetching, does not approve a runtime provider, and does not change production
 behavior.
+
+Stage 1 scope is documentation-only. It does not change code, schema, runtime
+configuration, providers, brokers, risk behavior, workers, deployment files, or
+environment variables. Runtime source switching and non-dry-run production
+backfill remain blocked.
 
 ## Decision Summary
 
@@ -24,8 +29,24 @@ Stage 5 outcome:
 - `APPROVED_TIMESTAMP_POLICY = none`
 - `APPROVED_SESSION_CALENDAR = none`
 - `APPROVED_TERMS_STATUS = not_approved`
+- `YAHOO_SOURCE_RISK_STATUS = owner_accepted_paper_use_risk`
+- `REAL_MONEY_ALLOWED = false`
 
 Therefore Stage 6 reference ingestion remains blocked.
+
+System scope:
+
+- SilverPilot remains live-paper only. It does not place real bank orders and
+  does not support real-money trading.
+- Yahoo is a delayed public reference proxy only, not a trading or execution
+  source.
+- `SI=F` is a futures-style silver proxy. It is not spot silver, not an exact
+  global silver price, and may include futures contract rollover behavior.
+- `TRY=X` is a delayed/public FX proxy only.
+- Kuveyt Turk public bank quotes are indicative bank execution approximations
+  for paper simulation unless executable parity is separately verified.
+- Any divergence between `SI=F`, spot XAG/USD, USD/TRY conversion, and Kuveyt
+  Turk gram silver prices must be visible in reports before runtime use.
 
 ## Source Requirements
 
@@ -51,7 +72,7 @@ timeframe must be reduced to daily.
 | Candidate | Public no-key fetch | Historical depth | Intraday | Timestamp/session | Terms/licensing | V1 status |
 | --- | --- | --- | --- | --- | --- | --- |
 | CME official silver futures data, such as SI futures | Not approved as free/no-key runtime access | Strong through official data products | Yes through licensed feeds/products | Strong exchange session calendar | CME presents real-time and historical market data as data products; licensing required for practical use | Best quality, not approved for free V1 runtime |
-| Yahoo Finance `SI=F` / `GC=F` / `TRY=X` chart endpoints | Web-visible, but automated collection is not approved for runtime | Often useful, must be measured per interval/range | Often intraday, exact interval limits must be measured | Exchange/provider timestamps exist but delay and timezone semantics must be validated | Yahoo terms restrict automated collection/scraping and reuse without permission | Research backfill spike only; not runtime-approved |
+| Yahoo Finance `SI=F` / `GC=F` / `TRY=X` chart endpoints | Web-visible, but automated collection is not approved for runtime | Often useful, must be measured per interval/range | Often intraday, exact interval limits must be measured | Exchange/provider timestamps exist but delay and timezone semantics must be validated | Yahoo terms restrict automated collection/scraping and reuse without permission | Delayed public reference proxy for owner-accepted live-paper risk only; not runtime-approved |
 | Stooq commodity or futures symbols | Possibly public, but current web access can require browser verification | Unknown until manually verified | Unknown | Unknown | Terms and automated collection suitability not yet verified | Research only; not approved |
 | Kuveyt Turk public `GUMUS ONS/$`-style row, if available | Public finance portal | Sparse/current only unless stored by us | Indicative updates only | Bank/source session ambiguous | Same public bank indicative limitation as execution quotes | Diagnostic only; not V1 reference source |
 | LBMA Silver Price | Public information page; tabulated data requires portal/licence path | Licensed historical benchmark | No, daily auction benchmark | Daily London auction, not weekends/UK holidays | IBA licence required for many valuation/pricing uses | Benchmark/future research only, not intraday V1 |
@@ -107,6 +128,54 @@ Evidence:
   exchange-rate time series:
   https://www.tcmb.gov.tr/wps/wcm/connect/en/tcmb+en/main+menu/statistics/exchange+rates/indicative+exchange+rates
 
+## Yahoo Live-Paper Risk Position
+
+Yahoo must not be marked `source_terms_status=approved` for V1. The target
+documentation status for the Yahoo path is:
+
+- `source_risk_status=owner_accepted_paper_use_risk`
+- `approved_by=owner/manual`
+- `approved_at=<timestamp>`
+- `approved_scope=live-paper only`
+- `approved_symbols=SI=F, TRY=X`
+- `approved_timeframe=4h`
+- `real_money_allowed=false`
+
+Those fields are planned record metadata for a later code/schema stage only.
+Stage 1 records the policy target but does not create or mutate database rows.
+
+`SI=F` must be presented with hard caveats:
+
+- It is not spot silver.
+- It is not an exact global silver price.
+- It is a futures-style continuous/reference proxy.
+- It may include futures contract rollover behavior.
+- It can diverge materially from Kuveyt Turk gram silver bank pricing.
+
+## Delay And Data Feasibility Gate
+
+Do not assume a universal 15-minute delay. Yahoo/CME delay is source-specific
+and must be validated for the exact access path, symbol, interval, and session.
+If the delay cannot be verified, Stage 6 must use conservative assumptions:
+
+- `data_delay_seconds=1800`
+- `timeframe=4h`
+- `source_delay_status=assumed_conservative`
+- health target: `degraded_not_failed`
+
+Yahoo 4h/2y feasibility output must record:
+
+- whether the returned interval is actually `4h`;
+- timestamp timezone semantics;
+- missing bars or gaps;
+- weekend bars, if any;
+- final-bar lag in minutes at fetch time;
+- whether repeat fetches produce the same `data_hash`;
+- fail-closed behavior with degraded source health for rate limits or blocks.
+
+Dry-run summary review is mandatory before any backfill write. Runtime switching
+is explicitly out of scope for Stage 1.
+
 ## Preferred Path
 
 Preferred production-quality path:
@@ -126,9 +195,11 @@ Preferred low-cost research path:
 1. Implement Yahoo as `yahoo_research`, not as a runtime-approved source.
 2. Start with offline fixtures and parser tests for `SI=F`, `GC=F`, and
    optional `TRY=X`.
-3. Allow bounded manual backfill through `silverpilot-backfill-reference` only
-   when the matching instrument is marked `source_terms_status=research_only`
-   and `data_delay_seconds` is explicitly configured.
+3. Allow bounded manual dry-run backfill through
+   `silverpilot-backfill-reference` only when the matching Yahoo path is labeled
+   `source_risk_status=owner_accepted_paper_use_risk`, scoped to live-paper
+   only, and `data_delay_seconds` is explicitly configured. Write backfill
+   remains blocked until a dry-run summary has been reviewed.
 4. Seed `SI=F` and `GC=F` as research-only reference instruments. Do not seed
    `TRY=X` into `reference_market_instruments`; FX source modeling needs a
    separate schema/service decision.
@@ -137,7 +208,8 @@ Preferred low-cost research path:
 6. Record observed history depth, interval support, timestamp quality, delay
    policy, duplicate behavior, and data hash results before any runtime source
    decision.
-7. Keep runtime ingestion disabled until legal/terms approval is recorded.
+7. Keep runtime ingestion disabled until explicit owner approval records the
+   paper-use scope and the Stage 6 checklist is complete.
 
 Research smoke result on 2026-06-21:
 
@@ -152,6 +224,9 @@ Research smoke result on 2026-06-21:
 - The `900` second delay used in the smoke is an explicit research parameter,
   not an approved source delay. Runtime use remains blocked until the Stage 6
   entry checklist is filled.
+- Stage 1 does not accept `900` seconds as a verified Yahoo delay. If source
+  delay cannot be independently verified, use the conservative 1800-second
+  assumption above and report source health as degraded, not failed.
 
 Research write smoke result on 2026-06-21:
 
@@ -180,7 +255,9 @@ Research write smoke result on 2026-06-21:
 
 No source should be silently chosen. Stage 6 must not start until this document
 is updated with explicit approved values for reference source, FX source,
-timeframe, history depth, timestamp policy, session calendar, and terms status.
+timeframe, history depth, timestamp policy, session calendar, owner-approved
+paper-use scope, and source risk status. Yahoo must not be promoted by changing
+its terms status to approved.
 
 ## Stage 6 Entry Checklist
 
@@ -197,6 +274,9 @@ values:
 | Reference historical depth | none |
 | Reference timeframe | none |
 | Reference terms/licensing status | none |
+| Reference source risk status | none |
+| Reference approval scope | none |
+| Real-money allowed | false |
 | FX source | none |
 | FX symbol/pair | none |
 | FX timestamp policy | none |
