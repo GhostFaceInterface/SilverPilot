@@ -44,10 +44,10 @@ from silverpilot.app.providers.yahoo_finance import (
     YAHOO_RESEARCH_SOURCE_NAME,
     YahooFinanceReferenceProvider,
 )
-from silverpilot.app.regimes.service import RegimeDetector
+from silverpilot.app.regimes.service import RegimeDetector, RegimeDetectorConfig
 from silverpilot.app.risks.service import RiskContext, RiskManager
 from silverpilot.app.runtime.warmup import WarmupProgress, calculate_warmup_progress
-from silverpilot.app.strategies.service import StrategyEngine
+from silverpilot.app.strategies.service import StrategyEngine, TrendUpPullbackConfig
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,7 @@ class PaperRuntimeConfig:
     reference_refresh_enabled: bool = True
     reference_refresh_period: str = "5d"
     reference_refresh_interval_seconds: int = 1800
+    reference_max_data_age_seconds: int = 21600
     reference_ingestion_delay_seconds: int = 60
     source: str = KUVEYT_TURK_SOURCE_NAME
     timeframe: str = "5m"
@@ -159,7 +160,11 @@ class PaperRuntime:
             )
 
             summary["indicators"] = self._calculate_indicators(signal_bar, now)
-            regime = RegimeDetector(session=self._session).detect_and_cache(
+            max_reference_age = timedelta(seconds=self._config.reference_max_data_age_seconds)
+            regime = RegimeDetector(
+                session=self._session,
+                config=RegimeDetectorConfig(max_data_age=max_reference_age),
+            ).detect_and_cache(
                 instrument_type=InstrumentType(signal_bar.instrument_type),
                 instrument_id=signal_bar.instrument_id,
                 source=signal_bar.source,
@@ -170,7 +175,10 @@ class PaperRuntime:
             summary["regime"] = regime.snapshot.regime
             summary["regime_snapshot_id"] = str(regime.snapshot.id)
 
-            strategy_result = StrategyEngine(session=self._session).run(
+            strategy_result = StrategyEngine(
+                session=self._session,
+                config=TrendUpPullbackConfig(max_data_age=max_reference_age),
+            ).run(
                 strategy_id=self._config.strategy_id,
                 account_id=self._config.account_id,
                 instrument_type=InstrumentType(signal_bar.instrument_type),
@@ -610,6 +618,7 @@ def config_from_settings(settings: Settings) -> PaperRuntimeConfig:
         reference_refresh_enabled=settings.runtime_reference_refresh_enabled,
         reference_refresh_period=settings.runtime_reference_refresh_period,
         reference_refresh_interval_seconds=settings.runtime_reference_refresh_interval_seconds,
+        reference_max_data_age_seconds=settings.runtime_reference_max_data_age_seconds,
         reference_ingestion_delay_seconds=settings.reference_ingestion_delay_seconds,
         timeframe=settings.runtime_bar_timeframe,
         warmup_bars=settings.runtime_warmup_bars,

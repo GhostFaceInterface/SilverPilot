@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     runtime_reference_refresh_enabled: bool = True
     runtime_reference_refresh_period: str = "5d"
     runtime_reference_refresh_interval_seconds: int = Field(default=1800, ge=0)
+    runtime_reference_max_data_age_seconds: int = Field(default=21600, ge=1)
     runtime_warmup_bars: int = Field(default=201, ge=1)
     runtime_exit_stop_loss_pct: float = Field(default=-0.03, le=0)
     runtime_exit_take_profit_pct: float = Field(default=0.05, ge=0)

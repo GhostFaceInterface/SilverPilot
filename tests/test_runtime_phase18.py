@@ -335,6 +335,58 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
         assert session.scalar(select(TradeIntentModel)) is None
 
 
+def test_paper_runtime_keeps_four_hour_reference_bar_valid_between_yahoo_updates() -> None:
+    db_engine = engine()
+    with Session(db_engine) as session:
+        seeded = bootstrap_paper_runtime(session, now=_time())
+        reference_instrument_id = seeded.yahoo_reference_instrument_ids["SI=F"]
+        bar_end_at = _time()
+        _add_reference_bar(
+            session,
+            instrument_id=reference_instrument_id,
+            bar_end_at=bar_end_at,
+            signal_available_at=bar_end_at + timedelta(minutes=31),
+        )
+        session.commit()
+
+        tick_at = bar_end_at + timedelta(hours=3)
+        quote = PriceQuote(
+            id=uuid4(),
+            bank_instrument_id=seeded.bank_instrument_id,
+            bank_buy_price=Money(amount="49", currency_code="TRY"),
+            bank_sell_price=Money(amount="50", currency_code="TRY"),
+            observed_at=tick_at - timedelta(minutes=1),
+            fetched_at=tick_at - timedelta(minutes=1),
+            source="kuveyt_turk_finance_portal",
+        )
+        runtime = PaperRuntime(
+            session=session,
+            config=PaperRuntimeConfig(
+                account_id=seeded.account_id,
+                bank_instrument_id=seeded.bank_instrument_id,
+                execution_instrument_id=seeded.execution_instrument_id,
+                strategy_id=seeded.strategy_id,
+                reference_instrument_id=reference_instrument_id,
+                reference_source=YAHOO_RESEARCH_SOURCE_NAME,
+                reference_timeframe="4h",
+                fx_source=YAHOO_RESEARCH_SOURCE_NAME,
+                fx_pair="USDTRY",
+                reference_refresh_enabled=False,
+                warmup_bars=1,
+            ),
+        )
+
+        result = runtime.tick(now=tick_at, provider=FakeProvider(quote))
+        strategy_run = session.scalar(
+            select(StrategyRunModel).order_by(StrategyRunModel.run_at.desc())
+        )
+
+        assert result.status == "ok"
+        assert result.summary["signal_bar_end_at"] == bar_end_at.replace(tzinfo=None).isoformat()
+        assert strategy_run is not None
+        assert strategy_run.evidence["reasons"] != ["stale_bar"]
+
+
 def test_paper_runtime_refreshes_yahoo_reference_inputs(monkeypatch: MonkeyPatch) -> None:
     db_engine = engine()
     created_providers: list[_FakeYahooProvider] = []
