@@ -206,6 +206,8 @@ def _parse_raw_bars(
             continue
         bar_start = _timestamp_to_utc(timestamp_value)
         bar_end = bar_start + duration
+        if bar_end > fetched_at:
+            continue
         delay = timedelta(seconds=data_delay_seconds + ingestion_delay_seconds)
         bars.append(
             MarketBar(

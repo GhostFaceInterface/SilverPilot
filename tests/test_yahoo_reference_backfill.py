@@ -81,6 +81,23 @@ def test_yahoo_chart_parser_aggregates_one_hour_payload_to_four_hour_bars() -> N
     assert result.dropped_partial_groups == 0
 
 
+def test_yahoo_chart_parser_drops_unclosed_provider_bars() -> None:
+    result = parse_yahoo_chart_payload(
+        _yahoo_payload([10, 11, 12], [100, 110, 120]),
+        instrument_id=uuid4(),
+        source=YAHOO_RESEARCH_SOURCE_NAME,
+        requested_timeframe="1h",
+        provider_interval="1h",
+        fetched_at=datetime(2026, 6, 17, 2, 30, tzinfo=UTC),
+        data_delay_seconds=900,
+        ingestion_delay_seconds=60,
+    )
+
+    assert len(result.bars) == 2
+    assert result.bars[-1].bar_end_at == datetime(2026, 6, 17, 2, 0, tzinfo=UTC)
+    assert result.raw_bar_count == 2
+
+
 def test_yahoo_chart_parser_rejects_mismatched_ohlc_arrays() -> None:
     payload = _chart_document([10, 11], [100, 110])
     chart = cast(dict[str, Any], payload["chart"])
