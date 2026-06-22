@@ -237,6 +237,9 @@ class RegimeDetector:
             return candidate, source_bar_end_at, confidence
 
         previous_regime = MarketRegime(previous_snapshot.regime)
+        if previous_regime == MarketRegime.NO_TRADE:
+            evidence["transition_from_no_trade"] = True
+            return candidate, source_bar_end_at, confidence
         if candidate == previous_regime:
             return candidate, previous_snapshot.starts_at, confidence
 

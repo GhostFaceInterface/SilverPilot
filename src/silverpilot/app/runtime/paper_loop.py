@@ -181,6 +181,11 @@ class PaperRuntime:
                 run_at=now,
             )
             summary["strategy_run_id"] = str(strategy_result.run.id)
+            summary["strategy_status"] = strategy_result.run.status
+            strategy_reasons = strategy_result.run.evidence.get("reasons", [])
+            summary["strategy_reasons"] = (
+                strategy_reasons if isinstance(strategy_reasons, list) else []
+            )
             intents = [
                 *strategy_result.intents,
                 *self._exit_intents(strategy_result.run, regime.snapshot, now),

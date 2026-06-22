@@ -311,6 +311,52 @@ def test_regime_detector_respects_cooldown(engine: Engine) -> None:
         assert blocked.snapshot.evidence["transition_blocked"] == "cooldown"
 
 
+def test_regime_detector_exits_stale_no_trade_when_fresh_data_returns(engine: Engine) -> None:
+    instrument_id = uuid4()
+    config = RegimeDetectorConfig(cooldown=timedelta(hours=2), confirmation_bars=2)
+    with Session(engine) as session:
+        _add_bar(session, instrument_id=instrument_id, source_bar_end_at=_time(1))
+        stale = RegimeDetector(session=session, config=config).detect_and_cache(
+            instrument_type=InstrumentType.REFERENCE,
+            instrument_id=instrument_id,
+            source=SOURCE,
+            timeframe=TIMEFRAME,
+            source_bar_end_at=_time(1),
+            detected_at=_time(4),
+        )
+        assert stale.snapshot.regime == MarketRegime.NO_TRADE.value
+
+        _add_bar_with_indicators(
+            session,
+            instrument_id=instrument_id,
+            source_bar_end_at=_time(3),
+            ema_50=Decimal("101"),
+            ema_200=Decimal("100"),
+            bb_width_20=Decimal("12"),
+        )
+        _add_bar_with_indicators(
+            session,
+            instrument_id=instrument_id,
+            source_bar_end_at=_time(4),
+            ema_50=Decimal("102"),
+            ema_200=Decimal("100"),
+            bb_width_20=Decimal("12"),
+        )
+        fresh = RegimeDetector(session=session, config=config).detect_and_cache(
+            instrument_type=InstrumentType.REFERENCE,
+            instrument_id=instrument_id,
+            source=SOURCE,
+            timeframe=TIMEFRAME,
+            source_bar_end_at=_time(4),
+            detected_at=_time(4, minute=1),
+        )
+
+        assert fresh.snapshot.regime == MarketRegime.HIGH_VOLATILITY.value
+        assert fresh.snapshot.evidence["candidate_regime"] == MarketRegime.HIGH_VOLATILITY.value
+        assert fresh.snapshot.evidence["transition_from_no_trade"] is True
+        assert "transition_blocked" not in fresh.snapshot.evidence
+
+
 def test_regime_detector_is_idempotent_for_same_window(engine: Engine) -> None:
     instrument_id = uuid4()
     source_bar_end_at = _time(2)
