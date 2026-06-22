@@ -14,6 +14,7 @@ from silverpilot.app.collectors.price_collector import (
     QuoteBarBuilder,
     collect_bank_instrument_once,
 )
+from silverpilot.app.collectors.reference_backfill import backfill_reference_bars
 from silverpilot.app.core.settings import Settings, get_settings
 from silverpilot.app.db.models import (
     FxReferenceInstrumentModel,
@@ -21,6 +22,7 @@ from silverpilot.app.db.models import (
     MarketRegimeSnapshotModel,
     PositionModel,
     PriceQuoteModel,
+    ReferenceDataBackfillRunModel,
     ReferenceMarketInstrumentModel,
     RuntimeTickModel,
     StrategyRunModel,
@@ -38,6 +40,10 @@ from silverpilot.app.domain.interfaces import PriceProvider
 from silverpilot.app.indicators.service import IndicatorName, IndicatorService
 from silverpilot.app.paper_trading.service import PaperBroker, PaperOrderRequest
 from silverpilot.app.providers.kuveyt_turk import KUVEYT_TURK_SOURCE_NAME, KuveytTurkPriceProvider
+from silverpilot.app.providers.yahoo_finance import (
+    YAHOO_RESEARCH_SOURCE_NAME,
+    YahooFinanceReferenceProvider,
+)
 from silverpilot.app.regimes.service import RegimeDetector
 from silverpilot.app.risks.service import RiskContext, RiskManager
 from silverpilot.app.runtime.warmup import WarmupProgress, calculate_warmup_progress
@@ -56,6 +62,10 @@ class PaperRuntimeConfig:
     reference_timeframe: str | None = None
     fx_source: str | None = None
     fx_pair: str | None = None
+    reference_refresh_enabled: bool = True
+    reference_refresh_period: str = "5d"
+    reference_refresh_interval_seconds: int = 1800
+    reference_ingestion_delay_seconds: int = 60
     source: str = KUVEYT_TURK_SOURCE_NAME
     timeframe: str = "5m"
     warmup_bars: int = 201
@@ -122,6 +132,8 @@ class PaperRuntime:
                     ),
                 }
                 return self._record_tick(status, summary, started_at, now)
+
+            summary["reference_refresh"] = self._refresh_reference_inputs(now)
 
             warmup = self._warmup_progress(now)
             summary["warmup"] = warmup.as_dict()
@@ -406,6 +418,111 @@ class PaperRuntime:
             real_money_allowed=fx.real_money_allowed,
         )
 
+    def _refresh_reference_inputs(self, now: datetime) -> dict[str, object]:
+        if not self._config.reference_refresh_enabled:
+            return {"status": "skipped", "reason": "reference_refresh_disabled"}
+        if self._config.reference_source != YAHOO_RESEARCH_SOURCE_NAME:
+            return {"status": "skipped", "reason": "reference_source_not_yahoo_research"}
+        if self._config.reference_instrument_id is None or self._config.reference_timeframe is None:
+            return {"status": "skipped", "reason": "reference_source_not_configured"}
+        reference = self._session.get(
+            ReferenceMarketInstrumentModel,
+            self._config.reference_instrument_id,
+        )
+        fx = None
+        if self._config.fx_source and self._config.fx_pair:
+            fx = self._session.scalar(
+                select(FxReferenceInstrumentModel).where(
+                    FxReferenceInstrumentModel.source == self._config.fx_source,
+                    FxReferenceInstrumentModel.pair == self._config.fx_pair,
+                )
+            )
+        if reference is None or fx is None:
+            return {"status": "skipped", "reason": "reference_or_fx_not_found"}
+
+        instruments: list[ReferenceMarketInstrumentModel | FxReferenceInstrumentModel] = [
+            reference,
+            fx,
+        ]
+        refreshed: list[dict[str, object]] = []
+        for instrument in instruments:
+            if not self._reference_refresh_due(instrument_id=instrument.id, now=now):
+                refreshed.append(
+                    {
+                        "symbol": instrument.symbol,
+                        "status": "skipped",
+                        "reason": "refresh_interval_not_elapsed",
+                    }
+                )
+                continue
+            delay_seconds = _effective_yahoo_delay_seconds(
+                data_delay_seconds=instrument.data_delay_seconds,
+                source_delay_status=instrument.source_delay_status,
+            )
+            if delay_seconds is None:
+                refreshed.append(
+                    {
+                        "symbol": instrument.symbol,
+                        "status": "skipped",
+                        "reason": "source_delay_not_approved",
+                    }
+                )
+                continue
+            provider = YahooFinanceReferenceProvider(
+                instrument_id=instrument.id,
+                source=instrument.source,
+                data_delay_seconds=delay_seconds,
+                ingestion_delay_seconds=self._config.reference_ingestion_delay_seconds,
+            )
+            result = backfill_reference_bars(
+                self._session,
+                instrument=instrument,
+                provider=provider,
+                timeframe=self._config.reference_timeframe,
+                period=self._config.reference_refresh_period,
+                dry_run=False,
+                started_at=now,
+            )
+            refreshed.append(
+                {
+                    "symbol": instrument.symbol,
+                    "status": result.status,
+                    "bars_fetched": result.bars_fetched,
+                    "rows_inserted": result.rows_inserted,
+                    "rows_updated": result.rows_updated,
+                    "run_id": str(result.run.id),
+                }
+            )
+        status = "ok"
+        if any(item.get("status") == "failed" for item in refreshed):
+            status = "degraded"
+        elif all(item.get("status") == "skipped" for item in refreshed):
+            status = "skipped"
+        return {
+            "status": status,
+            "period": self._config.reference_refresh_period,
+            "items": refreshed,
+        }
+
+    def _reference_refresh_due(self, *, instrument_id: UUID, now: datetime) -> bool:
+        interval = timedelta(seconds=self._config.reference_refresh_interval_seconds)
+        if interval <= timedelta(0):
+            return True
+        last_started_at = self._session.scalar(
+            select(ReferenceDataBackfillRunModel.started_at)
+            .where(
+                ReferenceDataBackfillRunModel.source == YAHOO_RESEARCH_SOURCE_NAME,
+                ReferenceDataBackfillRunModel.instrument_id == instrument_id,
+                ReferenceDataBackfillRunModel.timeframe == self._config.reference_timeframe,
+                ReferenceDataBackfillRunModel.period == self._config.reference_refresh_period,
+            )
+            .order_by(ReferenceDataBackfillRunModel.started_at.desc())
+            .limit(1)
+        )
+        if last_started_at is None:
+            return True
+        return _aware_datetime(now) - _aware_datetime(last_started_at) >= interval
+
     def _warmup_progress(self, decision_at: datetime) -> WarmupProgress:
         return calculate_warmup_progress(
             self._session,
@@ -485,6 +602,10 @@ def config_from_settings(settings: Settings) -> PaperRuntimeConfig:
         reference_timeframe=settings.runtime_reference_timeframe,
         fx_source=settings.runtime_fx_source,
         fx_pair=settings.runtime_fx_pair,
+        reference_refresh_enabled=settings.runtime_reference_refresh_enabled,
+        reference_refresh_period=settings.runtime_reference_refresh_period,
+        reference_refresh_interval_seconds=settings.runtime_reference_refresh_interval_seconds,
+        reference_ingestion_delay_seconds=settings.reference_ingestion_delay_seconds,
         timeframe=settings.runtime_bar_timeframe,
         warmup_bars=settings.runtime_warmup_bars,
         stop_loss_pct=Decimal(str(settings.runtime_exit_stop_loss_pct)),
@@ -525,6 +646,12 @@ def _floor_time(value: datetime, delta: timedelta) -> datetime:
     return epoch + timedelta(seconds=seconds - (seconds % width))
 
 
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 def _approved_yahoo_paper_source_reason(
     *,
     source: str,
@@ -553,6 +680,18 @@ def _approved_yahoo_paper_source_reason(
         return "symbol_not_owner_approved"
     if data_delay_seconds is None and source_delay_status != "assumed_conservative":
         return "source_delay_not_approved"
+    return None
+
+
+def _effective_yahoo_delay_seconds(
+    *,
+    data_delay_seconds: int | None,
+    source_delay_status: str | None,
+) -> int | None:
+    if data_delay_seconds is not None:
+        return data_delay_seconds
+    if source_delay_status == "assumed_conservative":
+        return 1800
     return None
 
 

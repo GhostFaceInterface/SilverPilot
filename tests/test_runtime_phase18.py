@@ -5,6 +5,7 @@ from typing import cast
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from silverpilot.app.db.models import (
     FxReferenceInstrumentModel,
     InstrumentMappingModel,
     MarketBarModel,
+    ReferenceDataBackfillRunModel,
     ReferenceMarketInstrumentModel,
     RuntimeTickModel,
     StrategyRunModel,
@@ -21,8 +23,13 @@ from silverpilot.app.db.models import (
     TradeIntentModel,
     WalletModel,
 )
-from silverpilot.app.domain.enums import IndicatorSourcePolicy, InstrumentType
-from silverpilot.app.domain.models import BankInstrument, PriceQuote
+from silverpilot.app.domain.enums import (
+    DataQualityStatus,
+    IndicatorSourcePolicy,
+    InstrumentType,
+    MarketSessionStatus,
+)
+from silverpilot.app.domain.models import BankInstrument, MarketBar, PriceQuote
 from silverpilot.app.domain.value_objects import Money
 from silverpilot.app.main import create_app
 from silverpilot.app.notifications.telegram import TelegramMessage
@@ -49,6 +56,46 @@ class FakeProvider:
     def fetch_quote_result(self, instrument: BankInstrument) -> FakeProviderResult:
         assert instrument.id == self._quote.bank_instrument_id
         return FakeProviderResult(quote=self._quote)
+
+
+class _FakeYahooProvider:
+    def __init__(self, **kwargs: object) -> None:
+        self.instrument_id = cast(UUID, kwargs["instrument_id"])
+        self.source = cast(str, kwargs["source"])
+        self.data_delay_seconds = cast(int, kwargs["data_delay_seconds"])
+        self.ingestion_delay_seconds = cast(int, kwargs["ingestion_delay_seconds"])
+
+    def fetch_bars(self, *, symbol: str, timeframe: str, period: str) -> list[MarketBar]:
+        assert symbol in {"SI=F", "TRY=X"}
+        assert timeframe == "4h"
+        assert period == "5d"
+        end_at = _time()
+        return [
+            MarketBar(
+                id=uuid4(),
+                instrument_type=InstrumentType.REFERENCE,
+                instrument_id=self.instrument_id,
+                source=self.source,
+                timeframe=timeframe,
+                open=Decimal("100"),
+                high=Decimal("102"),
+                low=Decimal("99"),
+                close=Decimal("101"),
+                quote_count=4,
+                bar_start_at=end_at - timedelta(hours=4),
+                bar_end_at=end_at,
+                provider_reported_at=end_at,
+                fetched_at=end_at,
+                stored_at=None,
+                data_delay_seconds=self.data_delay_seconds,
+                signal_available_at=end_at,
+                adjusted_close=Decimal("101"),
+                volume=Decimal("10"),
+                data_quality_status=DataQualityStatus.OK,
+                session_status=MarketSessionStatus.UNKNOWN,
+                is_backfilled=True,
+            )
+        ]
 
 
 def engine() -> Engine:
@@ -266,6 +313,7 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
                 reference_timeframe="4h",
                 fx_source=YAHOO_RESEARCH_SOURCE_NAME,
                 fx_pair="USDTRY",
+                reference_refresh_enabled=False,
                 warmup_bars=1,
             ),
         )
@@ -285,6 +333,64 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
         assert strategy_run.instrument_id == reference_instrument_id
         assert strategy_run.source_bar_end_at == available_end_at.replace(tzinfo=None)
         assert session.scalar(select(TradeIntentModel)) is None
+
+
+def test_paper_runtime_refreshes_yahoo_reference_inputs(monkeypatch: MonkeyPatch) -> None:
+    db_engine = engine()
+    created_providers: list[_FakeYahooProvider] = []
+
+    def provider_factory(**kwargs: object) -> "_FakeYahooProvider":
+        provider = _FakeYahooProvider(**kwargs)
+        created_providers.append(provider)
+        return provider
+
+    monkeypatch.setattr(
+        "silverpilot.app.runtime.paper_loop.YahooFinanceReferenceProvider",
+        provider_factory,
+    )
+    with Session(db_engine) as session:
+        seeded = bootstrap_paper_runtime(session, now=_time())
+        reference_instrument_id = seeded.yahoo_reference_instrument_ids["SI=F"]
+        session.commit()
+
+        tick_at = _time() + timedelta(minutes=10)
+        quote = PriceQuote(
+            id=uuid4(),
+            bank_instrument_id=seeded.bank_instrument_id,
+            bank_buy_price=Money(amount="49", currency_code="TRY"),
+            bank_sell_price=Money(amount="50", currency_code="TRY"),
+            observed_at=tick_at - timedelta(minutes=1),
+            fetched_at=tick_at - timedelta(minutes=1),
+            source="kuveyt_turk_finance_portal",
+        )
+        runtime = PaperRuntime(
+            session=session,
+            config=PaperRuntimeConfig(
+                account_id=seeded.account_id,
+                bank_instrument_id=seeded.bank_instrument_id,
+                execution_instrument_id=seeded.execution_instrument_id,
+                strategy_id=seeded.strategy_id,
+                reference_instrument_id=reference_instrument_id,
+                reference_source=YAHOO_RESEARCH_SOURCE_NAME,
+                reference_timeframe="4h",
+                fx_source=YAHOO_RESEARCH_SOURCE_NAME,
+                fx_pair="USDTRY",
+                reference_refresh_interval_seconds=0,
+                warmup_bars=1,
+            ),
+        )
+
+        result = runtime.tick(now=tick_at, provider=FakeProvider(quote))
+        refresh = cast(dict[str, object], result.summary["reference_refresh"])
+        items = cast(list[dict[str, object]], refresh["items"])
+        runs = session.scalars(select(ReferenceDataBackfillRunModel)).all()
+
+        assert result.status == "ok"
+        assert refresh["status"] == "ok"
+        assert [item["symbol"] for item in items] == ["SI=F", "TRY=X"]
+        assert {item["rows_inserted"] for item in items} == {1}
+        assert {run.symbol for run in runs} == {"SI=F", "TRY=X"}
+        assert len(created_providers) == 2
 
 
 def test_paper_runtime_reference_first_blocks_missing_fx_source() -> None:
