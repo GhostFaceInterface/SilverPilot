@@ -131,7 +131,7 @@ def test_reference_backfill_dry_run_records_audit_without_writing_bars(engine: E
             session,
             instrument=instrument,
             provider=_FixtureReferenceProvider(_fixture_bars(instrument_id)),
-            timeframe="4h",
+            timeframe="1h",
             period="2y",
             dry_run=True,
             started_at=started_at,
@@ -162,7 +162,7 @@ def test_reference_backfill_is_idempotent_for_duplicate_yahoo_bars(engine: Engin
             session,
             instrument=instrument,
             provider=_FixtureReferenceProvider(bars),
-            timeframe="4h",
+            timeframe="1h",
             period="2y",
             dry_run=False,
             started_at=datetime(2026, 6, 17, 5, 0, tzinfo=UTC),
@@ -171,7 +171,7 @@ def test_reference_backfill_is_idempotent_for_duplicate_yahoo_bars(engine: Engin
             session,
             instrument=instrument,
             provider=_FixtureReferenceProvider(bars),
-            timeframe="4h",
+            timeframe="1h",
             period="2y",
             dry_run=False,
             started_at=datetime(2026, 6, 17, 5, 5, tzinfo=UTC),
@@ -200,7 +200,7 @@ def test_reference_backfill_records_failed_provider_run(engine: Engine) -> None:
             session,
             instrument=instrument,
             provider=_FailingReferenceProvider(),
-            timeframe="4h",
+            timeframe="1h",
             period="2y",
             dry_run=False,
             started_at=datetime(2026, 6, 17, 5, 0, tzinfo=UTC),
@@ -230,7 +230,7 @@ def test_reference_backfill_cli_blocks_yahoo_without_instrument(tmp_path: Path) 
             "--symbol",
             "SI=F",
             "--timeframe",
-            "4h",
+            "1h",
             "--period",
             "2y",
             "--database-url",
@@ -260,7 +260,7 @@ def test_reference_backfill_cli_blocks_write_without_reviewed_dry_run(
             "--symbol",
             "SI=F",
             "--timeframe",
-            "4h",
+            "1h",
             "--period",
             "2y",
             "--database-url",
@@ -279,7 +279,7 @@ def test_yahoo_backfill_gate_requires_owner_accepted_paper_risk() -> None:
 
     reason = _blocked_reason(
         source=YAHOO_RESEARCH_SOURCE_NAME,
-        timeframe="4h",
+        timeframe="1h",
         instrument=instrument,
         data_delay_seconds=None,
     )
@@ -309,7 +309,7 @@ class _FixtureReferenceProvider:
         period: str,
     ) -> list[MarketBar]:
         assert symbol == "SI=F"
-        assert timeframe == "4h"
+        assert timeframe == "1h"
         assert period == "2y"
         return self._bars
 
@@ -369,7 +369,7 @@ def _reference_instrument(instrument_id: UUID) -> ReferenceMarketInstrumentModel
         approved_at=created_at,
         approved_scope="live-paper only",
         approved_symbols="SI=F,TRY=X",
-        approved_timeframe="4h",
+        approved_timeframe="1h",
         real_money_allowed=False,
         created_at=created_at,
     )
@@ -379,7 +379,7 @@ def _fixture_bars(instrument_id: UUID) -> list[MarketBar]:
     start = datetime(2026, 6, 17, 0, 0, tzinfo=UTC)
     return [
         _bar(instrument_id, start, Decimal("29.10"), Decimal("29.50")),
-        _bar(instrument_id, start + timedelta(hours=4), Decimal("29.50"), Decimal("30.10")),
+        _bar(instrument_id, start + timedelta(hours=1), Decimal("29.50"), Decimal("30.10")),
     ]
 
 
@@ -389,18 +389,18 @@ def _bar(
     open_price: Decimal,
     close_price: Decimal,
 ) -> MarketBar:
-    end = start + timedelta(hours=4)
+    end = start + timedelta(hours=1)
     return MarketBar(
         id=uuid4(),
         instrument_type=InstrumentType.REFERENCE,
         instrument_id=instrument_id,
         source=YAHOO_RESEARCH_SOURCE_NAME,
-        timeframe="4h",
+        timeframe="1h",
         open=open_price,
         high=max(open_price, close_price) + Decimal("0.20"),
         low=min(open_price, close_price) - Decimal("0.20"),
         close=close_price,
-        quote_count=4,
+        quote_count=1,
         bar_start_at=start,
         bar_end_at=end,
         provider_reported_at=end,

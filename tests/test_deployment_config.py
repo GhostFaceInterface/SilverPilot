@@ -42,6 +42,9 @@ def test_env_example_documents_runtime_without_secret_values() -> None:
     assert "SILVERPILOT_TELEGRAM_ENABLED=false" in env_example
     assert "SILVERPILOT_TELEGRAM_BOT_TOKEN=" in env_example
     assert "SILVERPILOT_RUNTIME_ENABLED=false" in env_example
+    assert "SILVERPILOT_RUNTIME_REFERENCE_TIMEFRAME=1h" in env_example
+    assert "SILVERPILOT_RUNTIME_REFERENCE_REFRESH_PERIOD=2y" in env_example
+    assert "SILVERPILOT_RUNTIME_DECISION_INTERVAL_SECONDS=21600" in env_example
     assert "SILVERPILOT_RUNTIME_WARMUP_BARS=201" in env_example
     assert (
         "SILVERPILOT_COLLECTOR_BANK_INSTRUMENT_ID=00000000-0000-0000-0000-000000000000"
@@ -75,10 +78,16 @@ def test_vps_deploy_workflow_is_manual_and_environment_gated() -> None:
     assert 'git checkout --detach "$DEPLOY_SHA"' in workflow
     assert 'git fetch origin "$DEPLOY_SHA" </dev/null' in workflow
     assert "compose=(docker compose --env-file .env.production)" in workflow
+    assert (
+        "compose_with_telegram=(docker compose --env-file .env.production --profile telegram)"
+        in workflow
+    )
     assert "scp /tmp/silverpilot-deploy.sh silverpilot-vps:/tmp/silverpilot-deploy.sh" in workflow
     assert "bash /tmp/silverpilot-deploy.sh" in workflow
-    assert '"${compose[@]}" build' in workflow
+    assert '"${compose_with_telegram[@]}" build api worker telegram' in workflow
     assert '"${compose[@]}" run --rm migrate' in workflow
+    assert '"${compose[@]}" run --rm api silverpilot-bootstrap-paper' in workflow
+    assert '"${compose_with_telegram[@]}" up -d api worker telegram' in workflow
     assert "for attempt in {1..30}" in workflow
     assert '"${compose[@]}" logs --tail=100 api' in workflow
     assert "/api/v1/system/health" in workflow

@@ -193,10 +193,10 @@ def _render_command(*, session: Session, settings: Settings, text: str) -> str:
                 f"Sistem: {health.get('status')}",
                 f"Runtime: {runtime.get('status') if isinstance(runtime, dict) else 'n/a'}",
                 f"Warm-up: {_warmup_line(warmup)}",
-                f"Sinyal: {_signal_line(runtime_summary)}",
+                f"Son mum: {_signal_line(runtime_summary, captured_at=health.get('captured_at'))}",
                 f"Rejim: {runtime_summary.get('regime', 'n/a')}",
                 f"Indikatorler: {indicators}",
-                f"Strateji: {latest_strategy}",
+                f"Karar: {_decision_line(runtime_summary, latest_strategy)}",
                 f"Paper trades: {trade_count}",
                 f"Telegram: {telegram.get('status') if isinstance(telegram, dict) else 'n/a'}",
             ]
@@ -283,7 +283,7 @@ def _latest_strategy_line(session: Session) -> str:
     return f"{run.status}; reason={reason_text}; at={run.run_at.isoformat()}"
 
 
-def _signal_line(runtime_summary: object) -> str:
+def _signal_line(runtime_summary: object, *, captured_at: object = None) -> str:
     if not isinstance(runtime_summary, dict):
         return "n/a"
     source = runtime_summary.get("signal_source")
@@ -292,7 +292,8 @@ def _signal_line(runtime_summary: object) -> str:
     available = runtime_summary.get("signal_available_at")
     if source is None:
         return "n/a"
-    return f"{source} {timeframe}; bar_end={bar_end}; available={available}"
+    age = _age_line(bar_end, captured_at)
+    return f"{source} {timeframe}; end={bar_end}; age={age}; available={available}"
 
 
 def _indicator_line(runtime_summary: object) -> str:
@@ -302,8 +303,50 @@ def _indicator_line(runtime_summary: object) -> str:
     if not isinstance(indicators, dict) or not indicators:
         return "n/a"
     names = ["ema_50", "ema_200", "rsi_14", "atr_14", "adx_14", "bb_width_20"]
-    present = [name for name in names if name in indicators]
-    return ", ".join(present) if present else "n/a"
+    missing = [
+        name
+        for name in names
+        if name not in indicators or str(indicators[name]).startswith("missing:")
+    ]
+    if missing:
+        return f"not ready; missing={','.join(missing)}"
+    return f"ready; {', '.join(names)}"
+
+
+def _decision_line(runtime_summary: object, latest_strategy: str) -> str:
+    if not isinstance(runtime_summary, dict):
+        return latest_strategy
+    decision = runtime_summary.get("decision")
+    if isinstance(decision, dict):
+        reason = decision.get("reason", "n/a")
+        next_decision_at = decision.get("next_decision_at", "n/a")
+        if decision.get("status") == "skipped":
+            return f"skipped; reason={reason}; next={next_decision_at}"
+        strategy_reasons = runtime_summary.get("strategy_reasons")
+        if isinstance(strategy_reasons, list) and strategy_reasons:
+            reason_text = ",".join(str(item) for item in strategy_reasons)
+            return f"checked; reason={reason_text}; next={next_decision_at}"
+        status = runtime_summary.get("strategy_status", "checked")
+        return f"{status}; reason={reason}; next={next_decision_at}"
+    return latest_strategy
+
+
+def _age_line(bar_end: object, captured_at: object) -> str:
+    if not isinstance(bar_end, str) or not isinstance(captured_at, str):
+        return "n/a"
+    try:
+        bar_time = datetime.fromisoformat(bar_end)
+        captured_time = datetime.fromisoformat(captured_at)
+    except ValueError:
+        return "n/a"
+    if bar_time.tzinfo is None:
+        bar_time = bar_time.replace(tzinfo=UTC)
+    if captured_time.tzinfo is None:
+        captured_time = captured_time.replace(tzinfo=UTC)
+    seconds = max(int((captured_time - bar_time).total_seconds()), 0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes = remainder // 60
+    return f"{hours}h{minutes:02d}m"
 
 
 def _default_account_id(session: Session, settings: Settings) -> UUID | None:

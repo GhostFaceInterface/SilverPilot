@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.orm import Session
 
 from silverpilot.app.core.settings import Settings
@@ -67,8 +67,8 @@ class _FakeYahooProvider:
 
     def fetch_bars(self, *, symbol: str, timeframe: str, period: str) -> list[MarketBar]:
         assert symbol in {"SI=F", "TRY=X"}
-        assert timeframe == "4h"
-        assert period == "5d"
+        assert timeframe == "1h"
+        assert period == "2y"
         end_at = _time()
         return [
             MarketBar(
@@ -81,8 +81,8 @@ class _FakeYahooProvider:
                 high=Decimal("102"),
                 low=Decimal("99"),
                 close=Decimal("101"),
-                quote_count=4,
-                bar_start_at=end_at - timedelta(hours=4),
+                quote_count=1,
+                bar_start_at=end_at - timedelta(hours=1),
                 bar_end_at=end_at,
                 provider_reported_at=end_at,
                 fetched_at=end_at,
@@ -159,7 +159,7 @@ def test_bootstrap_paper_runtime_seeds_yahoo_research_reference_instruments() ->
         assert si_reference.approved_by == "owner/manual"
         assert si_reference.approved_scope == "live-paper only"
         assert si_reference.approved_symbols == "SI=F,TRY=X"
-        assert si_reference.approved_timeframe == "4h"
+        assert si_reference.approved_timeframe == "1h"
         assert si_reference.real_money_allowed is False
         assert mapping is not None
         assert (
@@ -310,7 +310,7 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
                 strategy_id=seeded.strategy_id,
                 reference_instrument_id=reference_instrument_id,
                 reference_source=YAHOO_RESEARCH_SOURCE_NAME,
-                reference_timeframe="4h",
+                reference_timeframe="1h",
                 fx_source=YAHOO_RESEARCH_SOURCE_NAME,
                 fx_pair="USDTRY",
                 reference_refresh_enabled=False,
@@ -335,7 +335,7 @@ def test_paper_runtime_uses_latest_signal_available_reference_bar() -> None:
         assert session.scalar(select(TradeIntentModel)) is None
 
 
-def test_paper_runtime_keeps_four_hour_reference_bar_valid_between_yahoo_updates() -> None:
+def test_paper_runtime_keeps_one_hour_reference_bar_valid_between_yahoo_updates() -> None:
     db_engine = engine()
     with Session(db_engine) as session:
         seeded = bootstrap_paper_runtime(session, now=_time())
@@ -368,7 +368,7 @@ def test_paper_runtime_keeps_four_hour_reference_bar_valid_between_yahoo_updates
                 strategy_id=seeded.strategy_id,
                 reference_instrument_id=reference_instrument_id,
                 reference_source=YAHOO_RESEARCH_SOURCE_NAME,
-                reference_timeframe="4h",
+                reference_timeframe="1h",
                 fx_source=YAHOO_RESEARCH_SOURCE_NAME,
                 fx_pair="USDTRY",
                 reference_refresh_enabled=False,
@@ -385,6 +385,123 @@ def test_paper_runtime_keeps_four_hour_reference_bar_valid_between_yahoo_updates
         assert result.summary["signal_bar_end_at"] == bar_end_at.replace(tzinfo=None).isoformat()
         assert strategy_run is not None
         assert strategy_run.evidence["reasons"] != ["stale_bar"]
+
+
+def test_paper_runtime_skips_trade_decision_until_six_hour_window_elapses() -> None:
+    db_engine = engine()
+    with Session(db_engine) as session:
+        seeded = bootstrap_paper_runtime(session, now=_time())
+        reference_instrument_id = seeded.yahoo_reference_instrument_ids["SI=F"]
+        first_bar_end_at = _time()
+        second_bar_end_at = _time() + timedelta(hours=1)
+        _add_reference_bar(
+            session,
+            instrument_id=reference_instrument_id,
+            bar_end_at=first_bar_end_at,
+            signal_available_at=first_bar_end_at,
+        )
+        session.commit()
+
+        runtime = PaperRuntime(
+            session=session,
+            config=PaperRuntimeConfig(
+                account_id=seeded.account_id,
+                bank_instrument_id=seeded.bank_instrument_id,
+                execution_instrument_id=seeded.execution_instrument_id,
+                strategy_id=seeded.strategy_id,
+                reference_instrument_id=reference_instrument_id,
+                reference_source=YAHOO_RESEARCH_SOURCE_NAME,
+                reference_timeframe="1h",
+                fx_source=YAHOO_RESEARCH_SOURCE_NAME,
+                fx_pair="USDTRY",
+                reference_refresh_enabled=False,
+                warmup_bars=1,
+            ),
+        )
+
+        first_tick_at = first_bar_end_at + timedelta(minutes=10)
+        first_result = runtime.tick(
+            now=first_tick_at,
+            provider=FakeProvider(_quote(seeded.bank_instrument_id, first_tick_at)),
+        )
+        _add_reference_bar(
+            session,
+            instrument_id=reference_instrument_id,
+            bar_end_at=second_bar_end_at,
+            signal_available_at=second_bar_end_at,
+        )
+        session.commit()
+
+        second_tick_at = first_tick_at + timedelta(hours=2)
+        second_result = runtime.tick(
+            now=second_tick_at,
+            provider=FakeProvider(_quote(seeded.bank_instrument_id, second_tick_at)),
+        )
+        third_tick_at = first_tick_at + timedelta(hours=6)
+        third_result = runtime.tick(
+            now=third_tick_at,
+            provider=FakeProvider(_quote(seeded.bank_instrument_id, third_tick_at)),
+        )
+        runs = session.scalars(select(StrategyRunModel).order_by(StrategyRunModel.run_at)).all()
+        first_decision = cast(dict[str, object], first_result.summary["decision"])
+        second_decision = cast(dict[str, object], second_result.summary["decision"])
+        third_decision = cast(dict[str, object], third_result.summary["decision"])
+
+        assert first_decision["status"] == "checked"
+        assert second_decision["status"] == "skipped"
+        assert second_decision["reason"] == "decision_interval_not_elapsed"
+        assert third_decision["status"] == "checked"
+        assert len(runs) == 2
+        assert runs[0].source_bar_end_at == first_bar_end_at.replace(tzinfo=None)
+        assert runs[1].source_bar_end_at == second_bar_end_at.replace(tzinfo=None)
+
+
+def test_paper_runtime_does_not_retrade_same_signal_bar_after_six_hours() -> None:
+    db_engine = engine()
+    with Session(db_engine) as session:
+        seeded = bootstrap_paper_runtime(session, now=_time())
+        reference_instrument_id = seeded.yahoo_reference_instrument_ids["SI=F"]
+        bar_end_at = _time()
+        _add_reference_bar(
+            session,
+            instrument_id=reference_instrument_id,
+            bar_end_at=bar_end_at,
+            signal_available_at=bar_end_at,
+        )
+        session.commit()
+
+        runtime = PaperRuntime(
+            session=session,
+            config=PaperRuntimeConfig(
+                account_id=seeded.account_id,
+                bank_instrument_id=seeded.bank_instrument_id,
+                execution_instrument_id=seeded.execution_instrument_id,
+                strategy_id=seeded.strategy_id,
+                reference_instrument_id=reference_instrument_id,
+                reference_source=YAHOO_RESEARCH_SOURCE_NAME,
+                reference_timeframe="1h",
+                fx_source=YAHOO_RESEARCH_SOURCE_NAME,
+                fx_pair="USDTRY",
+                reference_refresh_enabled=False,
+                warmup_bars=1,
+            ),
+        )
+
+        first_tick_at = bar_end_at + timedelta(minutes=10)
+        runtime.tick(
+            now=first_tick_at,
+            provider=FakeProvider(_quote(seeded.bank_instrument_id, first_tick_at)),
+        )
+        second_tick_at = first_tick_at + timedelta(hours=7)
+        second_result = runtime.tick(
+            now=second_tick_at,
+            provider=FakeProvider(_quote(seeded.bank_instrument_id, second_tick_at)),
+        )
+        decision = cast(dict[str, object], second_result.summary["decision"])
+
+        assert decision["status"] == "skipped"
+        assert decision["reason"] == "same_signal_bar_already_evaluated"
+        assert session.scalar(select(func.count()).select_from(StrategyRunModel)) == 1
 
 
 def test_paper_runtime_refreshes_yahoo_reference_inputs(monkeypatch: MonkeyPatch) -> None:
@@ -424,7 +541,7 @@ def test_paper_runtime_refreshes_yahoo_reference_inputs(monkeypatch: MonkeyPatch
                 strategy_id=seeded.strategy_id,
                 reference_instrument_id=reference_instrument_id,
                 reference_source=YAHOO_RESEARCH_SOURCE_NAME,
-                reference_timeframe="4h",
+                reference_timeframe="1h",
                 fx_source=YAHOO_RESEARCH_SOURCE_NAME,
                 fx_pair="USDTRY",
                 reference_refresh_interval_seconds=0,
@@ -477,7 +594,7 @@ def test_paper_runtime_reference_first_blocks_missing_fx_source() -> None:
                 strategy_id=seeded.strategy_id,
                 reference_instrument_id=reference_instrument_id,
                 reference_source=YAHOO_RESEARCH_SOURCE_NAME,
-                reference_timeframe="4h",
+                reference_timeframe="1h",
                 warmup_bars=1,
             ),
         )
@@ -655,6 +772,18 @@ def _time() -> datetime:
     return datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
 
 
+def _quote(bank_instrument_id: UUID, observed_at: datetime) -> PriceQuote:
+    return PriceQuote(
+        id=uuid4(),
+        bank_instrument_id=bank_instrument_id,
+        bank_buy_price=Money(amount="49", currency_code="TRY"),
+        bank_sell_price=Money(amount="50", currency_code="TRY"),
+        observed_at=observed_at - timedelta(minutes=1),
+        fetched_at=observed_at - timedelta(minutes=1),
+        source="kuveyt_turk_finance_portal",
+    )
+
+
 def _add_reference_bar(
     session: Session,
     *,
@@ -667,13 +796,13 @@ def _add_reference_bar(
             instrument_type=InstrumentType.REFERENCE.value,
             instrument_id=instrument_id,
             source=YAHOO_RESEARCH_SOURCE_NAME,
-            timeframe="4h",
+            timeframe="1h",
             open=Decimal("100"),
             high=Decimal("102"),
             low=Decimal("99"),
             close=Decimal("101"),
             quote_count=1,
-            bar_start_at=bar_end_at - timedelta(hours=4),
+            bar_start_at=bar_end_at - timedelta(hours=1),
             bar_end_at=bar_end_at,
             data_delay_seconds=60,
             signal_available_at=signal_available_at,

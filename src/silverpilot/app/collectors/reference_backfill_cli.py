@@ -25,7 +25,7 @@ from silverpilot.app.providers.yahoo_finance import (
 CONSERVATIVE_YAHOO_DELAY_SECONDS = 1800
 YAHOO_ACCEPTED_PAPER_RISK_STATUS = "owner_accepted_paper_use_risk"
 YAHOO_LIVE_PAPER_SCOPE = "live-paper only"
-YAHOO_APPROVED_TIMEFRAME = "4h"
+YAHOO_APPROVED_TIMEFRAME = "1h"
 YAHOO_APPROVED_SYMBOLS = {"SI=F", "TRY=X"}
 YahooBackfillInstrument = ReferenceMarketInstrumentModel | FxReferenceInstrumentModel
 
@@ -34,7 +34,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Backfill approved delayed reference market bars.")
     parser.add_argument("--source", required=True, help="Approved reference source code.")
     parser.add_argument("--symbol", required=True, help="Reference symbol to backfill.")
-    parser.add_argument("--timeframe", default="4h", help="Reference bar timeframe.")
+    parser.add_argument(
+        "--timeframe",
+        default=YAHOO_APPROVED_TIMEFRAME,
+        help="Reference bar timeframe.",
+    )
     parser.add_argument("--period", default="2y", help="Provider-specific history period.")
     parser.add_argument("--instrument-id", type=UUID, default=None)
     parser.add_argument("--database-url", default=None)
@@ -196,7 +200,7 @@ def _blocked_reason(
             "session calendar, timeframe, and historical depth"
         )
     if timeframe != YAHOO_APPROVED_TIMEFRAME:
-        return "yahoo_research owner-accepted live-paper scope is limited to 4h"
+        return "yahoo_research owner-accepted live-paper scope is limited to 1h"
     if instrument is None:
         return "reference_market_instruments row is required before yahoo_research backfill"
     if instrument.source_risk_status != YAHOO_ACCEPTED_PAPER_RISK_STATUS:
@@ -204,7 +208,7 @@ def _blocked_reason(
     if instrument.approved_scope != YAHOO_LIVE_PAPER_SCOPE:
         return "yahoo_research requires approved_scope=live-paper only"
     if instrument.approved_timeframe != YAHOO_APPROVED_TIMEFRAME:
-        return "yahoo_research requires approved_timeframe=4h"
+        return "yahoo_research requires approved_timeframe=1h"
     if instrument.real_money_allowed:
         return "yahoo_research live-paper approval requires real_money_allowed=false"
     if instrument.symbol not in YAHOO_APPROVED_SYMBOLS:

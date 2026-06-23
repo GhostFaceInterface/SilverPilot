@@ -96,7 +96,9 @@ def test_settings_expose_behavior_neutral_source_policy_fields() -> None:
     assert settings.runtime_reference_instrument_id is None
     assert settings.runtime_reference_source is None
     assert settings.runtime_fx_source is None
-    assert settings.runtime_reference_timeframe == "4h"
+    assert settings.runtime_reference_timeframe == "1h"
+    assert settings.runtime_reference_refresh_period == "2y"
+    assert settings.runtime_decision_interval_seconds == 21600
     assert settings.indicator_source_policy == IndicatorSourcePolicy.REFERENCE_MARKET_FIRST
     assert settings.execution_source_policy == ExecutionSourcePolicy.ACCOUNT_BOUND_BANK_QUOTE
     assert settings.reference_delay_policy == DelayPolicy.PROVIDER_DELAYED

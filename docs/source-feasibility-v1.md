@@ -25,9 +25,9 @@ Stage 5 outcome:
 - `APPROVED_REFERENCE_SYMBOL = SI=F`
 - `APPROVED_FX_SOURCE = yahoo_research`
 - `APPROVED_FX_PAIR = USDTRY / TRY=X`
-- `APPROVED_TIMEFRAME = 4h`
+- `APPROVED_TIMEFRAME = 1h`
 - `APPROVED_HISTORY_DEPTH = 2y backfill reviewed before write`
-- `APPROVED_TIMESTAMP_POLICY = provider 1h bars normalized to SilverPilot 4h; decisions use signal_available_at`
+- `APPROVED_TIMESTAMP_POLICY = provider 1h bars consumed as SilverPilot 1h; decisions use signal_available_at`
 - `APPROVED_SESSION_CALENDAR = provider/exchange calendar as observed; weekend bars and cadence gaps audited per backfill`
 - `APPROVED_TERMS_STATUS = not_approved`
 - `YAHOO_SOURCE_RISK_STATUS = owner_accepted_paper_use_risk`
@@ -75,7 +75,7 @@ timeframe must be reduced to daily.
 | Candidate | Public no-key fetch | Historical depth | Intraday | Timestamp/session | Terms/licensing | V1 status |
 | --- | --- | --- | --- | --- | --- | --- |
 | CME official silver futures data, such as SI futures | Not approved as free/no-key runtime access | Strong through official data products | Yes through licensed feeds/products | Strong exchange session calendar | CME presents real-time and historical market data as data products; licensing required for practical use | Best quality, not approved for free V1 runtime |
-| Yahoo Finance `SI=F` / `GC=F` / `TRY=X` chart endpoints | Web-visible, but automated collection is not terms-approved | Validated for `SI=F`/`TRY=X` 2y reviewed backfills | Provider interval observed as `1h`; SilverPilot normalizes to `4h` | Exchange/provider metadata and backfill feasibility summary recorded | Yahoo terms restrict automated collection/scraping and reuse without permission | Approved only as delayed public owner-accepted live-paper proxy for `SI=F` + `TRY=X`; not real money or execution |
+| Yahoo Finance `SI=F` / `GC=F` / `TRY=X` chart endpoints | Web-visible, but automated collection is not terms-approved | Validated for `SI=F`/`TRY=X` 2y reviewed backfills | Provider interval observed as `1h`; SilverPilot consumes approved runtime bars as `1h` | Exchange/provider metadata and backfill feasibility summary recorded | Yahoo terms restrict automated collection/scraping and reuse without permission | Approved only as delayed public owner-accepted live-paper proxy for `SI=F` + `TRY=X`; not real money or execution |
 | Stooq commodity or futures symbols | Possibly public, but current web access can require browser verification | Unknown until manually verified | Unknown | Unknown | Terms and automated collection suitability not yet verified | Research only; not approved |
 | Kuveyt Turk public `GUMUS ONS/$`-style row, if available | Public finance portal | Sparse/current only unless stored by us | Indicative updates only | Bank/source session ambiguous | Same public bank indicative limitation as execution quotes | Diagnostic only; not V1 reference source |
 | LBMA Silver Price | Public information page; tabulated data requires portal/licence path | Licensed historical benchmark | No, daily auction benchmark | Daily London auction, not weekends/UK holidays | IBA licence required for many valuation/pricing uses | Benchmark/future research only, not intraday V1 |
@@ -122,7 +122,7 @@ Execution rule:
 | --- | --- | --- | --- | --- | --- |
 | Kuveyt Turk public USD/TRY quote | Yes through same public finance portal family | Indicative updates | Provider timestamp unknown unless exposed | Same indicative public-bank limitation | Useful for execution premium snapshots, not approved as independent reference FX |
 | TCMB indicative exchange rates | Public official statistics | Daily/official indicative time series | Official daily statistics; not intraday | Official public statistics, but use policy still needs final review | Daily benchmark candidate only; not intraday V1 |
-| Yahoo Finance `TRY=X` | Web-visible | Validated through reviewed `4h`/`2y` backfill | Provider interval observed as `1h`; SilverPilot normalizes to `4h` | Yahoo automated collection/reuse not approved | Approved only as delayed owner-accepted live-paper FX proxy |
+| Yahoo Finance `TRY=X` | Web-visible | Validated through reviewed `1h`/`2y` backfill | Provider interval observed as `1h`; SilverPilot consumes approved runtime bars as `1h` | Yahoo automated collection/reuse not approved | Approved only as delayed owner-accepted live-paper FX proxy |
 | CME/EBS FX products | Official market data products | Yes | Strong session policy | Licensed/product access | Best quality, not approved for free V1 runtime |
 
 Evidence:
@@ -141,7 +141,7 @@ documentation status for the Yahoo path is:
 - `approved_at=<timestamp>`
 - `approved_scope=live-paper only`
 - `approved_symbols=SI=F, TRY=X`
-- `approved_timeframe=4h`
+- `approved_timeframe=1h`
 - `real_money_allowed=false`
 
 Stage 6 status: these fields exist in source metadata. The paper runtime
@@ -165,13 +165,13 @@ and must be validated for the exact access path, symbol, interval, and session.
 If the delay cannot be verified, Stage 6 must use conservative assumptions:
 
 - `data_delay_seconds=1800`
-- `timeframe=4h`
+- `timeframe=1h`
 - `source_delay_status=assumed_conservative`
 - health target: `degraded_not_failed`
 
-Yahoo 4h/2y feasibility output must record:
+Yahoo 1h/2y feasibility output must record:
 
-- whether the returned interval is actually `4h`;
+- whether the returned interval is actually `1h`;
 - timestamp timezone semantics;
 - missing bars or gaps;
 - weekend bars, if any;
@@ -191,9 +191,8 @@ Preferred production-quality path:
    exchange-grade SI/XAG family source with explicit timestamps and session
    calendar.
 2. Use a matching or explicitly compatible FX source for USD/TRY.
-3. Start with `4h` bars only after historical depth and session handling are
-   validated. `1h` is allowed only after explicit timestamp, delay, FX, and
-   quote-lag validation; `15m` is rejected for V1.
+3. Use `1h` bars after historical depth and session handling are validated.
+   Trade decisions still run on a 6-hour decision window; `15m` is rejected for V1.
 4. Store raw provider payload hashes and normalized bars separately from bank
    execution bars.
 
@@ -210,8 +209,8 @@ Preferred low-cost research path:
 4. Seed `SI=F` and `GC=F` as research-only reference instruments. Do not seed
    `TRY=X` into `reference_market_instruments`; FX source modeling needs a
    separate schema/service decision.
-5. Use `4h` as the default research timeframe. `1h` may be measured during the
-   spike. `15m` remains blocked for V1 runtime.
+5. Use `1h` as the default live-paper research timeframe. `15m` remains blocked
+   for V1 runtime.
 6. Record observed history depth, interval support, timestamp quality, delay
    policy, duplicate behavior, and data hash results before any runtime source
    decision.
@@ -268,13 +267,23 @@ Production Stage 6 result on 2026-06-21:
   `1800` second delay. The repeat `data_hash` matched.
 - Reviewed write backfills inserted delayed `SI=F` reference bars and delayed
   `TRY=X` FX bars with matching reviewed dry-run ids.
-- VPS runtime was switched to `runtime_reference_source=yahoo_research`,
+- VPS runtime was previously switched to `runtime_reference_source=yahoo_research`,
   `runtime_reference_timeframe=4h`, `runtime_fx_source=yahoo_research`,
   `runtime_fx_pair=USDTRY`, `reference_market_first`, and
   `account_bound_bank_quote`.
 - Post-switch smoke showed strategy signals sourced from Yahoo `SI=F`
   reference bars and execution quotes sourced from Kuveyt Turk. The first
   observed regime was `no_trade`, so no paper order was expected.
+
+Runtime update on 2026-06-22:
+
+- The approved live-paper Yahoo path now uses native `1h` bars for `SI=F` and
+  `TRY=X` with `2y` history depth.
+- Indicators are calculated from hourly history: EMA 50, EMA 200, RSI 14,
+  ATR 14, ADX 14, and Bollinger Band Width 20.
+- Runtime data refresh and indicator calculation may happen more often, but
+  strategy decisions are gated to one decision per 6 hours and never repeat the
+  same signal candle.
 
 No source should be silently chosen. Yahoo must not be promoted by changing its
 terms status to approved.
@@ -289,17 +298,17 @@ values:
 | Reference source | yahoo_research |
 | Reference symbol/instrument | SI=F |
 | Reference access method | bounded Yahoo chart backfill, reviewed before write |
-| Reference timestamp policy | provider 1h bars normalized to SilverPilot 4h; consume by signal_available_at |
+| Reference timestamp policy | provider 1h bars consumed as SilverPilot 1h; consume by signal_available_at |
 | Reference session calendar | provider/exchange metadata plus observed weekend/gap audit in feasibility_summary |
 | Reference historical depth | 2y reviewed backfill |
-| Reference timeframe | 4h |
+| Reference timeframe | 1h |
 | Reference terms/licensing status | not_approved |
 | Reference source risk status | owner_accepted_paper_use_risk |
 | Reference approval scope | live-paper only |
 | Real-money allowed | false |
 | FX source | yahoo_research |
 | FX symbol/pair | TRY=X / USDTRY |
-| FX timestamp policy | provider 1h bars normalized to SilverPilot 4h; consume by signal_available_at |
+| FX timestamp policy | provider 1h bars consumed as SilverPilot 1h; consume by signal_available_at |
 | FX terms/licensing status | not_approved |
 | Fixture source and data hash policy | source payload hash plus normalized data_hash; repeat hash required before write |
 | Manual approval owner/date | owner/manual, 2026-06-21 |

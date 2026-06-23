@@ -65,12 +65,14 @@ jobs:
           git fetch origin "$DEPLOY_SHA" </dev/null
           git checkout --detach "$DEPLOY_SHA" </dev/null
           compose=(docker compose --env-file .env.production)
+          compose_with_telegram=(docker compose --env-file .env.production --profile telegram)
           backup_dir="$(dirname "$VPS_PROJECT_PATH")/backups"
           mkdir -p "$backup_dir"
           "${compose[@]}" exec -T postgres pg_dump -U silverpilot silverpilot > "$backup_dir/silverpilot-$DEPLOY_SHA.sql"
-          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" build
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose_with_telegram[@]}" build api worker telegram
           SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" run --rm migrate
-          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" up -d api worker
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose[@]}" run --rm api silverpilot-bootstrap-paper
+          SILVERPILOT_DEPLOYED_SHA="$DEPLOY_SHA" "${compose_with_telegram[@]}" up -d api worker telegram
           for attempt in {1..30}; do
             if "${compose[@]}" exec -T api python -c "from urllib.request import urlopen; print(urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=5).status)"; then
               exit 0

@@ -8,7 +8,7 @@ reference V1 runtime switch.
 The current live paper runtime collects Kuveyt Turk public bank quotes for
 account-bound indicative paper execution, while indicators, regimes, and
 strategy decisions use delayed Yahoo `SI=F` reference bars when the runtime is
-configured with the approved `yahoo_research` source, `4h` timeframe, and the
+configured with the approved `yahoo_research` source, `1h` timeframe, and the
 approved reference instrument id.
 
 Yahoo `TRY=X` is the approved delayed public FX proxy for live-paper reference
@@ -119,12 +119,14 @@ If a legacy diagnostic row has no `signal_available_at`, existing diagnostic
 behavior may continue. New approved reference rows should populate it. Live
 decisions must also require the row to have been stored by the decision time.
 
-The V1 default timeframe is `4h`. `15m` remains rejected for V1 because source
+The V1 default timeframe is `1h`. Strategy decisions are evaluated at most once
+per 6-hour decision window, and the strategy must not open repeated paper trade
+intents from the same signal candle. `15m` remains rejected for V1 because source
 delay, FX compatibility, and execution quote alignment are not yet proven. If
 only daily official reference/FX data is approved, V1 must fall back to `1d`.
 No universal 15-minute Yahoo/CME delay may be assumed. If Yahoo delay cannot be
 verified for the exact symbol, interval, and access path, the conservative
-policy is `data_delay_seconds=1800`, `timeframe=4h`,
+policy is `data_delay_seconds=1800`, `timeframe=1h`,
 `source_delay_status=assumed_conservative`, and source health
 `degraded_not_failed`.
 

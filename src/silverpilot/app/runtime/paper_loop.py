@@ -63,13 +63,14 @@ class PaperRuntimeConfig:
     fx_source: str | None = None
     fx_pair: str | None = None
     reference_refresh_enabled: bool = True
-    reference_refresh_period: str = "5d"
+    reference_refresh_period: str = "2y"
     reference_refresh_interval_seconds: int = 1800
     reference_max_data_age_seconds: int = 21600
     reference_ingestion_delay_seconds: int = 60
     source: str = KUVEYT_TURK_SOURCE_NAME
     timeframe: str = "5m"
     warmup_bars: int = 201
+    decision_interval_seconds: int = 21600
     stop_loss_pct: Decimal = Decimal("-0.03")
     take_profit_pct: Decimal = Decimal("0.05")
     high_volatility_exit_fraction: Decimal = Decimal("0.50")
@@ -175,6 +176,11 @@ class PaperRuntime:
             summary["regime"] = regime.snapshot.regime
             summary["regime_snapshot_id"] = str(regime.snapshot.id)
 
+            decision_gate = self._decision_gate(signal_bar=signal_bar, now=now)
+            summary["decision"] = decision_gate
+            if decision_gate["status"] == "skipped":
+                return self._record_tick(status, summary, started_at, now)
+
             strategy_result = StrategyEngine(
                 session=self._session,
                 config=TrendUpPullbackConfig(max_data_age=max_reference_age),
@@ -194,6 +200,13 @@ class PaperRuntime:
             summary["strategy_reasons"] = (
                 strategy_reasons if isinstance(strategy_reasons, list) else []
             )
+            summary["decision"] = {
+                **decision_gate,
+                "status": "checked",
+                "next_decision_at": (
+                    _aware_datetime(now) + timedelta(seconds=self._config.decision_interval_seconds)
+                ).isoformat(),
+            }
             intents = [
                 *strategy_result.intents,
                 *self._exit_intents(strategy_result.run, regime.snapshot, now),
@@ -305,6 +318,55 @@ class PaperRuntime:
             except ValueError as exc:
                 values[f"{name}_{parameters['period']}"] = f"missing:{exc}"
         return values
+
+    def _decision_gate(self, *, signal_bar: MarketBarModel, now: datetime) -> dict[str, object]:
+        interval = timedelta(seconds=self._config.decision_interval_seconds)
+        last_run = self._session.scalar(
+            select(StrategyRunModel)
+            .where(
+                StrategyRunModel.account_id == self._config.account_id,
+                StrategyRunModel.strategy_id == self._config.strategy_id,
+                StrategyRunModel.instrument_type == signal_bar.instrument_type,
+                StrategyRunModel.instrument_id == signal_bar.instrument_id,
+                StrategyRunModel.source == signal_bar.source,
+                StrategyRunModel.timeframe == signal_bar.timeframe,
+            )
+            .order_by(StrategyRunModel.run_at.desc(), StrategyRunModel.id.desc())
+            .limit(1)
+        )
+        if last_run is None:
+            return {
+                "status": "due",
+                "reason": "first_decision",
+                "interval_seconds": self._config.decision_interval_seconds,
+                "last_decision_at": None,
+                "next_decision_at": now.isoformat(),
+            }
+
+        next_decision_at = _aware_datetime(last_run.run_at) + interval
+        base = {
+            "interval_seconds": self._config.decision_interval_seconds,
+            "last_decision_at": last_run.run_at.isoformat(),
+            "last_signal_bar_end_at": last_run.source_bar_end_at.isoformat(),
+            "next_decision_at": next_decision_at.isoformat(),
+        }
+        if _same_timestamp(last_run.source_bar_end_at, signal_bar.bar_end_at):
+            return {
+                "status": "skipped",
+                "reason": "same_signal_bar_already_evaluated",
+                **base,
+            }
+        if _aware_datetime(now) < next_decision_at:
+            return {
+                "status": "skipped",
+                "reason": "decision_interval_not_elapsed",
+                **base,
+            }
+        return {
+            "status": "due",
+            "reason": "decision_interval_elapsed",
+            **base,
+        }
 
     def _exit_intents(
         self,
@@ -622,6 +684,7 @@ def config_from_settings(settings: Settings) -> PaperRuntimeConfig:
         reference_ingestion_delay_seconds=settings.reference_ingestion_delay_seconds,
         timeframe=settings.runtime_bar_timeframe,
         warmup_bars=settings.runtime_warmup_bars,
+        decision_interval_seconds=settings.runtime_decision_interval_seconds,
         stop_loss_pct=Decimal(str(settings.runtime_exit_stop_loss_pct)),
         take_profit_pct=Decimal(str(settings.runtime_exit_take_profit_pct)),
         high_volatility_exit_fraction=Decimal(str(settings.runtime_exit_high_volatility_fraction)),
@@ -666,6 +729,12 @@ def _aware_datetime(value: datetime) -> datetime:
     return value
 
 
+def _same_timestamp(left: datetime, right: datetime) -> bool:
+    if left.tzinfo is None or right.tzinfo is None:
+        return left.replace(tzinfo=None) == right.replace(tzinfo=None)
+    return left == right
+
+
 def _approved_yahoo_paper_source_reason(
     *,
     source: str,
@@ -681,7 +750,7 @@ def _approved_yahoo_paper_source_reason(
 ) -> str | None:
     if source != "yahoo_research":
         return "reference_source_not_yahoo_research"
-    if timeframe != "4h" or approved_timeframe != "4h":
+    if timeframe != "1h" or approved_timeframe != "1h":
         return "reference_timeframe_not_approved"
     if source_risk_status != "owner_accepted_paper_use_risk":
         return "source_risk_not_owner_accepted"

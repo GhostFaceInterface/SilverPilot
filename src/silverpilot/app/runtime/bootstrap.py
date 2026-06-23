@@ -239,7 +239,7 @@ def bootstrap_paper_runtime(
         approved_at=created_at,
         approved_scope="live-paper only",
         approved_symbols="SI=F,TRY=X",
-        approved_timeframe="4h",
+        approved_timeframe="1h",
         real_money_allowed=False,
         created_at=created_at,
     )
@@ -259,7 +259,7 @@ def bootstrap_paper_runtime(
         approved_at=silver_reference.approved_at or created_at,
         approved_scope="live-paper only",
         approved_symbols="SI=F,TRY=X",
-        approved_timeframe="4h",
+        approved_timeframe="1h",
         real_money_allowed=False,
     )
     gold_reference = _get_or_create(
@@ -332,7 +332,7 @@ def bootstrap_paper_runtime(
         approved_at=created_at,
         approved_scope="live-paper only",
         approved_symbols="SI=F,TRY=X",
-        approved_timeframe="4h",
+        approved_timeframe="1h",
         real_money_allowed=False,
         created_at=created_at,
     )
@@ -356,7 +356,7 @@ def bootstrap_paper_runtime(
         approved_at=fx_reference.approved_at or created_at,
         approved_scope="live-paper only",
         approved_symbols="SI=F,TRY=X",
-        approved_timeframe="4h",
+        approved_timeframe="1h",
         real_money_allowed=False,
     )
     mapping = _get_or_create(
